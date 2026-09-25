@@ -129,6 +129,17 @@ android {
         }
     }
 
+    // 新增：动态重命名生成的APK，确保CI脚本能正确找到并复制文件
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            if (variant.flavorName == 'arm32') {
+                outputFileName = "XCZ.apk"
+            } else if (variant.flavorName == 'arm64') {
+                outputFileName = "XCZ64.apk"
+            }
+        }
+    }
+
     sourceSets {
         // Only upstream TextureRender is retained, for legacy one-shot screenshots.
         main.java.srcDirs += [rootProject.file("third_party/android-transcoder/src")]
@@ -151,6 +162,13 @@ android {
     aaptOptions {
         // Keep AAPT's default exclusions and omit management-site authoring docs.
         ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~:README.md'
+    }
+}
+
+// 新增：定义 printVersionName 任务，供 GitHub Actions 读取版本号
+task printVersionName {
+    doLast {
+        println android.defaultConfig.versionName
     }
 }
 
