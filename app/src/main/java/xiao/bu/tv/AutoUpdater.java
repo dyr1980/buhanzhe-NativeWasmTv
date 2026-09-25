@@ -32,10 +32,12 @@ import java.util.zip.ZipFile;
 /** Checks release manifests, downloads a compatible APK, and opens the system installer. */
 final class AutoUpdater {
     private static final String TAG = "AutoUpdater";
-    private static final String IMPORTANT_VERSION_URL = "https://github.com/buhanzhe/NativeWasmTv/"
+    // ==================== 修改这里：将 buhanzhe 改为 dyr1980 ====================
+    private static final String IMPORTANT_VERSION_URL = "https://github.com/dyr1980/buhanzhe-NativeWasmTv/"
             + "releases/latest/download/version.json";
-    private static final String LITE_VERSION_URL = "https://github.com/buhanzhe/NativeWasmTv/"
+    private static final String LITE_VERSION_URL = "https://github.com/dyr1980/buhanzhe-NativeWasmTv/"
             + "releases/latest/download/version-lite.json";
+    // =======================================================================
     private static final int CONNECT_TIMEOUT_MS = 15000;
     private static final int READ_TIMEOUT_MS = 30000;
     private static final int MAX_MANIFEST_BYTES = 64 * 1024;
