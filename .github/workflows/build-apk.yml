@@ -44,13 +44,23 @@ jobs:
       - name: 赋予gradlew执行权限
         run: chmod +x ./gradlew
 
+      # 新增：从GitHub Secrets生成签名文件
+      - name: 生成签名文件
+        run: |
+          mkdir -p .signing
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > .signing/iptv-release.jks
+          echo "alias=${{ secrets.KEY_ALIAS }}" > .signing/keystore-info.properties
+          echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" >> .signing/keystore-info.properties
+          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> .signing/keystore-info.properties
+
       - name: 编译签名Release APK
         run: |
           ./gradlew assembleArm32Release assembleArm64Release --no-daemon
 
+      # 修改：指定从 :app 模块中读取 printVersionName 任务
       - name: 读取Gradle版本号
         run: |
-          APP_VERSION=$(./gradlew -q printVersionName --no-daemon)
+          APP_VERSION=$(./gradlew -q :app:printVersionName --no-daemon)
           echo "APP_VERSION=$APP_VERSION" >> $GITHUB_ENV
           echo "read versionName: $APP_VERSION"
 
