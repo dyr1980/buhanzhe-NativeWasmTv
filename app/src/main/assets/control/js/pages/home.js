@@ -53,7 +53,7 @@ function renderCurrentChannel() {
 function renderPageState() {
   var repo = document.getElementById("repo");
   repo.href = state.githubUrl;
-  repo.textContent = "buhanzhe/NativeWasmTv";
+  repo.textContent = "dyr1980/buhanzhe-NativeWasmTv";
 
   renderCurrentChannel();
 }
