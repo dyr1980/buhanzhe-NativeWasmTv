@@ -52,7 +52,7 @@ android {
         // REQUEST_INSTALL_PACKAGES, while remaining installable on Android 15.
         targetSdkVersion configuredTargetSdk
         versionCode configuredVersionCode
-        versionName '1.7.0'
+        versionName '1.8.0'
         buildConfigField 'boolean', 'CAST_LATENCY_TRACE',
                 project.findProperty('castLatencyTrace') == 'true' ? 'true' : 'false'
         testInstrumentationRunner project.hasProperty('testRunner')
@@ -89,13 +89,13 @@ android {
             }
             buildConfigField 'boolean', 'EMBED_CONTROL_PAGES', 'true'
             buildConfigField 'String', 'RECOMMENDED_JOY_SOURCE_URL',
-                    '"https://raw.githubusercontent.com/buhanzhe/webSourceM3U8/refs/heads/main/JoyPage.txt"'
+                    '"https://raw.githubusercontent.com/dyr1980/webSourceM3U8/main/JoyPage.txt"'
             buildConfigField 'String', 'RECOMMENDED_FM_SOURCE_URL',
-                    '"https://raw.githubusercontent.com/buhanzhe/webSourceM3U8/refs/heads/main/fm.txt"'
+                    '"https://raw.githubusercontent.com/dyr1980/webSourceM3U8/main/fm.txt"'
             buildConfigField 'String', 'RECOMMENDED_TEST_SOURCE_URL',
-                    '"https://raw.githubusercontent.com/buhanzhe/webSourceM3U8/refs/heads/main/test.txt"'
+                    '"https://raw.githubusercontent.com/dyr1980/webSourceM3U8/main/test.txt"'
             buildConfigField 'String', 'RECOMMENDED_WEBVIEW_SOURCE_URL',
-                    '"https://raw.githubusercontent.com/buhanzhe/webSourceM3U8/refs/heads/main/webview.txt"'
+                    '"https://raw.githubusercontent.com/dyr1980/webSourceM3U8/main/webview.txt"'
             buildConfigField 'String', 'FLY_MOUSE_PAGE_SOURCE_URL', '""'
             buildConfigField 'String', 'VIDEO_RECORDER_PAGE_SOURCE_URL', '""'
             buildConfigField 'String', 'MP4_FINALIZER_SOURCE_URL', '""'
@@ -108,19 +108,19 @@ android {
             }
             buildConfigField 'boolean', 'EMBED_CONTROL_PAGES', 'false'
             buildConfigField 'String', 'RECOMMENDED_JOY_SOURCE_URL',
-                    '"https://github.com/buhanzhe/webSourceM3U8/releases/latest/download/JoyPage.txt"'
+                    '"https://github.com/dyr1980/webSourceM3U8/releases/latest/download/JoyPage.txt"'
             buildConfigField 'String', 'RECOMMENDED_FM_SOURCE_URL',
-                    '"https://github.com/buhanzhe/webSourceM3U8/releases/latest/download/fm.txt"'
+                    '"https://github.com/dyr1980/webSourceM3U8/releases/latest/download/fm.txt"'
             buildConfigField 'String', 'RECOMMENDED_TEST_SOURCE_URL',
-                    '"https://github.com/buhanzhe/webSourceM3U8/releases/latest/download/test.txt"'
+                    '"https://github.com/dyr1980/webSourceM3U8/releases/latest/download/test.txt"'
             buildConfigField 'String', 'RECOMMENDED_WEBVIEW_SOURCE_URL',
-                    '"https://github.com/buhanzhe/webSourceM3U8/releases/latest/download/webview.txt"'
+                    '"https://github.com/dyr1980/webSourceM3U8/releases/latest/download/webview.txt"'
             buildConfigField 'String', 'FLY_MOUSE_PAGE_SOURCE_URL',
-                    '"https://raw.githubusercontent.com/buhanzhe/NativeWasmTv/gh-pages/flymouse.html"'
+                    '"https://raw.githubusercontent.com/dyr1980/buhanzhe-NativeWasmTv/gh-pages/flymouse.html"'
             buildConfigField 'String', 'VIDEO_RECORDER_PAGE_SOURCE_URL',
-                    '"https://raw.githubusercontent.com/buhanzhe/NativeWasmTv/gh-pages/video-recorder.html"'
+                    '"https://raw.githubusercontent.com/dyr1980/buhanzhe-NativeWasmTv/gh-pages/video-recorder.html"'
             buildConfigField 'String', 'MP4_FINALIZER_SOURCE_URL',
-                    '"https://raw.githubusercontent.com/buhanzhe/NativeWasmTv/gh-pages/mp4-finalizer.js"'
+                    '"https://raw.githubusercontent.com/dyr1980/buhanzhe-NativeWasmTv/gh-pages/mp4-finalizer.js"'
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
             testProguardFile 'proguard-test-rules.pro'
             if (project.findProperty('testRunner') == 'xiao.bu.tv.CjsV5Instrumentation') {
@@ -238,7 +238,7 @@ task generateVersionFile {
         if (!sha25632 || !sha25664) {
             throw new GradleException('Both -PupdateApk32 and -PupdateApk64 are required')
         }
-        String releaseBase = 'https://github.com/buhanzhe/NativeWasmTv/releases/latest/download/'
+        String releaseBase = 'https://github.com/dyr1980/buhanzhe-NativeWasmTv/releases/latest/download/'
 
         def manifest = [
                 versionCode : android.defaultConfig.versionCode,
