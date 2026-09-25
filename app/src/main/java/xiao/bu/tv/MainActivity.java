@@ -199,7 +199,7 @@ public final class MainActivity extends Activity {
     private static final String SUBTITLE_SHADOW_STANDARD = "standard";
     private static final String SUBTITLE_SHADOW_STRONG = "strong";
     private static final String MEDIA_TRACK_DISABLED = MediaTrackSelection.DISABLED;
-    private static final String GITHUB_URL = "https://github.com/buhanzhe/NativeWasmTv";
+    private static final String GITHUB_URL = "https://github.com/dyr1980/buhanzhe-NativeWasmTv";
     private static final String FIRST_LAUNCH_GROUP_TITLE = "央视频道";
     private static final String FIRST_LAUNCH_CHANNEL_NUMBER = "1";
     private static final String FIRST_LAUNCH_CHANNEL_PID = "600001859";
