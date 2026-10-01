@@ -68,7 +68,7 @@ android {
             buildConfigField 'String', 'CJS_PLUGIN_ABI', '"armeabi-v7a"'
             buildConfigField 'String', 'UPDATE_APK_URL_FIELD', '"apk32Url"'
             buildConfigField 'String', 'UPDATE_SHA256_FIELD', '"sha25632"'
-            buildConfigField 'String', 'UPDATE_APK_ASSET', '"nTv.apk"'
+            buildConfigField 'String', 'UPDATE_APK_ASSET', '"XCZ.apk"'
         }
         arm64 {
             dimension 'architecture'
@@ -78,7 +78,7 @@ android {
             buildConfigField 'String', 'CJS_PLUGIN_ABI', '"arm64-v8a"'
             buildConfigField 'String', 'UPDATE_APK_URL_FIELD', '"apk64Url"'
             buildConfigField 'String', 'UPDATE_SHA256_FIELD', '"sha25664"'
-            buildConfigField 'String', 'UPDATE_APK_ASSET', '"nTv64.apk"'
+            buildConfigField 'String', 'UPDATE_APK_ASSET', '"XCZ64.apk"'
         }
         x86 {
             dimension 'architecture'
@@ -87,7 +87,7 @@ android {
             buildConfigField 'String', 'CJS_PLUGIN_ABI', '"x86"'
             buildConfigField 'String', 'UPDATE_APK_URL_FIELD', '"apkX86Url"'
             buildConfigField 'String', 'UPDATE_SHA256_FIELD', '"sha256X86"'
-            buildConfigField 'String', 'UPDATE_APK_ASSET', '"nTvX86.apk"'
+            buildConfigField 'String', 'UPDATE_APK_ASSET', '"XCZX86.apk"'
         }
     }
 
@@ -136,6 +136,19 @@ android {
             testProguardFile 'proguard-test-rules.pro'
             if (project.findProperty('testRunner') == 'xiao.bu.tv.CjsV5Instrumentation') {
                 proguardFile 'proguard-cjs-test.pro'
+            }
+        }
+    }
+
+    // 固定三种架构的 APK 输出文件名，方便 GitHub Actions 复制与发布。
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            if (variant.flavorName == 'arm32') {
+                outputFileName = "XCZ.apk"
+            } else if (variant.flavorName == 'arm64') {
+                outputFileName = "XCZ64.apk"
+            } else if (variant.flavorName == 'x86') {
+                outputFileName = "XCZX86.apk"
             }
         }
     }
@@ -239,10 +252,10 @@ task generateVersionFile {
                 versionCode : android.defaultConfig.versionCode,
                 versionName : android.defaultConfig.versionName,
                 // apkUrl/sha256 keep every released 32-bit updater backward compatible.
-                apkUrl      : releaseBase + 'nTv.apk',
-                apk32Url    : releaseBase + 'nTv.apk',
-                apk64Url    : releaseBase + 'nTv64.apk',
-                apkX86Url   : releaseBase + 'nTvX86.apk',
+                apkUrl      : releaseBase + 'XCZ.apk',
+                apk32Url    : releaseBase + 'XCZ.apk',
+                apk64Url    : releaseBase + 'XCZ64.apk',
+                apkX86Url   : releaseBase + 'XCZX86.apk',
                 sha256      : sha25632,
                 sha25632    : sha25632,
                 sha25664    : sha25664,
