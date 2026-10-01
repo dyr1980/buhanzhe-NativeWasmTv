@@ -32,12 +32,10 @@ import java.util.zip.ZipFile;
 /** Checks release manifests, downloads a compatible APK, and opens the system installer. */
 final class AutoUpdater {
     private static final String TAG = "AutoUpdater";
-    // ==================== 修改这里：将 buhanzhe 改为 dyr1980 ====================
     private static final String IMPORTANT_VERSION_URL = "https://github.com/dyr1980/buhanzhe-NativeWasmTv/"
             + "releases/latest/download/version.json";
     private static final String LITE_VERSION_URL = "https://github.com/dyr1980/buhanzhe-NativeWasmTv/"
             + "releases/latest/download/version-lite.json";
-    // =======================================================================
     private static final int CONNECT_TIMEOUT_MS = 15000;
     private static final int READ_TIMEOUT_MS = 30000;
     private static final int MAX_MANIFEST_BYTES = 64 * 1024;
@@ -263,7 +261,7 @@ final class AutoUpdater {
         int versionCode = object.getInt("versionCode");
         String versionName = object.getString("versionName").trim();
         boolean architectureUpgrade = allowArchitectureUpgrade
-                && !is64BitBuild() && supports64Bit();
+                && isArm32Build() && supports64Bit();
         String urlField = architectureUpgrade ? "apk64Url" : BuildConfig.UPDATE_APK_URL_FIELD;
         String shaField = architectureUpgrade ? "sha25664" : BuildConfig.UPDATE_SHA256_FIELD;
         String apkAsset = architectureUpgrade ? "nTv64.apk" : BuildConfig.UPDATE_APK_ASSET;
@@ -286,6 +284,10 @@ final class AutoUpdater {
         }
         return new UpdateInfo(versionCode, versionName, apkUrl, sha256, releaseNotes,
                 apkAsset, architectureUpgrade);
+    }
+
+    private static boolean isArm32Build() {
+        return "arm32".equals(BuildConfig.FLAVOR);
     }
 
     private static boolean is64BitBuild() {
