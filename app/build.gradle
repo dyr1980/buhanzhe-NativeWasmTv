@@ -14,7 +14,7 @@ if (releaseKeystore.exists() != releaseSigningInfo.exists()) {
 def releaseSigningProperties = new Properties()
 def configuredTargetSdk = 25
 def configuredVersionCode = project.hasProperty('versionCodeOverride')
-        ? Integer.parseInt(project.property('versionCodeOverride').toString()) : 8
+        ? Integer.parseInt(project.property('versionCodeOverride').toString()) : 9
 if (releaseSigningAvailable) {
     releaseSigningInfo.withInputStream { releaseSigningProperties.load(it) }
     ['alias', 'storePassword', 'keyPassword'].each { propertyName ->
