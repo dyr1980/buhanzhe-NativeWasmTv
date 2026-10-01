@@ -50,6 +50,21 @@ public final class ChannelUiInstrumentation extends Instrumentation {
     private void key(int code) { activity.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, code)); }
     private void pass(String text) { Bundle result=new Bundle(); result.putString("stream","PASS "+text+"\n"); sendStatus(0,result); }
 
+    private void uiScalePolicy() {
+        check(Math.abs(UiScalePolicy.viewportScale(1920, 1080, 1f) - 1f) < .011f,
+                "1080p reference scale changed");
+        check(Math.abs(UiScalePolicy.viewportScale(3840, 2160, 2f) - 1.2f) < .011f,
+                "4K scale exceeded its upper bound");
+        check(Math.abs(UiScalePolicy.viewportScale(1280, 720, 3f) - .67f) < .011f,
+                "High-density 720p controls remain oversized");
+        check(Math.abs(UiScalePolicy.viewportScale(1280, 720, 1f) - .8f) < .011f,
+                "Low-density 720p controls became unreadable");
+        check(Math.abs(UiScalePolicy.resolve(1280, 720,
+                "extra_extra_large", -1f, 3f) - 1.34f) < .011f,
+                "User interface-size preset was not combined with viewport scale");
+        pass("viewport, density and interface-size scaling bounds");
+    }
+
     private void logoCache() throws Exception {
         final File directory = new File(getTargetContext().getCacheDir(), "logo-regression-" + System.nanoTime());
         check(directory.mkdirs(), "Cannot create logo fixture directory");
@@ -199,6 +214,7 @@ public final class ChannelUiInstrumentation extends Instrumentation {
     @Override public void onStart() {
         Bundle result=new Bundle();
         try {
+            uiScalePolicy();
             if (logoOnly) {
                 logoCache(); result.putString("stream", "LOGO CACHE CHECKS PASSED\n"); finish(-1,result); return;
             }

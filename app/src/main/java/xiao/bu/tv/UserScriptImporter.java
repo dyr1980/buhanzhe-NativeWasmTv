@@ -82,21 +82,40 @@ final class UserScriptImporter {
         // later click can update the existing entry rather than creating a duplicate.
         URL installUrl = sourceUrl;
         Download script = download(sourceUrl, MAX_SCRIPT_BYTES, "text/javascript");
-        String source = script.text();
+        return parseScript(script.text(), nameFromUrl(script.url), installUrl.toString());
+    }
+
+    static JSONObject importLocalScript(String source, String fileName) throws Exception {
+        if (fileName == null || !fileName.toLowerCase(Locale.US).endsWith(".js")) {
+            throw new IOException("请选择 .user.js 或 .js 脚本文件");
+        }
+        String name = fileName.replace('\\', '/');
+        name = name.substring(name.lastIndexOf('/') + 1)
+                .replaceFirst("(?i)(?:\\.user)?\\.js$", "");
+        return parseScript(source, name.length() == 0 ? "本地脚本"
+                : name.substring(0, Math.min(80, name.length())), "");
+    }
+
+    private static JSONObject parseScript(String source, String fallbackName, String installUrl)
+            throws Exception {
+        if (source == null || source.length() > MAX_SCRIPT_BYTES
+                || source.getBytes("UTF-8").length > MAX_SCRIPT_BYTES) {
+            throw new IOException("脚本文件超过 256KB");
+        }
         if (source.startsWith("\ufeff")) source = source.substring(1);
         int metadataStart = source.indexOf("// ==UserScript==");
         int metadataEnd = source.indexOf("// ==/UserScript==");
         if (metadataStart < 0 || metadataEnd <= metadataStart) {
-            throw new IOException("下载内容不是有效的 UserScript");
+            throw new IOException("不是有效的 UserScript，请检查脚本元数据头");
         }
         Metadata parsed = parseMetadata(source.substring(metadataStart, metadataEnd));
-        if (parsed.name.length() == 0) parsed.name = nameFromUrl(script.url);
+        if (parsed.name.length() == 0) parsed.name = fallbackName;
         JSONArray warnings = compatibilityWarnings(source, parsed);
         return new JSONObject().put("ok", true).put("script", new JSONObject()
                 .put("name", parsed.name)
                 .put("enabled", true)
                 .put("source", source)
-                .put("installUrl", installUrl.toString())
+                .put("installUrl", installUrl)
                 .put("version", parsed.version)
                 .put("description", parsed.description)
                 .put("matches", new JSONArray(parsed.matches)))

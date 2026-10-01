@@ -11,7 +11,8 @@ public class HlsStreamFailureCheck {
  static class android {static class os {static class Build {static class VERSION {static final int SDK_INT=19;}}}}
  static final Charset UTF_8=StandardCharsets.UTF_8;
  static final int UPSTREAM_MAX_ATTEMPTS=3,UPSTREAM_CONNECT_TIMEOUT_MS=3500,UPSTREAM_READ_TIMEOUT_MS=5500,UPSTREAM_RETRY_DELAY_MS=250;
- static final String TAG="test";boolean running=true,failHeaders,failWritingHeaders,resumable,badRange,badEntity,ignoredRange,resumeFails;int opens;String resumeHeader,ifRange;
+ static final String TAG="test";boolean running=true,failHeaders,forbidden,failWritingHeaders,resumable,badRange,badEntity,ignoredRange,resumeFails;int opens;String resumeHeader,ifRange;
+ PlaybackHttpError.Attempt playbackHttpError=new PlaybackHttpError.Attempt();
  AtomicLong upstreamDownloadedBytes=new AtomicLong(),streamedResponseBytes=new AtomicLong(),streamedResponseCount=new AtomicLong();
  ThreadLocal<byte[]> streamCopyBuffer=new ThreadLocal<byte[]>(){protected byte[] initialValue(){return new byte[65536];}};
  static class Log{static void e(String t,String m,Exception e){}static void i(String t,String m){}}
@@ -32,7 +33,7 @@ public class HlsStreamFailureCheck {
  void writeStreamingHeaders(OutputStream o,int s,String t,long l,String r)throws IOException{o.write(("HTTP/1.1 "+s+"\r\nContent-Length: "+l+"\r\n\r\n").getBytes(UTF_8));o.flush();if(failWritingHeaders)throw new IOException("Injected header write failure");}
  HttpURLConnection openUpstreamConnection(String u)throws IOException{final int number=++opens;return new HttpURLConnection(new URL(u)){
   public void connect(){}public void disconnect(){}public boolean usingProxy(){return false;}
-  public int getResponseCode(){return failHeaders?500:resumable&&!(ignoredRange&&number>1)?206:200;}
+  public int getResponseCode(){return forbidden?403:failHeaders?500:resumable&&!(ignoredRange&&number>1)?206:200;}
   public String getContentType(){return "video/mp4";}public void setRequestProperty(String key,String value){if(number>1){if(key.equals("Range"))resumeHeader=value;if(key.equals("If-Range"))ifRange=value;}}
   public String getHeaderField(String s){
    if(!resumable)return null;
@@ -65,6 +66,8 @@ public class HlsStreamFailureCheck {
   check(body.indexOf("HTTP/1.1",1)<0&&!body.contains("Upstream failed"),"Partial headers must not get a second response");
   p.failWritingHeaders=false;p.failHeaders=true;s=new MemorySocket();p.handle(s);body=new String(s.bytes.toByteArray(),UTF_8);
   check(body.startsWith("HTTP/1.1 502")&&s.closed,"Pre-header failures must still return HTTP error");
+  p=new HlsStreamFailureCheck();p.forbidden=true;s=new MemorySocket();p.handle(s);body=new String(s.bytes.toByteArray(),UTF_8);
+  check(body.startsWith("HTTP/1.1 403")&&p.playbackHttpError.isForbidden(),"Upstream 403 must reach the player and diagnosis");
   p=new HlsStreamFailureCheck();p.resumable=true;s=new MemorySocket();p.handle(s);body=new String(s.bytes.toByteArray(),UTF_8);
   check(p.opens==2&&"bytes=66536-132071".equals(p.resumeHeader)&&"\"v1\"".equals(p.ifRange),"Resume wrong byte offset or missing If-Range");
   check(body.indexOf('W')-body.indexOf('V')==65536&&body.endsWith("WWWW"),"Resumed media duplicated or lost bytes");
@@ -79,6 +82,7 @@ public class HlsStreamFailureCheck {
   System.out.println("PASS validated byte-exact range resume, changed entity/range/200 rejection;  mid-body timeout closes stream without injecting HTTP error; pre-header failure returns 502");
  }
 }'''.replace('\n HANDLE\n',handle).replace('\n STREAM\n',stream)
+java += (root/'app/src/main/java/xiao/bu/tv/PlaybackHttpError.java').read_text(encoding='utf-8').replace('package xiao.bu.tv;', '').replace('import java.util.regex.Pattern;', '')
 out=root/'.codex-tmp/hls-stream-failure-test';out.mkdir(parents=True,exist_ok=True)
 f=out/'HlsStreamFailureCheck.java';f.write_text(java,encoding='utf-8');b=Path(os.environ['JAVA_HOME'])/'bin'
 subprocess.run([str(b/'javac.exe'),'-encoding','UTF-8',str(f)],check=True)

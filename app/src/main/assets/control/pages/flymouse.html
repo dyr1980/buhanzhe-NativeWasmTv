@@ -30,7 +30,7 @@
             <div class="actions">
               <button id="gyroButton" class="primary" onclick="enableGyroscope()">启用陀螺仪</button
               ><button onclick="openBrowserSettings()">浏览器配置</button
-              ><button onclick="location.href='/pages/media.html'">媒体控制</button>
+              ><button onclick="navigateTo('/pages/media.html')">媒体控制</button>
             </div>
             <div id="touchpad" class="touchpad">单指移动 · 长按拖动 · 双指滚动/缩放/轻点右键</div>
             <div class="actions">
@@ -192,9 +192,10 @@
       </div>
     </div>
     <div id="message" class="message"></div>
-    <script src="/js/common.js"></script>
-    <script src="/js/channel-picker.js"></script>
-    <script src="/js/pointer-queue.js"></script>
-    <script src="/js/pages/flymouse.js?v=6"></script>
+    <script src="/js/navigation.js?v=20260926"></script>
+    <script src="/js/common.js?v=20260926-nav"></script>
+    <script src="/js/channel-picker.js?v=20260926-nav"></script>
+    <script src="/js/pointer-queue.js?v=20260926-nav"></script>
+    <script src="/js/pages/flymouse.js?v=20260926-nav"></script>
   </body>
 </html>

@@ -9,6 +9,8 @@ import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
 import android.graphics.Color;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -18,6 +20,7 @@ import android.os.Bundle;
 import android.os.Build;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
+import android.util.Base64;
 import android.view.HapticFeedbackConstants;
 import android.view.View;
 import android.view.Gravity;
@@ -32,6 +35,7 @@ import android.widget.Toast;
 
 import java.util.Locale;
 import java.util.WeakHashMap;
+import java.io.ByteArrayOutputStream;
 
 public final class ManagementActivity extends Activity {
     // Accessed only on the main thread. Closing a page must not end its cast session.
@@ -53,6 +57,7 @@ public final class ManagementActivity extends Activity {
     private static final int SCREENSHOT_PERMISSION_REQUEST = 4602;
     private boolean screenshotPermissionPending;
     private boolean screenshotBusy;
+    private volatile String screenshotPreviewData;
     private WebView webView;
     private String managementUrl;
     private ValueCallback<Uri[]> filePathCallback;
@@ -75,9 +80,7 @@ public final class ManagementActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         sidebarDevice = usesSidebar(this);
-        setRequestedOrientation(sidebarDevice
-                ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                : ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        applyRequestedOrientation();
         openPages.put(this, Boolean.TRUE);
         applySystemUiVisibility();
         managementUrl = getIntent().getStringExtra(EXTRA_URL);
@@ -125,7 +128,28 @@ public final class ManagementActivity extends Activity {
     @SuppressLint("SetJavaScriptEnabled")
     private void createManagementWebView(String urlToLoad) {
         readSystemTheme();
-        webView = new WebView(this);
+        try {
+            webView = WebViewAvailability.create(() -> new WebView(this));
+        } catch (WebViewAvailability.UnavailableException error) {
+            pendingRendererRecovery = false;
+            android.util.Log.e("ManagementActivity", "WebView provider unavailable", error);
+            android.widget.LinearLayout panel = new android.widget.LinearLayout(this);
+            panel.setOrientation(android.widget.LinearLayout.VERTICAL);
+            panel.setGravity(Gravity.CENTER);
+            panel.setBackgroundColor(Color.rgb(247, 247, 248));
+            android.widget.TextView message = new android.widget.TextView(this);
+            message.setText(WebViewAvailability.MESSAGE + "\n也可在手机浏览器打开：\n" + managementUrl);
+            message.setTextColor(Color.DKGRAY);
+            message.setTextSize(18);
+            message.setGravity(Gravity.CENTER);
+            panel.addView(message);
+            android.widget.Button back = new android.widget.Button(this);
+            back.setText("返回");
+            back.setOnClickListener(view -> finish());
+            panel.addView(back);
+            setContentView(panel);
+            return;
+        }
         webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
         webView.setBackgroundColor(systemDark ? Color.rgb(17, 20, 25) : Color.rgb(247, 247, 248));
         // Several Android TV/tablet WebView implementations render a black frame when
@@ -156,7 +180,10 @@ public final class ManagementActivity extends Activity {
             @Override
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 if (view != webView) return;
-                if (!sidebarDevice) setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+                if (!sidebarDevice && !MultiWindowCompat.isInMultiWindowMode(
+                        ManagementActivity.this)) {
+                    setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+                }
                 if (isLocalControlPage(url)) currentPageUrl = url;
                 cancelLocalPointer();
                 // This bridge is only for our bundled touchpad, never a media website.
@@ -293,6 +320,16 @@ public final class ManagementActivity extends Activity {
     }
 
     private void applySystemUiVisibility() {
+        if (MultiWindowCompat.isInMultiWindowMode(this)) {
+            getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN);
+            getWindow().addFlags(
+                    android.view.WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN);
+            getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+            return;
+        }
+        getWindow().clearFlags(
+                android.view.WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN);
+        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN);
         int flags = View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
             flags |= View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
@@ -439,30 +476,49 @@ public final class ManagementActivity extends Activity {
     @Override
     public void onBackPressed() {
         if (webView != null && Build.VERSION.SDK_INT >= 19) {
-            webView.evaluateJavascript("(function(){return typeof window.mediaDismissSheet==='function' && window.mediaDismissSheet();})()",
+            final String backPageUrl = webView.getUrl();
+            webView.evaluateJavascript("(function(){return window.NtvNavigation ? NtvNavigation.back(true) : null;})()",
                     new ValueCallback<String>() {
                         @Override public void onReceiveValue(String value) {
-                            if (!"true".equals(value)) navigateBack();
+                            if (isFinishing() || webView == null
+                                    || !android.text.TextUtils.equals(backPageUrl, webView.getUrl())) return;
+                            if ("false".equals(value)) finish();
+                            else if (!"true".equals(value)) navigateBack();
                         }
                     });
             return;
         }
         if (webView != null) {
-            webView.loadUrl("javascript:(function(){if(!(typeof window.mediaDismissSheet==='function' && window.mediaDismissSheet()))NtvDevice.navigateBackAfterSheet();})()");
+            webView.loadUrl("javascript:(function(){var n=window.NtvNavigation;"
+                    + "if(!n)NtvDevice.navigateBackAfterSheet();"
+                    + "else if(!n.back(true))NtvDevice.closeManagement();})()");
             return;
         }
         navigateBack();
     }
 
     private void navigateBack() {
-        MainActivity owner=LocalPlayerRegistry.localInputOwner();
-        if(owner!=null && owner.backFromMultimedia())return;
-        if(owner!=null && owner.returnToRetainedWebPage()) {
-            finish();
-            return;
-        }
-        if (webView != null && webView.canGoBack()) {
-            webView.goBack();
+        // Fallback for unloaded/legacy pages. Never forward management Back to TV playback.
+        if (webView != null && isLocalControlPage(webView.getUrl())) {
+            String currentPath = Uri.parse(webView.getUrl()).getPath();
+            if ("/".equals(currentPath) || "/index.html".equals(currentPath)) {
+                finish();
+                return;
+            }
+            android.webkit.WebBackForwardList history = webView.copyBackForwardList();
+            int previous = history.getCurrentIndex() - 1;
+            if (previous >= 0) {
+                String url = history.getItemAtIndex(previous).getUrl();
+                String path = Uri.parse(url).getPath();
+                if (isLocalControlPage(url) && ("/".equals(path)
+                        || (path != null && path.endsWith(".html") && ControlSite.contains(path)))) {
+                    webView.goBack();
+                    return;
+                }
+            }
+            String home = Uri.parse(managementUrl).buildUpon().path("/index.html")
+                    .clearQuery().fragment(null).build().toString();
+            webView.loadUrl("javascript:location.replace(" + org.json.JSONObject.quote(home) + ")");
             return;
         }
         finish();
@@ -480,13 +536,62 @@ public final class ManagementActivity extends Activity {
         }
     }
 
+    /** A small display-only copy; the image saved to the gallery remains source resolution. */
+    private static ScreenshotPreview createScreenshotPreview(byte[] image) {
+        Bitmap bitmap = null;
+        try {
+            BitmapFactory.Options bounds = new BitmapFactory.Options();
+            bounds.inJustDecodeBounds = true;
+            BitmapFactory.decodeByteArray(image, 0, image.length, bounds);
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null;
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inSampleSize = 1;
+            while (Math.max(bounds.outWidth / options.inSampleSize,
+                    bounds.outHeight / options.inSampleSize) > 960) {
+                options.inSampleSize *= 2;
+            }
+            bitmap = BitmapFactory.decodeByteArray(image, 0, image.length, options);
+            if (bitmap == null) return null;
+            ByteArrayOutputStream output = new ByteArrayOutputStream(96 * 1024);
+            if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 78, output)) return null;
+            return new ScreenshotPreview("data:image/jpeg;base64,"
+                    + Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP),
+                    bounds.outWidth, bounds.outHeight);
+        } catch (RuntimeException ignored) {
+            return null;
+        } catch (OutOfMemoryError ignored) {
+            return null;
+        } finally {
+            if (bitmap != null) bitmap.recycle();
+        }
+    }
+
+    private static final class ScreenshotPreview {
+        final String dataUri;
+        final int width;
+        final int height;
+
+        ScreenshotPreview(String dataUri, int width, int height) {
+            this.dataUri = dataUri;
+            this.width = width;
+            this.height = height;
+        }
+    }
+
     private final class NativeDeviceBridge implements SensorEventListener {
+        @JavascriptInterface
+        public String consumeScreenshotPreview() {
+            String preview = screenshotPreviewData;
+            screenshotPreviewData = null;
+            return preview == null ? "" : preview;
+        }
+
         @JavascriptInterface
         public boolean returnFromSniffedResource() {
             MainActivity owner = LocalPlayerRegistry.localInputOwner();
             if (owner == null || !owner.hasRetainedWebPlayback() || !isLocalControlPage(currentPageUrl)) return false;
             runOnUiThread(() -> {
-                if (owner.returnToRetainedWebPage() && true) finish();
+                if (owner.returnToRetainedWebPage() && owner.isFinishing()) finish();
             });
             return true;
         }
@@ -503,6 +608,7 @@ public final class ManagementActivity extends Activity {
             runOnUiThread(new Runnable() {
                 @Override public void run() {
                     if (webView == null || isFinishing() || sidebarDevice
+                            || MultiWindowCompat.isInMultiWindowMode(ManagementActivity.this)
                             || !isLocalControlPage(webView.getUrl())
                             || !"/pages/flymouse.html".equals(Uri.parse(webView.getUrl()).getPath())) return;
                     setRequestedOrientation(landscape
@@ -516,6 +622,16 @@ public final class ManagementActivity extends Activity {
             runOnUiThread(new Runnable() {
                 @Override public void run() {
                     if (webView != null && !isFinishing() && isLocalControlPage(webView.getUrl())) ManagementActivity.this.navigateBack();
+                }
+            });
+        }
+        @JavascriptInterface
+        public void closeManagement() {
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    if (webView == null || !isLocalControlPage(webView.getUrl())) return;
+                    String path = Uri.parse(webView.getUrl()).getPath();
+                    if ("/".equals(path) || "/index.html".equals(path)) finish();
                 }
             });
         }
@@ -594,6 +710,7 @@ public final class ManagementActivity extends Activity {
                         return;
                     }
                     screenshotBusy = true;
+                    screenshotPreviewData = null;
                     final String url = Uri.parse(managementUrl).buildUpon()
                             .path(VideoScreenshot.PATH).clearQuery().fragment(null).build().toString();
                     Toast.makeText(ManagementActivity.this, "正在截取视频画面…", Toast.LENGTH_SHORT).show();
@@ -602,11 +719,27 @@ public final class ManagementActivity extends Activity {
                             try {
                                 final byte[] image = VideoScreenshot.download(url);
                                 ScreenshotGallery.save(getApplicationContext(), image);
+                                final ScreenshotPreview preview = createScreenshotPreview(image);
                                 runOnUiThread(new Runnable() {
                                     @Override public void run() {
                                         screenshotBusy = false;
-                                        Toast.makeText(ManagementActivity.this, "截图已保存到相册 Pictures/nTv",
+                                        Toast.makeText(ManagementActivity.this,
+                                                preview == null
+                                                        ? "原图已保存到相册，当前设备无法生成回显"
+                                                        : "原图已保存到相册 Pictures/nTv",
                                                 Toast.LENGTH_LONG).show();
+                                        if (preview != null && webView != null && !isFinishing()
+                                                && isLocalControlPage(webView.getUrl())
+                                                && "/pages/media.html".equals(
+                                                        Uri.parse(webView.getUrl()).getPath())) {
+                                            screenshotPreviewData = preview.dataUri;
+                                            String script = "window.mediaNativeScreenshotReady&&"
+                                                    + "window.mediaNativeScreenshotReady("
+                                                    + preview.width + "," + preview.height + ")";
+                                            if (Build.VERSION.SDK_INT >= 19)
+                                                webView.evaluateJavascript(script, null);
+                                            else webView.loadUrl("javascript:" + script);
+                                        }
                                     }
                                 });
                             } catch (final Exception error) {
@@ -803,6 +936,26 @@ public final class ManagementActivity extends Activity {
         super.onConfigurationChanged(configuration);
         readSystemTheme();
         refreshPageTheme();
+        applySystemUiVisibility();
+    }
+
+    @TargetApi(Build.VERSION_CODES.N)
+    @Override
+    public void onMultiWindowModeChanged(boolean inMultiWindowMode,
+            Configuration configuration) {
+        super.onMultiWindowModeChanged(inMultiWindowMode, configuration);
+        applyRequestedOrientation();
+        applySystemUiVisibility();
+    }
+
+    private void applyRequestedOrientation() {
+        if (MultiWindowCompat.isInMultiWindowMode(this)) {
+            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+            return;
+        }
+        setRequestedOrientation(sidebarDevice
+                ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                : ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
     }
 
     private void cancelLocalPointer() {

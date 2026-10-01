@@ -77,11 +77,3 @@ domain rules from the anti-AD official service at https://anti-ad.net/adguard.tx
 The rules are stored in the app data directory and are not bundled in the APK.
 
 License: MIT. Source: https://github.com/privacy-protection-tools/anti-AD
-
-## TextureRender (legacy screenshots)
-
-Only the upstream GLES TextureRender utility from android-transcoder is retained
-for one-shot video screenshots on old Android devices. No transcoding engine,
-encoder, capture service or casting sender is included.
-
-License: Apache-2.0. See `third_party/android-transcoder/LICENSE`.

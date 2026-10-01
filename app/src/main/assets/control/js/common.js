@@ -96,6 +96,7 @@ function isPageHidden() {
 }
 function startPage() {
   var firstShow = true;
+  rememberManagementNavigation();
   pageActive = !isPageHidden();
   refresh();
   window.addEventListener(
@@ -108,6 +109,7 @@ function startPage() {
   window.addEventListener(
     "pageshow",
     function (event) {
+      rememberManagementNavigation();
       pageActive = !isPageHidden();
       if (!firstShow || event.persisted) refresh();
       firstShow = false;
@@ -124,23 +126,16 @@ function startPage() {
   document.addEventListener("visibilitychange", visibilityChanged, false);
   document.addEventListener("webkitvisibilitychange", visibilityChanged, false);
 }
+function rememberManagementNavigation() {
+  if (window.NtvNavigation) window.NtvNavigation.init();
+}
+function navigateTo(url) {
+  if (window.NtvNavigation) return window.NtvNavigation.go(url);
+  return false;
+}
 function goBack() {
-  if (typeof window.mediaDismissSheet === "function" && window.mediaDismissSheet()) return;
-  if (window.NtvDevice && typeof NtvDevice.returnFromMultimedia === "function" && NtvDevice.returnFromMultimedia()) return;
-  if (window.NtvDevice && typeof NtvDevice.returnFromSniffedResource === "function" && NtvDevice.returnFromSniffedResource()) return;
-  if (typeof mediaState !== "undefined" && mediaState && mediaState.canReturnToWeb === true) {
-    api("/api/control", { action: "returnToWeb" }, function (error) {
-      if (error) { toast(error.message, true); return; }
-      mediaState.canReturnToWeb = false;
-      if (typeof refreshMediaController === "function") refreshMediaController();
-    });
-    return;
-  }
-  if (history.length > 1) {
-    history.back();
-    return;
-  }
-  location.replace(document.body.getAttribute("data-parent") || "/index.html");
+  if (window.NtvNavigation) window.NtvNavigation.back(false);
+  else location.replace("/index.html");
 }
 function toast(text, bad) {
   var el = document.getElementById("message");

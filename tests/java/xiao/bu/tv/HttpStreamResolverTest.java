@@ -29,6 +29,8 @@ public final class HttpStreamResolverTest {
         String base = "https://nflldr.oss-cn-beijing.aliyuncs.com/ku9js.txt#genre#";
         for (String invalid : new String[] {base + ",", "[" + base + "](" + base + "),",
                 "https://example.com/a b", "http://example.com/1.m3u8?mode=1&$8M FHD",
+                "http://rihou.cc:555/tv/[mg]CCTV-01",
+                "https://raw.giteeusercontent.com/lmx52038/tv/raw/master/%E6%B5%8B%E8%AF%95%E9%A2%91%E9%81%93.txt#group#",
                 "https:///missing-host", "file:///test", "", null}) {
             NetworkClient.reset();
             HttpStreamResolver.InvalidSourceUrlException detail = rejected(invalid);

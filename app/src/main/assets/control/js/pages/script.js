@@ -96,6 +96,8 @@ function renderScriptList() {
   summary.textContent = userScripts.length
     ? userScripts.length + " 个脚本 · " + enabled + " 个启用" : "暂无脚本";
   document.getElementById("addScriptButton").disabled = scriptSaveBusy || scriptImportBusy || userScripts.length >= 32;
+  document.getElementById("importLocalScriptButton").disabled = scriptSaveBusy || scriptImportBusy || userScripts.length >= 32;
+  document.getElementById("importScriptButton").disabled = scriptSaveBusy || scriptImportBusy;
   if (!userScripts.length) {
     var empty = document.createElement("div");
     empty.className = "hint script-empty";
@@ -180,6 +182,7 @@ function setUserScriptEnabled(id, enabled) {
 }
 
 function showScriptEditor(item, isNew, warnings) {
+  if (window.NtvNavigation) NtvNavigation.overlayOpen("script-editor", closeScriptEditor);
   editingScriptId = item.id;
   editingInstallUrl = item.installUrl || "";
   editingVersion = item.version || "";
@@ -205,7 +208,7 @@ function showScriptEditor(item, isNew, warnings) {
 }
 
 function importUserScriptFromUrl() {
-  if (scriptSaveBusy || scriptImportBusy) return;
+  if (scriptSaveBusy || scriptImportBusy || editingScriptId) return;
   var input = document.getElementById("scriptInstallUrl"),
     button = document.getElementById("importScriptButton"),
     url = input.value.replace(/^\s+|\s+$/g, "");
@@ -220,23 +223,80 @@ function importUserScriptFromUrl() {
     button.disabled = false;
     button.textContent = "导入";
     if (error) { toast(error.message, true); return; }
-    var imported = data && data.script;
-    if (!imported || !imported.source) { toast("脚本网站返回了无效内容", true); return; }
-    var installUrl = imported.installUrl || url, existing = null;
-    for (var i = 0; i < userScripts.length; i++) {
-      if (userScripts[i].installUrl === installUrl) { existing = userScripts[i]; break; }
-    }
-    if (!existing && userScripts.length >= 32) { toast("最多可配置 32 个脚本", true); return; }
     input.value = "";
-    showScriptEditor({
-      id: existing ? existing.id : newScriptId(),
-      name: imported.name || "",
-      enabled: existing ? existing.enabled : true,
-      source: imported.source,
-      installUrl: installUrl,
-      version: imported.version || ""
-    }, !existing, Array.isArray(data.warnings) ? data.warnings : []);
+    reviewImportedScript(data, url, "");
   }, 30000);
+}
+
+function reviewImportedScript(data, url, fileName) {
+  var imported = data && data.script;
+  if (!imported || !imported.source) { toast("导入内容无效", true); return; }
+  var installUrl = fileName ? "" : imported.installUrl || url, existing = null;
+  for (var i = 0; installUrl && i < userScripts.length; i++) {
+    if (userScripts[i].installUrl === installUrl) { existing = userScripts[i]; break; }
+  }
+  if (!existing && userScripts.length >= 32) { toast("最多可配置 32 个脚本", true); return; }
+  showScriptEditor({
+    id: existing ? existing.id : newScriptId(), name: imported.name || "",
+    enabled: existing ? existing.enabled : true, source: imported.source,
+    installUrl: installUrl, version: imported.version || ""
+  }, !existing, Array.isArray(data.warnings) ? data.warnings : []);
+  document.getElementById("scriptEditorTitle").textContent = existing ? "更新脚本" : "安装脚本";
+  editorDirty = true;
+  if (fileName) {
+    var info = document.getElementById("scriptImportInfo");
+    info.hidden = false;
+    info.textContent = "本地文件：" + fileName + (editingVersion ? " · 版本 " + editingVersion : "");
+  }
+}
+
+function chooseLocalUserScript() {
+  if (scriptSaveBusy || scriptImportBusy || editingScriptId) return;
+  if (userScripts.length >= 32) { toast("最多可配置 32 个脚本", true); return; }
+  if (typeof FileReader === "undefined") { toast("当前浏览器不支持读取文件，请使用手机或电脑浏览器", true); return; }
+  var input = document.getElementById("scriptLocalFile");
+  input.value = "";
+  input.click();
+}
+
+function importUserScriptFromFile(input) {
+  var file = input.files && input.files[0];
+  input.value = ""; // Allow selecting the same file again after cancel/failure.
+  if (!file || scriptSaveBusy || scriptImportBusy || editingScriptId) return;
+  if (userScripts.length >= 32) { toast("最多可配置 32 个脚本", true); return; }
+  if (!/\.js$/i.test(file.name || "")) { toast("请选择 .user.js 或 .js 脚本文件", true); return; }
+  if (file.size > 262144) { toast("脚本文件超过 256KB", true); return; }
+  scriptImportBusy = true;
+  renderScriptList();
+  var reader, readFinished = false, timer;
+  function finish(error, data) {
+    scriptImportBusy = false;
+    renderScriptList();
+    if (error) toast(error.message, true);
+    else reviewImportedScript(data, "", file.name);
+  }
+  function readDone(error) {
+    if (readFinished) return;
+    readFinished = true;
+    clearTimeout(timer);
+    if (error) { finish(error); return; }
+    var source = String(reader.result || "");
+    if (!source || source.length > 262144) {
+      finish(new Error(source ? "脚本文件超过 256KB" : "脚本文件为空")); return;
+    }
+    api("/api/user-script/import", { source: source, fileName: file.name }, finish);
+  }
+  try {
+    reader = new FileReader();
+    reader.onload = function () { readDone(null); };
+    reader.onerror = function () { readDone(new Error("文件读取失败，请重新选择")); };
+    reader.onabort = function () { readDone(new Error("文件读取已取消")); };
+    timer = setTimeout(function () {
+      readDone(new Error("文件读取超时，请重新选择"));
+      try { reader.abort(); } catch (ignored) {}
+    }, 15000);
+    reader.readAsText(file, "UTF-8");
+  } catch (error) { readDone(new Error("无法读取文件，请重新选择")); }
 }
 
 function createUserScript() {
@@ -254,8 +314,8 @@ function editUserScript(id) {
 function scriptEditorChanged() { editorDirty = true; }
 
 function closeScriptEditor(force) {
-  if (scriptSaveBusy) return;
-  if (!force && editorDirty && window.confirm && !window.confirm("放弃未保存的修改？")) return;
+  if (scriptSaveBusy) return false;
+  if (!force && editorDirty && window.confirm && !window.confirm("放弃未保存的修改？")) return false;
   editingScriptId = "";
   editingInstallUrl = "";
   editingVersion = "";
@@ -265,6 +325,8 @@ function closeScriptEditor(force) {
   document.getElementById("scriptListSection").hidden = false;
   document.getElementById("scriptImportSection").hidden = false;
   renderScriptList();
+  if (window.NtvNavigation) NtvNavigation.overlayClosed("script-editor");
+  return true;
 }
 
 function scriptPageBack() {

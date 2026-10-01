@@ -143,6 +143,46 @@ final class HlsProxyServer implements Closeable {
     private volatile String requestedVideoVariant = "";
     private volatile boolean byteRangeMediaPlaylist;
     private final HlsSegmentBitrate segmentBitrate = new HlsSegmentBitrate();
+    private final PlaybackHttpError.Attempt playbackHttpError = new PlaybackHttpError.Attempt();
+    private final AtomicInteger sourceVideoProbeAttempts = new AtomicInteger();
+    private volatile boolean sourceVideoProbeEnabled;
+    private volatile float sourceVideoFrameRate;
+    private volatile int sourceVideoWidth;
+    private volatile int sourceVideoHeight;
+    private volatile long lastMediaSegmentServedAt;
+    private volatile int selectedVariantWidth;
+    private volatile int selectedVariantHeight;
+    private volatile int selectedVariantBandwidth;
+    private volatile String sourceAudioCodec = "--";
+
+    void beginPlaybackAttempt() {
+        playbackHttpError.reset();
+        sourceVideoProbeEnabled = false;
+        sourceVideoProbeAttempts.set(0);
+        sourceVideoFrameRate = 0f;
+        sourceVideoWidth = 0;
+        sourceVideoHeight = 0;
+        lastMediaSegmentServedAt = 0L;
+        selectedVariantWidth = 0;
+        selectedVariantHeight = 0;
+        selectedVariantBandwidth = 0;
+        sourceAudioCodec = "--";
+    }
+    boolean wasPlaybackForbidden() { return playbackHttpError.isForbidden(); }
+    void enableSourceVideoProbe() { sourceVideoProbeEnabled = true; }
+    float sourceVideoFrameRate() { return sourceVideoFrameRate; }
+    int sourceVideoWidth() { return sourceVideoWidth; }
+    int sourceVideoHeight() { return sourceVideoHeight; }
+    boolean servedMediaSegmentRecently(long maxAgeMs) {
+        long last = lastMediaSegmentServedAt;
+        return last > 0L && SystemClock.elapsedRealtime() - last <= maxAgeMs;
+    }
+    String selectedVariantDescription() {
+        return selectedVariantWidth > 0 && selectedVariantHeight > 0
+                ? selectedVariantWidth + "x" + selectedVariantHeight + " / "
+                        + (selectedVariantBandwidth / 1000) + " kbps" : "unknown";
+    }
+    String sourceAudioCodec() { return sourceAudioCodec; }
 
     long measuredMediaBitrate(boolean video) {
         return segmentBitrate.bitrate(video, SystemClock.elapsedRealtime());
@@ -375,6 +415,16 @@ final class HlsProxyServer implements Closeable {
         return "http://127.0.0.1:" + serverSocket.getLocalPort() + "/proxy/" + token;
     }
 
+    /** Android 4.0 selects its native HLS engine from the URL's m3u8 suffix. */
+    String systemPlayerHlsUrl(String originUrl) {
+        return proxyUrl(originUrl) + ".m3u8";
+    }
+
+    /** Keep the MP3 type visible to Android 4.0's native media service. */
+    String systemPlayerMp3Url(String originUrl) {
+        return mediaUrl(originUrl) + ".mp3";
+    }
+
     private HttpURLConnection openUpstreamConnection(String originUrl) throws IOException {
         return carrierNetworkRoute.openConnection(originUrl, carrierIptvSession);
     }
@@ -504,6 +554,7 @@ final class HlsProxyServer implements Closeable {
     }
 
     private void handle(Socket socket) {
+        final long httpAttempt = playbackHttpError.token();
         try {
             socket.setSoTimeout(15000);
             socket.setTcpNoDelay(true);
@@ -527,6 +578,11 @@ final class HlsProxyServer implements Closeable {
             }
 
             String token = path.substring(prefix.length());
+            if (!directMedia && token.endsWith(".m3u8")) {
+                token = token.substring(0, token.length() - ".m3u8".length());
+            } else if (directMedia && token.endsWith(".mp3")) {
+                token = token.substring(0, token.length() - ".mp3".length());
+            }
             String originUrl = new String(Base64.decode(token, Base64.URL_SAFE), UTF_8);
             if (!needsCjsTransform(originUrl) && (directMedia || canStreamWithoutRewrite(originUrl))
                     && !hasAesSegmentKey(originUrl)
@@ -538,7 +594,12 @@ final class HlsProxyServer implements Closeable {
             if (!running) {
                 return;
             }
+            boolean transportStream = isTransportStream(originUrl, response.contentType);
+            if (sourceVideoProbeEnabled && transportStream) {
+                sampleSourceVideo(response.body);
+            }
             writeOk(output, response.contentType, response.body);
+            if (transportStream) lastMediaSegmentServedAt = SystemClock.elapsedRealtime();
             if (rangeHeader == null) {
                 HlsSegmentBitrate.Sample sample = segmentBitrate.begin(originUrl);
                 if (sample != null) {
@@ -551,6 +612,7 @@ final class HlsProxyServer implements Closeable {
                 return;
             }
             Log.e(TAG, "Proxy request failed", error);
+            playbackHttpError.record(httpAttempt, error);
             // The player already received a 200/206 header and part of the media.
             // Close that response so its HTTP reader can reconnect; appending a
             // second HTTP error response here corrupts the compressed stream.
@@ -558,7 +620,9 @@ final class HlsProxyServer implements Closeable {
                 return;
             }
             try {
-                writeError(socket.getOutputStream(), 502, "Upstream failed");
+                boolean forbidden = PlaybackHttpError.isForbidden(error);
+                writeError(socket.getOutputStream(), forbidden ? 403 : 502,
+                        forbidden ? "Forbidden" : "Upstream failed");
             } catch (IOException ignored) {
                 // The player may already have closed the connection.
             }
@@ -1058,6 +1122,7 @@ final class HlsProxyServer implements Closeable {
                 audioRank = rank;
             }
         }
+        rememberSelectedVariant(selected);
         manifest.selectedVideoUrl = base.resolve(selected.uri).toString();
         StringBuilder result = new StringBuilder(512);
         result.append("#EXTM3U\n");
@@ -1079,7 +1144,8 @@ final class HlsProxyServer implements Closeable {
                 .append(proxyUrl(base.resolve(selected.uri).toString())).append('\n');
         Log.i(TAG, "Selected generic HLS variant quality=" + variantQualityMode
                 + " choices=" + variants.size() + " bandwidth=" + selected.bandwidth
-                + " advertised=" + selected.width + "x" + selected.height);
+                + " advertised=" + selected.width + "x" + selected.height
+                + " codecs=" + HlsMediaTracks.attributes(selected.info).get("CODECS"));
         return result.toString();
     }
 
@@ -2209,7 +2275,6 @@ final class HlsProxyServer implements Closeable {
             return "#EXTM3U\n";
         }
         sortVariants(variants);
-
         String requestedQuality = configuredVariantQualityEnabled
                 ? variantQualityMode : VARIANT_QUALITY_HIGH;
         int preferredIndex = preferredVariantIndex(variants.size(), requestedQuality);
@@ -2221,14 +2286,22 @@ final class HlsProxyServer implements Closeable {
             selected = selectAvailableVariant(base, variants, preferredIndex, requestedQuality);
         }
         Variant variant = selected.variant;
+        rememberSelectedVariant(variant);
         Log.i(TAG, "Selected HLS variant quality=" + requestedQuality
                 + " choices=" + variants.size()
                 + " bandwidth=" + variant.bandwidth
                 + " advertised=" + variant.width + "x" + variant.height
+                + " codecs=" + HlsMediaTracks.attributes(variant.info).get("CODECS")
                 + " actual=" + selected.actualDescription()
                 + " uri=" + variant.uri);
         return "#EXTM3U\n" + variant.info + '\n'
                 + proxyUrl(base.resolve(variant.uri).toString()) + '\n';
+    }
+
+    private void rememberSelectedVariant(Variant variant) {
+        selectedVariantWidth = variant.width;
+        selectedVariantHeight = variant.height;
+        selectedVariantBandwidth = variant.bandwidth;
     }
 
     private static int preferredVariantIndex(int count, String qualityMode) {
@@ -3101,6 +3174,125 @@ final class HlsProxyServer implements Closeable {
             Thread.currentThread().interrupt();
         }
         Log.i(TAG, "Proxy closed port=" + port);
+    }
+
+    private void sampleSourceVideo(byte[] body) {
+        if (body == null || body.length < 188 * 16
+                || sourceVideoFrameRate > 0f && !"--".equals(sourceAudioCodec)
+                || sourceVideoProbeAttempts.incrementAndGet() > 6) return;
+        // Only inspect a short prefix of an already-decrypted segment. Android 4.0's
+        // MediaPlayer exposes neither output FPS nor reliable HLS video dimensions.
+        byte[] sample = Arrays.copyOf(body, Math.min(body.length, TS_RESOLUTION_PROBE_BYTES));
+        try {
+            String audioCodec = parseTransportStreamAudioCodec(sample);
+            if (!"--".equals(audioCodec)) sourceAudioCodec = audioCodec;
+            float frameRate = parseTransportStreamFrameRate(sample);
+            if (frameRate <= 0f) return;
+            sourceVideoFrameRate = frameRate;
+            Resolution resolution = parseTransportStreamResolution(sample);
+            if (resolution != null) {
+                sourceVideoWidth = resolution.width;
+                sourceVideoHeight = resolution.height;
+            }
+            Log.i(TAG, "HLS source video " + sourceVideoWidth + "x" + sourceVideoHeight
+                    + " " + frameRate + " fps (PTS)");
+        } catch (RuntimeException error) {
+            // Metadata sampling must never interrupt delivery of a playable segment.
+            Log.w(TAG, "Unable to sample HLS source video", error);
+        }
+    }
+
+    static String parseTransportStreamAudioCodec(byte[] ts) {
+        int pmtPid = -1;
+        for (int offset = 0; offset + 188 <= ts.length; offset += 188) {
+            if (ts[offset] != 0x47 || (ts[offset + 1] & 0x40) == 0) continue;
+            int payload = payloadOffset(ts, offset);
+            if (payload < 0) continue;
+            byte[] section = psiSection(ts, payload, offset + 188);
+            if (section == null || section.length < 16) continue;
+            int pid = ((ts[offset + 1] & 0x1f) << 8) | (ts[offset + 2] & 0xff);
+            if (pid == 0) {
+                for (int index = 8; index + 4 <= section.length - 4; index += 4) {
+                    int program = ((section[index] & 0xff) << 8) | (section[index + 1] & 0xff);
+                    if (program != 0) {
+                        pmtPid = ((section[index + 2] & 0x1f) << 8)
+                                | (section[index + 3] & 0xff);
+                        break;
+                    }
+                }
+            } else if (pid == pmtPid) {
+                int programInfoLength = ((section[10] & 0x0f) << 8) | (section[11] & 0xff);
+                int index = 12 + programInfoLength;
+                while (index + 5 <= section.length - 4) {
+                    int streamType = section[index] & 0xff;
+                    int infoLength = ((section[index + 3] & 0x0f) << 8)
+                            | (section[index + 4] & 0xff);
+                    if (streamType == 0x0f) return "AAC";
+                    if (streamType == 0x11) return "AAC-LATM";
+                    if (streamType == 0x03 || streamType == 0x04) return "MP3";
+                    if (streamType == 0x81) return "AC-3";
+                    if (streamType == 0x87) return "E-AC-3";
+                    if (streamType == 0x06) {
+                        int end = Math.min(index + 5 + infoLength, section.length - 4);
+                        for (int descriptor = index + 5; descriptor + 2 <= end;) {
+                            int tag = section[descriptor] & 0xff;
+                            int length = section[descriptor + 1] & 0xff;
+                            if (descriptor + 2 + length > end) break;
+                            if (tag == 0x6a) return "AC-3";
+                            if (tag == 0x7a) return "E-AC-3";
+                            descriptor += 2 + length;
+                        }
+                    }
+                    index += 5 + infoLength;
+                }
+            }
+        }
+        return "--";
+    }
+
+    static float parseTransportStreamFrameRate(byte[] ts) {
+        int videoPid = findVideoPid(ts);
+        if (videoPid < 0) return 0f;
+        long[] timestamps = new long[160];
+        int count = 0;
+        for (int offset = 0; offset + 188 <= ts.length && count < timestamps.length;
+                offset += 188) {
+            if (ts[offset] != 0x47
+                    || (((ts[offset + 1] & 0x1f) << 8) | (ts[offset + 2] & 0xff)) != videoPid
+                    || (ts[offset + 1] & 0x40) == 0) continue;
+            int pes = payloadOffset(ts, offset);
+            if (pes < 0 || pes + 14 > offset + 188 || ts[pes] != 0
+                    || ts[pes + 1] != 0 || ts[pes + 2] != 1
+                    || (ts[pes + 3] & 0xf0) != 0xe0
+                    || (ts[pes + 7] & 0x80) == 0
+                    || (ts[pes + 8] & 0xff) < 5) continue;
+            long pts = ((long) (ts[pes + 9] & 0x0e) << 29)
+                    | ((long) (ts[pes + 10] & 0xff) << 22)
+                    | ((long) (ts[pes + 11] & 0xfe) << 14)
+                    | ((long) (ts[pes + 12] & 0xff) << 7)
+                    | ((ts[pes + 13] & 0xfe) >>> 1);
+            boolean duplicate = false;
+            for (int index = 0; index < count; index++) {
+                if (timestamps[index] == pts) { duplicate = true; break; }
+            }
+            if (duplicate) continue;
+            timestamps[count++] = pts;
+        }
+        if (count < 8) return 0f;
+        Arrays.sort(timestamps, 0, count);
+        long[] intervals = new long[count - 1];
+        int intervalCount = 0;
+        for (int index = 1; index < count; index++) {
+            long interval = timestamps[index] - timestamps[index - 1];
+            if (interval >= 750L && interval <= 18000L)
+                intervals[intervalCount++] = interval;
+        }
+        if (intervalCount < 6) return 0f;
+        Arrays.sort(intervals, 0, intervalCount);
+        // Segment boundaries and B-frame reordering can leave a missing PTS.
+        // The median interval preserves the advertised cadence in that case.
+        float rate = 90000f / intervals[intervalCount / 2];
+        return rate >= 5f && rate <= 120f ? rate : 0f;
     }
 
     private static Resolution parseTransportStreamResolution(byte[] ts) {

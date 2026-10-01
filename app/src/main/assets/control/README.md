@@ -6,12 +6,16 @@
 index.html             一级入口
 pages/*.html           独立二级页面（groups 是频道配置的子页面）
 css/common.css         全站公共样式
-js/common.js           HTTP 请求、连接状态、页面生命周期、返回导航
+js/common.js           HTTP 请求、连接状态、页面生命周期
+js/navigation.js       多页来源记录、弹层历史与统一返回（不依赖 referrer）
 js/pointer-queue.js    飞鼠串行事件队列，逐帧合并移动、保留按键边界
 js/pages/*.js          对应页面的渲染和交互逻辑
 ```
 
-- 页面通过真实 HTML 地址跳转，不使用 hash 路由。APP 内的返回按钮和系统返回键均调用 WebView 返回堆栈；普通浏览器使用 `history.back()`，没有历史时回到父页面。
+- 页面通过真实 HTML 地址跳转，不使用 hash 路由。内部链接与按钮统一经过 `NtvNavigation.go` / `navigateTo`。一次性来源令牌通过当前标签页的 sessionStorage 传递，接收后去掉 URL 参数；页面编号、可信上一页、安全首页兜底与界面状态保存在 history.state。不依赖 referrer、history.length 或“历史必须含首页”。禁用存储时安全降级回首页。
+- 返回按钮和 APP 系统返回共用 `NtvNavigation.back`：先关闭弹层，再返回可信管理页，无来源则 replace 到首页。弹层使用一个同文档历史项，浏览器返回关闭顶部弹层；手动关闭、弹层切换、编辑取消和刷新均清理/恢复该项，避免幽灵返回。新增弹层必须调用 overlayOpen/overlayClosed，关闭函数返回 false 可阻止丢弃编辑。
+- 首页不拦截浏览器离站；APP 首页系统返回只 finish 管理 Activity，绝不调用播放器返回或退出。脚本不可用时原生仅回紧邻的本站管理页，或替换为首页。
+- 飞鼠离页保存模式、输入草稿、键盘展开状态，停止连发和传感器，按输入队列顺序取消鼠标按下后跳转（网络故障最多等待 1.5 秒）。返回保留界面但不会自动重启陀螺仪。普通页面滚动位置按历史项恢复；媒体控制离页只停止控制端轮询，不控制电视播放。
 - `ControlSite.java` 是本地 HTTP 服务的静态资源白名单，新增页面或依赖时同步登记。所有 API 保持 `/api/…` 原地址。
 - 每个页面只加载公共脚本和自己的脚本。飞鼠传感器与媒体轮询在各自页面退出/隐藏时暂停；浏览器返回后恢复。
 - 频道配置中未保存的源和 EPG 输入保存在当前标签页的 sessionStorage；电视端配置发生变化时，不用旧草稿覆盖新配置。

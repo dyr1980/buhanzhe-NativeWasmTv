@@ -5,6 +5,22 @@ import java.io.FileReader;
 import java.io.IOException;
 
 public final class NtvApplication extends Application {
+    @Override public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        if (level >= TRIM_MEMORY_RUNNING_LOW) trimCaches();
+    }
+
+    @Override public void onLowMemory() {
+        super.onLowMemory();
+        trimCaches();
+    }
+
+    private static void trimCaches() {
+        AlbumArtLoader.trimMemory();
+        WebPageScriptManager.trimMemory();
+        WebAdBlocker.trimMemory();
+    }
+
     @Override
     public void onCreate() {
         super.onCreate();

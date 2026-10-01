@@ -28,3 +28,7 @@ reports/
 scripts/*
 !scripts/build-launcher-mark.py
 !scripts/build-tv-banner.py
+/docs
+/docs
+/tests
+userscripts/

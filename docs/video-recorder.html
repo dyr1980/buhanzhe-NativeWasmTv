@@ -83,6 +83,10 @@
 </main>
 
 <script>
+// The independently hosted recorder has no management assets. Load navigation only on the receiver route.
+if(location.pathname==='/video-recorder.html'&&(location.port||/[?&]__ntvNav=/.test(location.search)))document.write('<script src="/js/navigation.js?v=20260926"><\/script>');
+</script>
+<script>
 /* Browser shim used by the HLS parser for ordinary web fetches. */
 (function(){
   function fetchForMux(message,callback){
@@ -128,7 +132,7 @@ async function captureVideoScreenshot(){
 }
 window.addEventListener('unload',function(){if(screenshotUrl)URL.revokeObjectURL(screenshotUrl)});
 
-function backToManager(){if(window.NtvDevice&&NtvDevice.navigateBack){NtvDevice.navigateBack();return}if(history.length>1){history.back();return}if(baseUrl)location.replace(baseUrl+'/pages/media.html')}
+function backToManager(){if(window.NtvNavigation){NtvNavigation.back(false);return}if(window.NtvDevice&&NtvDevice.navigateBack){NtvDevice.navigateBack();return}if(baseUrl)location.replace(baseUrl+'/index.html')}
 function isLoopbackHost(host){host=String(host||'').toLowerCase().replace(/^\[|\]$/g,'');return host==='127.0.0.1'||host==='localhost'||host==='::1'||host==='0.0.0.0'||/^127\./.test(host)}
 function sanitizeHost(host){return String(host||'').replace(/^https?:\/\//i,'').replace(/[\/?#].*$/,'').replace(/:\d+$/,'').trim()}
 function localFetch(url,options){options=options||{};options.cache='no-store';options.mode='cors';try{options.targetAddressSpace=isLoopbackHost(tvHost)?'loopback':'local';return fetch(new Request(url,options))}catch(error){delete options.targetAddressSpace;return fetch(url,options)}}

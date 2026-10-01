@@ -40,6 +40,11 @@ final class WebAdBlocker {
         if (current != null) current.refreshAsync(force);
     }
 
+    static void trimMemory() {
+        AdBlockRuleStore current = rules;
+        if (current != null) current.trimMemory();
+    }
+
     static int ruleCount() { return rules == null ? 0 : rules.ruleCount(); }
     static long lastUpdatedAt() { return rules == null ? 0L : rules.lastUpdatedAt(); }
     static String version() { return rules == null ? "" : rules.version(); }

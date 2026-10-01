@@ -47,7 +47,7 @@ public final class CjsV5Instrumentation extends Instrumentation {
   };
   if(!reuse)isolated.getSharedPreferences("cjs_sites_v5",0).edit().clear().commit();
   CjsPluginRuntime.initialize(isolated);NetworkClient.initialize(isolated);
-  check(CjsNativeProfile.select("armeabi-v7a",14).equals("armv7-base"),"API14");check(CjsNativeProfile.select("armeabi-v7a",18).equals("armv7-base"),"API18");check(CjsNativeProfile.select("armeabi-v7a",19).equals("armv7-perf"),"API19");check(CjsNativeProfile.select("armeabi-v7a",25).equals("armv7-perf"),"32-bit process on 64-bit device");check(CjsNativeProfile.select("arm64-v8a",21).equals("arm64"),"API21");
+  check(CjsNativeProfile.select("armeabi-v7a",14).equals("armv7-base"),"API14");check(CjsNativeProfile.select("armeabi-v7a",18).equals("armv7-base"),"API18");check(CjsNativeProfile.select("armeabi-v7a",19).equals("armv7-perf"),"API19");check(CjsNativeProfile.select("armeabi-v7a",25).equals("armv7-perf"),"32-bit process on 64-bit device");check(CjsNativeProfile.select("arm64-v8a",21).equals("arm64"),"API21");check(CjsNativeProfile.select("x86",14).equals("x86"),"x86 API14");check(CjsNativeProfile.minSdk("x86")==14,"x86 minSdk");
   startServer();CjsPluginRuntime.setManifestUrl("http://127.0.0.1:"+server.getLocalPort()+"/catalog.json");
   String[] sites={"tv.cctv.com","tv.gxtv.cn","yangshipin.cn"};String[] modules={"cctv","gxtv","yangshipin"};
   for(String id:sites){if(reuse)check(CjsPluginRuntime.isInstalled(id),"offline cache missing "+id);else CjsPluginRuntime.installOrUpdate(id);}

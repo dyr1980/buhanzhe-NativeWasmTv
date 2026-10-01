@@ -5,8 +5,9 @@ import android.graphics.Bitmap;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
+import android.util.Log;
 import android.view.PixelCopy;
-import android.view.SurfaceView;
 
 import org.json.JSONObject;
 
@@ -21,8 +22,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /** One-shot copies only: no recording permission, extra decoder or per-frame work. */
 final class VideoScreenshot {
+    private static final String TAG = "VideoScreenshot";
     static final String PATH = "/api/recording/screenshot";
-    private static final int MAX_BYTES = 12 * 1024 * 1024;
+    // Allow detailed full-resolution captures without silently downscaling them.
+    private static final int MAX_BYTES = 64 * 1024 * 1024;
+    private static final int PREVIEW_WIDTH = 640;
+    private static final int PREVIEW_HEIGHT = 360;
     private final AtomicBoolean busy = new AtomicBoolean();
 
     interface Source {
@@ -30,27 +35,39 @@ final class VideoScreenshot {
     }
 
     static final class Target {
-        final SurfaceView view;
+        final DirectVideoView view;
         final Object session;
         final int width;
         final int height;
 
-        Target(SurfaceView view, Object session, int width, int height) {
+        Target(DirectVideoView view, Object session, int width, int height) {
             this.view = view;
             this.session = session;
-            float scale = Math.min(1f, Math.min(1920f / width, 1080f / height));
-            this.width = Math.max(1, Math.round(width * scale));
-            this.height = Math.max(1, Math.round(height * scale));
+            this.width = Math.max(1, width);
+            this.height = Math.max(1, height);
+        }
+
+        Target forPreview() {
+            float scale = Math.min(1f, Math.min((float) PREVIEW_WIDTH / width,
+                    (float) PREVIEW_HEIGHT / height));
+            return new Target(view, session, Math.max(1, Math.round(width * scale)),
+                    Math.max(1, Math.round(height * scale)));
         }
     }
 
     byte[] capture(final Source source) throws IOException {
-        if (Build.VERSION.SDK_INT < 24) {
-            return captureLegacy(source);
+        return capture(source, false);
+    }
+
+    byte[] capturePreview(final Source source) throws IOException {
+        return capture(source, true);
+    }
+
+    private byte[] capture(final Source source, final boolean preview) throws IOException {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            return captureTexture(source, preview);
         }
-        if (!busy.compareAndSet(false, true)) {
-            throw new IOException("正在截屏，请稍后再试");
-        }
+        acquire(preview);
         final Capture request = new Capture();
         final Handler main = new Handler(Looper.getMainLooper());
         main.post(new Runnable() {
@@ -62,6 +79,7 @@ final class VideoScreenshot {
                 Bitmap bitmap = null;
                 try {
                     Target target = source.current();
+                    if (preview) target = target.forPreview();
                     bitmap = Bitmap.createBitmap(target.width, target.height,
                             Bitmap.Config.ARGB_8888);
                     requestCopy(source, target, bitmap, request, main);
@@ -86,11 +104,7 @@ final class VideoScreenshot {
             throw error;
         }
         try {
-            ByteArrayOutputStream output = new ByteArrayOutputStream();
-            if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
-                throw new IOException("截屏图片生成失败");
-            }
-            return output.toByteArray();
+            return encode(bitmap, preview);
         } catch (OutOfMemoryError error) {
             throw new IOException("内存不足，暂时无法保存截屏");
         } finally {
@@ -102,66 +116,87 @@ final class VideoScreenshot {
     private static <T> T onMain(java.util.concurrent.Callable<T> action) throws IOException {
         java.util.concurrent.FutureTask<T> task = new java.util.concurrent.FutureTask<T>(action);
         new Handler(Looper.getMainLooper()).post(task);
-        try { return task.get(8, TimeUnit.SECONDS); }
-        catch (Exception error) { task.cancel(false); throw new IOException("截图切换输出失败", error); }
+        try {
+            return task.get(8, TimeUnit.SECONDS);
+        } catch (java.util.concurrent.ExecutionException error) {
+            Throwable cause = error.getCause();
+            if (cause instanceof IOException) throw (IOException) cause;
+            throw new IOException("截图读取画面失败", cause);
+        } catch (java.util.concurrent.TimeoutException error) {
+            task.cancel(false);
+            throw new IOException("截图读取超时", error);
+        } catch (InterruptedException error) {
+            task.cancel(false);
+            Thread.currentThread().interrupt();
+            throw new IOException("截图已取消", error);
+        }
     }
 
-    private byte[] captureLegacy(final Source source) throws IOException {
-        if (!busy.compareAndSet(false, true)) throw new IOException("正在截屏，请稍后再试");
-        LegacyVideoFrame frame = null;
+    private byte[] captureTexture(final Source source, boolean preview) throws IOException {
+        acquire(preview);
         Bitmap bitmap = null;
-        Target target = null;
+        long started = SystemClock.elapsedRealtime();
         try {
-            target = onMain(() -> source.current());
-            if (!(target.session instanceof tv.danmaku.ijk.media.player.IMediaPlayer))
-                throw new IOException("当前播放器不支持截图");
+            Target selected = onMain(() -> source.current());
+            final Target target = preview ? selected.forPreview() : selected;
+            if (!target.view.usesTextureOutput())
+                throw new IOException("当前视频输出不支持纹理截图");
             final Target current = target;
-            frame = new LegacyVideoFrame(target.width, target.height);
-            final android.view.Surface surface = frame.surface();
-            onMain(() -> {
+            // TextureView has received the decoder output since playback began.
+            // Read one source-size frame without changing MediaPlayer's Surface or codec state.
+            bitmap = onMain(() -> {
                 if (source.current().session != current.session) throw new IOException("频道已切换，请重试");
-                tv.danmaku.ijk.media.player.IMediaPlayer player =
-                        (tv.danmaku.ijk.media.player.IMediaPlayer) current.session;
-                player.setDisplay(null);
-                player.setSurface(surface);
-                return null;
+                return current.view.captureTextureFrame(current.width, current.height);
             });
-            bitmap = frame.read();
+            if (bitmap == null) throw new IOException("未收到截图画面，请在播放时重试");
             onMain(() -> {
                 if (source.current().session != current.session) throw new IOException("频道已切换，请重试");
                 return null;
             });
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)) throw new IOException("截图图片生成失败");
-            return out.toByteArray();
+            long copied = SystemClock.elapsedRealtime();
+            byte[] bytes = encode(bitmap, preview);
+            Log.i(TAG, (preview ? "Preview" : "Screenshot") + " size="
+                    + target.width + "x" + target.height + " readMs=" + (copied - started)
+                    + " encodeMs=" + (SystemClock.elapsedRealtime() - copied)
+                    + " bytes=" + bytes.length);
+            return bytes;
         } catch (OutOfMemoryError error) {
             throw new IOException("内存不足，暂时无法截图");
         } finally {
-            final Target restore = target;
-            try {
-                if (restore != null) onMain(() -> {
-                    Target active;
-                    try { active = source.current(); } catch (IOException stopped) { return null; }
-                    if (active.session == restore.session) {
-                        tv.danmaku.ijk.media.player.IMediaPlayer player =
-                                (tv.danmaku.ijk.media.player.IMediaPlayer) restore.session;
-                        player.setSurface(null);
-                        player.setDisplay(restore.view.getHolder());
-                    }
-                    return null;
-                });
-            } finally {
-                if (bitmap != null) bitmap.recycle();
-                if (frame != null) frame.close();
-                busy.set(false);
-            }
+            if (bitmap != null) bitmap.recycle();
+            busy.set(false);
         }
+    }
+
+    private void acquire(boolean preview) throws IOException {
+        if (busy.compareAndSet(false, true)) return;
+        // The explicit screenshot may arrive just after the controller's tiny preview.
+        // Give that one-shot preview a moment to finish rather than rejecting the tap.
+        long deadline = SystemClock.elapsedRealtime() + (preview ? 0L : 1500L);
+        while (SystemClock.elapsedRealtime() < deadline) {
+            try {
+                Thread.sleep(40L);
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new IOException("截图已取消", error);
+            }
+            if (busy.compareAndSet(false, true)) return;
+        }
+        throw new IOException("正在截屏，请稍后再试");
+    }
+
+    private static byte[] encode(Bitmap bitmap, boolean preview) throws IOException {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        if (!bitmap.compress(Bitmap.CompressFormat.JPEG, preview ? 78 : 95, output)) {
+            throw new IOException(preview ? "预览图片生成失败" : "截图图片生成失败");
+        }
+        return output.toByteArray();
     }
 
     @TargetApi(24)
     private void requestCopy(final Source source, final Target target, final Bitmap bitmap,
             final Capture request, Handler handler) {
-        PixelCopy.request(target.view, bitmap, new PixelCopy.OnPixelCopyFinishedListener() {
+        PixelCopy.request(target.view.getSurfaceView(), bitmap, new PixelCopy.OnPixelCopyFinishedListener() {
             @Override public void onPixelCopyFinished(int result) {
                 IOException failure = null;
                 try {
@@ -203,7 +238,7 @@ final class VideoScreenshot {
         Bitmap await() throws IOException {
             boolean completed = false;
             try {
-                completed = ready.await(5, TimeUnit.SECONDS);
+                completed = ready.await(20, TimeUnit.SECONDS);
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
             }
@@ -223,7 +258,7 @@ final class VideoScreenshot {
     static byte[] download(String url) throws IOException {
         HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
         connection.setConnectTimeout(4000);
-        connection.setReadTimeout(10000);
+        connection.setReadTimeout(60000);
         connection.setUseCaches(false);
         connection.setInstanceFollowRedirects(false);
         try {
@@ -250,10 +285,16 @@ final class VideoScreenshot {
                         .optString("message", message); } catch (Exception ignored) { }
                 throw new IOException(message);
             }
-            if (bytes.length < 8 || bytes[0] != (byte) 137 || bytes[1] != 80
-                    || bytes[2] != 78 || bytes[3] != 71 || bytes[4] != 13
-                    || bytes[5] != 10 || bytes[6] != 26 || bytes[7] != 10) {
-                throw new IOException("设备未返回有效的 PNG 截屏，请更新设备端 APP");
+            boolean jpeg = bytes.length >= 4 && bytes[0] == (byte) 0xff
+                    && bytes[1] == (byte) 0xd8
+                    && bytes[bytes.length - 2] == (byte) 0xff
+                    && bytes[bytes.length - 1] == (byte) 0xd9;
+            boolean png = bytes.length >= 8 && bytes[0] == (byte) 137
+                    && bytes[1] == 80 && bytes[2] == 78 && bytes[3] == 71
+                    && bytes[4] == 13 && bytes[5] == 10 && bytes[6] == 26
+                    && bytes[7] == 10;
+            if (!jpeg && !png) {
+                throw new IOException("设备未返回有效的 JPEG/PNG 截屏，请更新设备端 APP");
             }
             return bytes;
         } finally { connection.disconnect(); }

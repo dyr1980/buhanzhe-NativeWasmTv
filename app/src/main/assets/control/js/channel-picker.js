@@ -9,6 +9,7 @@
     channelHapticIndex = -1,
     lastHapticAt = 0,
     isOpen = false,
+    openRequestVersion = 0,
     openTimer = null,
     closeTimer = null;
 
@@ -163,7 +164,9 @@
   function open() {
     if (isOpen) return;
     if (!pickerState || !groups().length) {
+      var requestVersion = ++openRequestVersion;
       api("/api/state?view=home", null, function (error, data) {
+        if (requestVersion !== openRequestVersion || document.hidden) return;
         if (error) {
           toast(error.message, true);
           return;
@@ -183,6 +186,7 @@
     clearTimeout(channelTimer);
     backdrop.hidden = false;
     isOpen = true;
+    if (window.NtvNavigation) NtvNavigation.overlayOpen("channel-picker", close);
     // Hidden wheels have no scroll range: make them measurable before positioning.
     var current = pickerState.current || {};
     buildGroups(current.groupIndex, current.channelIndex);
@@ -192,9 +196,11 @@
   }
 
   function close() {
+    openRequestVersion++;
     var backdrop = byId("channelPickerBackdrop");
     if (!backdrop || !isOpen) return;
     isOpen = false;
+    if (window.NtvNavigation) NtvNavigation.overlayClosed("channel-picker");
     clearTimeout(openTimer);
     clearTimeout(groupTimer);
     clearTimeout(channelTimer);

@@ -13,6 +13,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 if (-not $OutputDirectory) {
@@ -116,7 +117,6 @@ function Find-BuildTool([string]$sdkDirectory, [string]$name) {
 }
 
 function Get-ApkArchitectures([string]$apkPath) {
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
     $archive = [System.IO.Compression.ZipFile]::OpenRead($apkPath)
     try {
         return @($archive.Entries |
@@ -147,7 +147,7 @@ if ($RebuildQuickJs -or $NdkRoot) {
     if (!$NdkRoot) { $NdkRoot = $env:ANDROID_NDK_HOME }
     & (Join-Path $PSScriptRoot 'build-quickjs.ps1') -NdkRoot $NdkRoot
 }
-foreach ($abi in @('armeabi-v7a','arm64-v8a')) {
+foreach ($abi in @('armeabi-v7a','arm64-v8a','x86')) {
     if (!(Test-Path -LiteralPath (Join-Path $repoRoot "app/src/main/libs/$abi/libntvquickjs.so"))) {
         throw 'QuickJS library missing. Run scripts/build-quickjs.ps1 -NdkRoot <NDK-r14b> first.'
     }
@@ -156,11 +156,14 @@ if ($RebuildTls -or $NdkRoot) {
     if (!$NdkRoot) { $NdkRoot = $env:ANDROID_NDK_HOME }
     & (Join-Path $PSScriptRoot 'build-tls.ps1') -NdkRoot $NdkRoot
 }
-if (!(Test-Path -LiteralPath (Join-Path $repoRoot 'app/src/main/libs/armeabi-v7a/libntvtls.so'))) {
-    throw 'Legacy TLS library missing. Run scripts/build-tls.ps1 -NdkRoot <NDK-r14b> first.'
+foreach ($abi in @('armeabi-v7a','x86')) {
+    if (!(Test-Path -LiteralPath (Join-Path $repoRoot "app/src/main/libs/$abi/libntvtls.so"))) {
+        throw 'Legacy TLS library missing. Run scripts/build-tls.ps1 -NdkRoot <NDK-r14b> first.'
+    }
 }
 if ($Clean -and -not $SkipClean) { $gradleTasks += 'clean' }
-$gradleTasks += @(':app:assembleArm32Release', ':app:assembleArm64Release', '--no-daemon')
+$gradleTasks += @(':app:assembleArm32Release', ':app:assembleArm64Release',
+    ':app:assembleX86Release', '--no-daemon')
 
 Push-Location $repoRoot
 try {
@@ -175,14 +178,17 @@ $artifacts = @(
     [pscustomobject]@{
         Name = 'nTv.apk'
         Source = Join-Path $repoRoot 'app\build\outputs\apk\arm32\release\app-arm32-release.apk'
-        Mapping = Join-Path $repoRoot 'app\build\outputs\mapping\arm32\release\mapping.txt'
         ExpectedAbi = 'armeabi-v7a'
     },
     [pscustomobject]@{
         Name = 'nTv64.apk'
         Source = Join-Path $repoRoot 'app\build\outputs\apk\arm64\release\app-arm64-release.apk'
-        Mapping = Join-Path $repoRoot 'app\build\outputs\mapping\arm64\release\mapping.txt'
         ExpectedAbi = 'arm64-v8a'
+    },
+    [pscustomobject]@{
+        Name = 'nTvX86.apk'
+        Source = Join-Path $repoRoot 'app\build\outputs\apk\x86\release\app-x86-release.apk'
+        ExpectedAbi = 'x86'
     }
 )
 
@@ -191,18 +197,18 @@ $results = foreach ($artifact in $artifacts) {
     if (-not (Test-Path -LiteralPath $artifact.Source)) {
         throw "Expected APK was not generated: $($artifact.Source)"
     }
-    if (-not (Test-Path -LiteralPath $artifact.Mapping)) {
-        throw "Release obfuscation mapping was not generated: $($artifact.Mapping)"
-    }
-    $renamedApplicationClass = Get-Content -LiteralPath $artifact.Mapping |
-        Where-Object {
-            if ($_ -notmatch '^(xiao\.bu\.tv\.[^ ]+) -> ([^:]+):$') { return $false }
-            return $Matches[1] -ne $Matches[2]
-        } |
-        Select-Object -First 1
-    if (-not $renamedApplicationClass) {
-        throw "Release mapping contains no obfuscated application classes: $($artifact.Mapping)"
-    }
+    # Inspect the current APK, never a stale mapping.txt from an older build.
+    $archive = [System.IO.Compression.ZipFile]::OpenRead($artifact.Source)
+    try {
+        $readableClasses = $false
+        foreach ($entry in $archive.Entries) {
+            if ($entry.FullName -notmatch '^classes\d*\.dex$') { continue }
+            $reader = New-Object System.IO.StreamReader($entry.Open(), [System.Text.Encoding]::ASCII)
+            try { $dex = $reader.ReadToEnd() } finally { $reader.Dispose() }
+            if ($dex.Contains('Lxiao/bu/tv/WebSourceView;')) { $readableClasses = $true; break }
+        }
+        if (-not $readableClasses) { throw "Release APK is missing readable application classes: $($artifact.Source)" }
+    } finally { $archive.Dispose() }
     $destination = Join-Path $OutputDirectory $artifact.Name
     Copy-Item -LiteralPath $artifact.Source -Destination $destination -Force
 
@@ -227,7 +233,7 @@ $results = foreach ($artifact in $artifacts) {
         ABI = $architectures[0]
         SizeMB = [math]::Round($file.Length / 1MB, 2)
         SHA256 = $hash
-        Obfuscation = 'verified'
+        Obfuscation = 'disabled'
         Metadata = $badging
         Path = $file.FullName
     }
@@ -235,13 +241,15 @@ $results = foreach ($artifact in $artifacts) {
 
 $arm32Result = $results | Where-Object { $_.APK -eq 'nTv.apk' } | Select-Object -First 1
 $arm64Result = $results | Where-Object { $_.APK -eq 'nTv64.apk' } | Select-Object -First 1
-if (-not $arm32Result -or -not $arm64Result) {
-    throw 'Both ARM32 and ARM64 artifacts are required to generate update metadata.'
+$x86Result = $results | Where-Object { $_.APK -eq 'nTvX86.apk' } | Select-Object -First 1
+if (-not $arm32Result -or -not $arm64Result -or -not $x86Result) {
+    throw 'ARM32, ARM64 and x86 artifacts are required to generate update metadata.'
 }
 $manifestTasks = @(
     ':app:generateVersionFile',
     "-PupdateApk32=$($arm32Result.Path)",
     "-PupdateApk64=$($arm64Result.Path)",
+    "-PupdateApkX86=$($x86Result.Path)",
     "-PreleaseNotes=$ReleaseNotes",
     '--no-daemon'
 )
@@ -263,7 +271,8 @@ $versionPath = Join-Path $repoRoot 'version.json'
 $legacyVersionPath = Join-Path $repoRoot 'version-iptv.json'
 $version = Get-Content -LiteralPath $liteVersionPath -Raw | ConvertFrom-Json
 if ($version.sha25632 -ne $arm32Result.SHA256 -or
-        $version.sha25664 -ne $arm64Result.SHA256) {
+        $version.sha25664 -ne $arm64Result.SHA256 -or
+        $version.sha256X86 -ne $x86Result.SHA256) {
     throw 'Generated update metadata does not match the release APK hashes.'
 }
 Copy-Item -LiteralPath $liteVersionPath -Destination (Join-Path $OutputDirectory 'version-lite.json') -Force

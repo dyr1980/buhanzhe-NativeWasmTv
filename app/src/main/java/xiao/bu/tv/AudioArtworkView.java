@@ -9,6 +9,8 @@ import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.graphics.Shader;
+import android.graphics.SurfaceTexture;
+import android.os.SystemClock;
 import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.view.animation.LinearInterpolator;
@@ -16,6 +18,7 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.util.AttributeSet;
 import android.view.View;
+import android.view.TextureView;
 
 /** Compose the record once; animation rotates a texture instead of clipping a shader every frame. */
 public final class AudioArtworkView extends FrameLayout {
@@ -27,7 +30,7 @@ public final class AudioArtworkView extends FrameLayout {
     private int coverRevision;
     private String title = "", kind = "音乐";
     private float textSize;
-    private final ImageView recordView;
+    private final RecordView recordView;
     private final ImageView outgoingView;
     private final ImageView neighborView;
     private final ImageView trailingView;
@@ -44,12 +47,120 @@ public final class AudioArtworkView extends FrameLayout {
     private Runnable transitionListener;
     private final Runnable exitTimeout = () -> finishChannelSwitch();
     private ObjectAnimator rotation;
+    private boolean legacyRotationRunning;
+    private long legacyRotationStartedAt;
+    private float legacyRotationStartDegrees;
+    private final Runnable legacyRotationTick = new Runnable() {
+        @Override public void run() {
+            if (!legacyRotationRunning) return;
+            if (!shouldRotate()) { updateAnimation(); return; }
+            long elapsed = SystemClock.uptimeMillis() - legacyRotationStartedAt;
+            recordView.setDiscRotation((legacyRotationStartDegrees
+                    + elapsed * 360f / 30000f) % 360f);
+            postDelayed(this, 33L);
+        }
+    };
     private boolean playing, active = true, attached;
+
+    /** Keep the artwork in one GPU texture; old Android only updates its transform. */
+    private static final class RecordView extends FrameLayout {
+        private final ImageView staticView;
+        private final TextureView textureView;
+        private final Matrix textureMatrix = new Matrix();
+        private final Paint texturePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+        private Bitmap bitmap;
+        private boolean legacyAnimating;
+        private float discRotation;
+        RecordView(Context context) {
+            super(context);
+            staticView = new ImageView(context);
+            staticView.setScaleType(ImageView.ScaleType.FIT_XY);
+            addView(staticView, new FrameLayout.LayoutParams(-1, -1));
+            if (android.os.Build.VERSION.SDK_INT <= 15) {
+                textureView = new TextureView(context);
+                textureView.setOpaque(false);
+                textureView.setVisibility(INVISIBLE);
+                textureView.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
+                    @Override public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
+                        drawTexture();
+                    }
+                    @Override public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {
+                        drawTexture();
+                    }
+                    @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
+                        staticView.setVisibility(VISIBLE);
+                        return true;
+                    }
+                    @Override public void onSurfaceTextureUpdated(SurfaceTexture surface) { }
+                });
+                addView(textureView, new FrameLayout.LayoutParams(-1, -1));
+            } else {
+                textureView = null;
+            }
+        }
+        void setImageBitmap(Bitmap value) {
+            bitmap = value;
+            staticView.setImageBitmap(value);
+            drawTexture();
+        }
+        void setImageDrawable(android.graphics.drawable.Drawable value) {
+            if (value == null) bitmap = null;
+            staticView.setImageDrawable(value);
+            drawTexture();
+        }
+        private void drawTexture() {
+            if (textureView == null || !textureView.isAvailable()
+                    || textureView.getWidth() <= 0 || textureView.getHeight() <= 0) return;
+            Canvas canvas = null;
+            try {
+                canvas = textureView.lockCanvas();
+                if (canvas == null) return;
+                canvas.drawColor(android.graphics.Color.TRANSPARENT,
+                        android.graphics.PorterDuff.Mode.CLEAR);
+                if (bitmap != null) {
+                    canvas.drawBitmap(bitmap, null, new android.graphics.Rect(
+                            0, 0, textureView.getWidth(), textureView.getHeight()), texturePaint);
+                }
+            } catch (RuntimeException error) {
+                android.util.Log.w("AudioArtworkView", "Unable to update record texture", error);
+            } finally {
+                if (canvas != null) textureView.unlockCanvasAndPost(canvas);
+            }
+            if (legacyAnimating && bitmap != null) staticView.setVisibility(INVISIBLE);
+        }
+        float getDiscRotation() {
+            return android.os.Build.VERSION.SDK_INT <= 15 ? discRotation : getRotation();
+        }
+        void setDiscRotation(float degrees) {
+            if (android.os.Build.VERSION.SDK_INT > 15) {
+                setRotation(degrees);
+            } else if (discRotation != degrees) {
+                discRotation = degrees;
+                textureMatrix.setRotate(degrees, getWidth() * .5f, getHeight() * .5f);
+                if (textureView != null) textureView.setTransform(textureMatrix);
+                if (textureView == null || !textureView.isAvailable()) {
+                    staticView.setRotation(degrees);
+                }
+            }
+        }
+        void setLegacyAnimating(boolean value) {
+            if (textureView == null || legacyAnimating == value) return;
+            legacyAnimating = value;
+            if (value) {
+                textureView.setVisibility(VISIBLE);
+                drawTexture();
+            } else {
+                staticView.setRotation(discRotation);
+                staticView.setVisibility(VISIBLE);
+                textureView.setVisibility(INVISIBLE);
+            }
+        }
+    }
+
     public AudioArtworkView(Context context, AttributeSet attrs) {
         super(context, attrs);
         setWillNotDraw(false);
-        recordView = new ImageView(context);
-        recordView.setScaleType(ImageView.ScaleType.FIT_XY);
+        recordView = new RecordView(context);
         if (android.os.Build.VERSION.SDK_INT >= 16)
             recordView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         addView(recordView, new FrameLayout.LayoutParams(1, 1));
@@ -84,7 +195,7 @@ public final class AudioArtworkView extends FrameLayout {
         dragging = false;
         title = name == null ? "" : name;
         kind = live ? "音乐电台 · 直播" : "音乐";
-        recordView.setRotation(0f);
+        recordView.setDiscRotation(0f);
         setCover(initialCover);
         setVisibility(VISIBLE);
         cancelSlides();
@@ -110,6 +221,14 @@ public final class AudioArtworkView extends FrameLayout {
     }
 
     boolean hasPendingPresentation() { return pendingPresentation; }
+
+    void trimMemory() {
+        if (getVisibility() == VISIBLE || isTransitionRunning() || pendingPresentation) return;
+        // This is an idle screen only; do not release visible or animating textures.
+        vinyl = null;
+        background.setShader(null);
+        backgroundHeight = 0;
+    }
 
     void clear() {
         clear(false);
@@ -169,7 +288,7 @@ public final class AudioArtworkView extends FrameLayout {
                 trailingView.setVisibility(VISIBLE);
             }
             outgoingView.setImageBitmap(record);
-            outgoingView.setRotation(recordView.getRotation());
+            outgoingView.setRotation(recordView.getDiscRotation());
             outgoingView.setTranslationY(recordView.getTranslationY());
             outgoingView.setVisibility(VISIBLE);
         } else if (!isDiscVisible(outgoingView) && isDiscVisible(trailingView)) {
@@ -295,7 +414,7 @@ public final class AudioArtworkView extends FrameLayout {
         neighborView.setTranslationY(dragStart + distance + direction * slideDistance(direction));
     }
 
-    private boolean isDiscVisible(ImageView view) {
+    private boolean isDiscVisible(View view) {
         float y = view.getTranslationY();
         return view.getVisibility() == VISIBLE && disc.bottom + y > 0f
                 && disc.top + y < disc.bottom;
@@ -391,8 +510,26 @@ public final class AudioArtworkView extends FrameLayout {
     Bitmap cover() { return cover; }
     int coverRevision() { return coverRevision; }
 
-    private boolean shouldRotate() { return playing && active && attached && isShown() && getWindowVisibility() == VISIBLE; }
+    private boolean shouldRotate() {
+        return playing && active && attached && isShown()
+                && getWindowVisibility() == VISIBLE;
+    }
     private void updateAnimation() {
+        if (android.os.Build.VERSION.SDK_INT <= 15) {
+            if (shouldRotate()) {
+                if (legacyRotationRunning) return;
+                legacyRotationRunning = true;
+                legacyRotationStartDegrees = recordView.getDiscRotation() % 360f;
+                legacyRotationStartedAt = SystemClock.uptimeMillis();
+                recordView.setLegacyAnimating(true);
+                post(legacyRotationTick);
+            } else if (legacyRotationRunning) {
+                legacyRotationRunning = false;
+                removeCallbacks(legacyRotationTick);
+                recordView.setLegacyAnimating(false);
+            }
+            return;
+        }
         if (shouldRotate()) {
             if (rotation != null) return;
             float start = recordView.getRotation() % 360f;

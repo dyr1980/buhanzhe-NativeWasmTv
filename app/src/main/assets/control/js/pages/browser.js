@@ -19,6 +19,7 @@ function saveWebViewSettings(includeScript) {
     browserVersion = document.getElementById("webViewBrowserVersion"),
     images = document.getElementById("webViewLoadImages"),
     autoPlaySniffed = document.getElementById("webViewAutoPlaySniffed"),
+    autoCloseSniffed = document.getElementById("webViewAutoCloseSniffed"),
     adBlock = document.getElementById("webViewAdBlock"),
     webRtc = document.getElementById("webViewWebRtcEnabled");
   var payload = {
@@ -28,6 +29,7 @@ function saveWebViewSettings(includeScript) {
     webViewBrowserVersion: browserVersion.value,
     webViewLoadImages: images.checked,
     webViewAutoPlaySniffed: autoPlaySniffed.checked,
+    webViewAutoCloseSniffed: autoCloseSniffed.checked,
     webViewAdBlock: adBlock.checked,
     webViewWebRtcEnabled: webRtc.checked
   };
@@ -53,6 +55,7 @@ function renderPageState() {
     s.webViewBrowserVersion || "native";
   document.getElementById("webViewLoadImages").checked = s.webViewLoadImages !== false;
   document.getElementById("webViewAutoPlaySniffed").checked = s.webViewAutoPlaySniffed === true;
+  document.getElementById("webViewAutoCloseSniffed").checked = s.webViewAutoCloseSniffed !== false;
   document.getElementById("webViewAdBlock").checked = s.webViewAdBlock !== false;
   document.getElementById("webViewWebRtcEnabled").checked = s.webViewWebRtcEnabled === true;
   document.getElementById("webCacheSize").textContent =

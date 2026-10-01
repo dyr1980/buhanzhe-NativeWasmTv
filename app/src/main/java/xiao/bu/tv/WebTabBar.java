@@ -42,7 +42,7 @@ final class WebTabBar extends LinearLayout {
         void onReload();
         void onNavigate(String value);
         void onChannel(int groupIndex, int channelIndex);
-        void onOpenBookmarkNewTab(String url);
+        void onOpenBookmark(String url, String title, String group, boolean newTab);
         void onSelect(Tab tab);
         void onNewTab();
         void onTabClosed(Tab tab);
@@ -61,6 +61,7 @@ final class WebTabBar extends LinearLayout {
         final int id;
         String url;
         String title;
+        String bookmarkTitle = "", bookmarkGroup = "", bookmarkUrl = "";
         boolean pinned;
         boolean muted;
         boolean sleeping;
@@ -76,8 +77,10 @@ final class WebTabBar extends LinearLayout {
         }
     }
 
-    static final int HEIGHT_DP = 63;
-    static final int COMPACT_HEIGHT_DP = 35;
+    private static final int TAB_CARD_HEIGHT_DP = 22;
+    private static final int TAB_ROW_HEIGHT_DP = TAB_CARD_HEIGHT_DP + 4;
+    static final int COMPACT_HEIGHT_DP = TAB_ROW_HEIGHT_DP + 4;
+    static final int HEIGHT_DP = COMPACT_HEIGHT_DP + 28;
     private static final String PINNED_TABS = "web_pinned_tabs_v1";
     private static final String BOOKMARK_BAR = "web_bookmark_bar_visible_v1";
     private static final String CHANNEL_FOLDERS = "web_channel_folders_visible_v1";
@@ -98,6 +101,7 @@ final class WebTabBar extends LinearLayout {
     private final HorizontalScrollView bookmarkScroll;
     private final LinearLayout tabsRow;
     private final LinearLayout bookmarkRow;
+    private final BrowserIconView addTabButton;
     private final BrowserIconView moreButton;
     private final Callback callback;
     private final float density;
@@ -108,12 +112,35 @@ final class WebTabBar extends LinearLayout {
     private boolean globalAdBlockEnabled = true;
     private boolean webRtcEnabled;
     private int nextId = 1;
+    private float interfaceScale = 1f;
     private int animateAddedTabId = -1;
     private Tab active;
     private FrameLayout folderLayer;
     private LinearLayout folderPanel;
     private LinearLayout folderBody;
     private TextView folderTitle;
+
+    /** Modal for both touch and mouse input; clickability alone only covers touch. */
+    private static final class BrowserPopupLayer extends FrameLayout {
+        BrowserPopupLayer(Context context) {
+            super(context);
+            setClickable(true);
+            setFocusableInTouchMode(true);
+        }
+
+        @Override public boolean dispatchTouchEvent(MotionEvent event) {
+            super.dispatchTouchEvent(event);
+            return true;
+        }
+
+        @Override public boolean dispatchGenericMotionEvent(MotionEvent event) {
+            // Let rows/context menus and ScrollView handle the event first. Even
+            // if they decline it (e.g. a wheel at the end), never route the same
+            // mouse press/release, hover or wheel to the WebView behind this layer.
+            super.dispatchGenericMotionEvent(event);
+            return true;
+        }
+    }
 
     WebTabBar(Context context, Callback callback) {
         super(context);
@@ -141,12 +168,12 @@ final class WebTabBar extends LinearLayout {
         tabScroll.addView(tabStrip, new HorizontalScrollView.LayoutParams(
                 LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
         tabsRow.addView(tabScroll, new LayoutParams(0, LayoutParams.MATCH_PARENT, 1f));
-        BrowserIconView addTab = iconAction(BrowserIconView.ADD, "新建标签",
+        addTabButton = iconAction(BrowserIconView.ADD, "新建标签",
                 v -> callback.onNewTab());
-        LinearLayout.LayoutParams addTabParams = new LinearLayout.LayoutParams(dp(36), dp(27));
+        LinearLayout.LayoutParams addTabParams = new LinearLayout.LayoutParams(dp(36), dp(TAB_CARD_HEIGHT_DP));
         addTabParams.setMargins(dp(2), 0, dp(2), 0);
-        tabsRow.addView(addTab, addTabParams);
-        addView(tabsRow, new LayoutParams(LayoutParams.MATCH_PARENT, dp(31)));
+        tabsRow.addView(addTabButton, addTabParams);
+        addView(tabsRow, new LayoutParams(LayoutParams.MATCH_PARENT, dp(TAB_ROW_HEIGHT_DP)));
 
         bookmarkRow = row();
         moreButton = iconAction(BrowserIconView.MORE, "更多", this::showManagementMenu);
@@ -168,6 +195,37 @@ final class WebTabBar extends LinearLayout {
     }
 
     int heightDp() { return bookmarkBarVisible ? HEIGHT_DP : COMPACT_HEIGHT_DP; }
+
+    int heightPx() { return dp(heightDp()); }
+
+    void setInterfaceScale(float scale) {
+        float safeScale = Math.max(0.35f, Math.min(1.60f, scale));
+        if (Math.abs(interfaceScale - safeScale) < 0.001f) return;
+        dismissFolderPanel();
+        interfaceScale = safeScale;
+        bookmarkTextPaint.setTextSize(11f
+                * getResources().getDisplayMetrics().scaledDensity * interfaceScale);
+        setPadding(dp(4), dp(2), dp(4), dp(2));
+
+        ViewGroup.LayoutParams tabsParams = tabsRow.getLayoutParams();
+        tabsParams.height = dp(TAB_ROW_HEIGHT_DP);
+        tabsRow.setLayoutParams(tabsParams);
+        LinearLayout.LayoutParams addParams = (LinearLayout.LayoutParams)
+                addTabButton.getLayoutParams();
+        addParams.width = dp(36);
+        addParams.height = dp(TAB_CARD_HEIGHT_DP);
+        addParams.setMargins(dp(2), 0, dp(2), 0);
+        addTabButton.setLayoutParams(addParams);
+
+        ViewGroup.LayoutParams bookmarkParams = bookmarkRow.getLayoutParams();
+        bookmarkParams.height = dp(28);
+        bookmarkRow.setLayoutParams(bookmarkParams);
+        bookmarkStrip.setPadding(dp(1), 0, dp(1), 0);
+        updateMoreButtonPlacement();
+        render();
+        requestLayout();
+        callback.onToolbarHeightChanged(heightDp());
+    }
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent event) {
@@ -208,6 +266,7 @@ final class WebTabBar extends LinearLayout {
     Tab openChannel(String url, String title) {
         if (active == null || active.pinned) return openNew(url, title);
         active.url = safe(url);
+        active.bookmarkTitle = active.bookmarkGroup = active.bookmarkUrl = "";
         active.title = displayTitle(title, url);
         active.icon = bookmarkStore.iconForUrl(active.url);
         active.sleeping = false;
@@ -216,17 +275,26 @@ final class WebTabBar extends LinearLayout {
     }
 
     Tab openNew(String url, String title) {
-        if (!makeRoomForNewTab()) {
+        return openNew(url, title, true);
+    }
+
+    Tab openBackground(String url, String title) {
+        return openNew(url, title, false);
+    }
+
+    private Tab openNew(String url, String title, boolean activate) {
+        if (!makeRoomForNewTab(activate)) {
             Toast.makeText(getContext(), "标签已达上限，请先关闭或取消固定一个标签",
                     Toast.LENGTH_SHORT).show();
             return null;
         }
-        active = new Tab(nextId++, safe(url), displayTitle(title, url), false);
-        active.icon = bookmarkStore.iconForUrl(active.url);
-        tabs.add(active);
-        animateAddedTabId = active.id;
+        Tab added = new Tab(nextId++, safe(url), displayTitle(title, url), false);
+        added.icon = bookmarkStore.iconForUrl(added.url);
+        tabs.add(added);
+        if (activate) active = added;
+        animateAddedTabId = added.id;
         render();
-        return active;
+        return added;
     }
 
     void updateActive(String url, String title) {
@@ -248,16 +316,20 @@ final class WebTabBar extends LinearLayout {
         }
     }
 
-    void updateActiveIcon(Bitmap favicon) {
-        if (active == null || favicon == null || favicon.isRecycled()) return;
-        int largest = Math.max(favicon.getWidth(), favicon.getHeight());
-        active.icon = largest > 64
-                ? Bitmap.createScaledBitmap(favicon, 48, 48, true) : favicon;
-        bookmarkStore.cacheIcon(active.url, active.icon);
+    void trimMemory() { bookmarkStore.trimMemory(); }
+
+    void updateActiveIcon(String pageUrl, Bitmap favicon) {
+        if (active == null || active.sleeping || favicon == null || favicon.isRecycled()
+                || !canonicalPage(active.url).equals(canonicalPage(pageUrl))) return;
+        String host = domain(pageUrl);
+        if (host.length() == 0) return;
+        bookmarkStore.cacheIcon(pageUrl, favicon);
+        active.icon = bookmarkStore.iconForUrl(active.url);
         // One domain has one favicon cache entry. Refresh every already-open tab
         // for that domain now, so opening the same site repeatedly never waits
         // for a second WebView favicon callback.
         for (Tab tab : tabs) {
+            if (!host.equals(domain(tab.url))) continue;
             Bitmap cached = bookmarkStore.iconForUrl(tab.url);
             if (cached != null) tab.icon = cached;
         }
@@ -270,6 +342,7 @@ final class WebTabBar extends LinearLayout {
 
     private void select(Tab tab) {
         if (tab == null) return;
+        dismissTransientPanels();
         if (tab.sleeping) {
             tab.sleeping = false;
             tab.state = null;
@@ -347,6 +420,11 @@ final class WebTabBar extends LinearLayout {
             return;
         }
         active = tabs.get(Math.max(0, Math.min(position - 1, tabs.size() - 1)));
+        if (active.sleeping) {
+            active.sleeping = false;
+            active.state = null;
+            callback.onTabSleepChanged(active);
+        }
         render();
         callback.onSelect(active);
     }
@@ -368,7 +446,7 @@ final class WebTabBar extends LinearLayout {
         } else render();
     }
 
-    private boolean makeRoomForNewTab() {
+    private boolean makeRoomForNewTab(boolean allowReplaceActive) {
         if (tabs.size() < MAX_TABS) return true;
         // Prefer a sleeping background tab, then the oldest ordinary background
         // tab. Pinned tabs and the active tab are preserved whenever possible.
@@ -384,7 +462,7 @@ final class WebTabBar extends LinearLayout {
                 return true;
             }
         }
-        if (active != null && !active.pinned) {
+        if (allowReplaceActive && active != null && !active.pinned) {
             discardTab(active);
             return true;
         }
@@ -426,10 +504,10 @@ final class WebTabBar extends LinearLayout {
             chip.setPadding(dp(2), 0, dp(2), 0);
             int background = tab == active ? 0xffffffff
                     : tab.sleeping ? 0xffd3d6dc : 0xffdfe2e7;
-            chip.setBackgroundDrawable(roundRect(background, 8));
+            chip.setBackgroundDrawable(roundRect(background, 6));
             int chipWidth = tab.pinned ? 32 : iconOnly ? compactNormalWidth : normalWidth;
             LinearLayout.LayoutParams chipParams = new LinearLayout.LayoutParams(
-                    dp(chipWidth), dp(27));
+                    dp(chipWidth), dp(TAB_CARD_HEIGHT_DP));
             chipParams.setMargins(dp(2), 0, dp(2), 0);
 
             // Once the row is crowded, make the active tab itself the close target.
@@ -454,7 +532,7 @@ final class WebTabBar extends LinearLayout {
                 title.setText(tab.sleeping ? "休眠 · " + displayTitle(tab.title, tab.url)
                         : displayTitle(tab.title, tab.url));
                 title.setTextColor(tab.sleeping ? 0xff777b82 : 0xff202124);
-                title.setTextSize(11f);
+                title.setTextSize(scaledSp(11f));
                 title.setSingleLine(true);
                 title.setEllipsize(android.text.TextUtils.TruncateAt.END);
                 title.setGravity(Gravity.CENTER_VERTICAL);
@@ -506,10 +584,7 @@ final class WebTabBar extends LinearLayout {
             fallback.setIconColor(tab.sleeping ? 0xff8a8d92 : 0xff303134);
             icon = fallback;
         } else {
-            ImageView favicon = new ImageView(getContext());
-            favicon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-            favicon.setPadding(dp(3), dp(3), dp(3), dp(3));
-            favicon.setImageBitmap(tab.icon);
+            BrowserFaviconView favicon = new BrowserFaviconView(getContext(), tab.icon);
             favicon.setAlpha(tab.sleeping ? .55f : 1f);
             icon = favicon;
         }
@@ -632,9 +707,7 @@ final class WebTabBar extends LinearLayout {
         View rootView = getRootView().findViewById(R.id.root);
         if (!(rootView instanceof ViewGroup)) return;
         final ViewGroup host = (ViewGroup) rootView;
-        final FrameLayout layer = new FrameLayout(getContext());
-        layer.setClickable(true);
-        layer.setFocusableInTouchMode(true);
+        final FrameLayout layer = new BrowserPopupLayer(getContext());
         folderLayer = layer;
 
         LinearLayout menu = new LinearLayout(getContext());
@@ -648,7 +721,7 @@ final class WebTabBar extends LinearLayout {
             final OnClickListener action = actions[i];
             TextView item = new TextView(getContext());
             item.setText(labels[i]);
-            item.setTextSize(13f);
+            item.setTextSize(scaledSp(13f));
             item.setTextColor(0xff202124);
             item.setGravity(Gravity.CENTER_VERTICAL);
             item.setPadding(dp(14), 0, dp(12), 0);
@@ -778,7 +851,7 @@ final class WebTabBar extends LinearLayout {
                 + compactTitle(node.title));
         item.setOnClickListener(node.folder
                 ? v -> showWebFolder(v, node)
-                : v -> callback.onOpenBookmarkNewTab(node.url));
+                : v -> openBookmark(node, true));
         attachBookmarkMouseDrag(item, node);
         attachBookmarkContext(item, node, null);
         attachBookmarkDropTarget(item, node, null);
@@ -796,7 +869,7 @@ final class WebTabBar extends LinearLayout {
         title.setText(compactTitle(text));
         title.setSingleLine(true);
         title.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        title.setTextSize(11f);
+        title.setTextSize(scaledSp(11f));
         title.setTextColor(0xff303134);
         title.setGravity(Gravity.CENTER_VERTICAL);
         title.setIncludeFontPadding(false);
@@ -825,7 +898,7 @@ final class WebTabBar extends LinearLayout {
         title.setText(compactTitle(text));
         title.setSingleLine(true);
         title.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        title.setTextSize(11f);
+        title.setTextSize(scaledSp(11f));
         title.setTextColor(0xff303134);
         title.setGravity(Gravity.CENTER_VERTICAL);
         title.setIncludeFontPadding(false);
@@ -853,7 +926,8 @@ final class WebTabBar extends LinearLayout {
                     dismissFolderPanel();
                     String url = group.channels[channelIndex].sourceUrl(0);
                     if (url != null && url.startsWith("webview://")) {
-                        callback.onOpenBookmarkNewTab(url.substring("webview://".length()));
+                        callback.onOpenBookmark(url.substring("webview://".length()),
+                                group.channels[channelIndex].name, group.title, true);
                     } else callback.onChannel(groupIndex, channelIndex);
                 });
                 list.addView(item, new LinearLayout.LayoutParams(
@@ -892,7 +966,7 @@ final class WebTabBar extends LinearLayout {
                 if (node.folder) renderWebFolderPanel(list, node);
                 else {
                     dismissFolderPanel();
-                    callback.onOpenBookmarkNewTab(node.url);
+                    callback.onOpenBookmark(node.url, node.title, folder.title, true);
                 }
             });
             attachBookmarkMouseDrag(item, node);
@@ -917,9 +991,7 @@ final class WebTabBar extends LinearLayout {
         View rootView = getRootView().findViewById(R.id.root);
         if (!(rootView instanceof ViewGroup)) return null;
         final ViewGroup host = (ViewGroup) rootView;
-        final FrameLayout layer = new FrameLayout(getContext());
-        layer.setClickable(true);
-        layer.setFocusableInTouchMode(true);
+        final FrameLayout layer = new BrowserPopupLayer(getContext());
         folderLayer = layer;
 
         final LinearLayout panel = new LinearLayout(getContext());
@@ -937,7 +1009,7 @@ final class WebTabBar extends LinearLayout {
         folderTitle.setSingleLine(true);
         folderTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
         folderTitle.setTextColor(0xff202124);
-        folderTitle.setTextSize(13f);
+        folderTitle.setTextSize(scaledSp(13f));
         folderTitle.setGravity(Gravity.CENTER_VERTICAL);
         header.addView(folderTitle, new LinearLayout.LayoutParams(
                 0, LayoutParams.MATCH_PARENT, 1f));
@@ -1010,6 +1082,12 @@ final class WebTabBar extends LinearLayout {
         });
         layer.requestFocus();
         return folderBody;
+    }
+
+    // Menus live on the Activity root, not inside the tab's WebView. Changing
+    // documents or hiding the browser must explicitly detach these overlays.
+    void dismissTransientPanels() {
+        dismissFolderPanel();
     }
 
     private void dismissFolderPanel() {
@@ -1111,9 +1189,9 @@ final class WebTabBar extends LinearLayout {
         ArrayList<String> labels = new ArrayList<String>();
         ArrayList<OnClickListener> actions = new ArrayList<OnClickListener>();
         labels.add("打开网页");
-        actions.add(v -> callback.onNavigate(node.url));
+        actions.add(v -> openBookmark(node, false));
         labels.add("在新标签打开");
-        actions.add(v -> callback.onOpenBookmarkNewTab(node.url));
+        actions.add(v -> openBookmark(node, true));
         labels.add("重命名");
         actions.add(v -> promptFolderName(null, node, refreshPopup));
         if (nested) {
@@ -1315,7 +1393,7 @@ final class WebTabBar extends LinearLayout {
     private TextView menuItem(String label) {
         TextView item = new TextView(getContext());
         item.setText(label);
-        item.setTextSize(13f);
+        item.setTextSize(scaledSp(13f));
         item.setTextColor(0xff202124);
         item.setGravity(Gravity.CENTER_VERTICAL);
         item.setPadding(dp(14), 0, dp(12), 0);
@@ -1383,6 +1461,11 @@ final class WebTabBar extends LinearLayout {
         return drawable;
     }
 
+    private void openBookmark(WebBookmarkStore.Node node, boolean newTab) {
+        WebBookmarkStore.Node parent = bookmarkStore.parentOf(node);
+        callback.onOpenBookmark(node.url, node.title, parent == null ? "网页收藏" : parent.title, newTab);
+    }
+
     private void loadPinnedTabs() {
         String value = preferences().getString(PINNED_TABS, "[]");
         try {
@@ -1395,6 +1478,9 @@ final class WebTabBar extends LinearLayout {
                 Tab tab = new Tab(nextId++, url,
                         displayTitle(item.optString("title", ""), url), true);
                 tab.icon = bookmarkStore.iconForUrl(url);
+                tab.bookmarkTitle = item.optString("bookmarkTitle", "");
+                tab.bookmarkGroup = item.optString("bookmarkGroup", "");
+                tab.bookmarkUrl = item.optString("bookmarkUrl", "");
                 tabs.add(tab);
             }
         } catch (Exception ignored) { }
@@ -1405,7 +1491,9 @@ final class WebTabBar extends LinearLayout {
         for (Tab tab : tabs) {
             if (!tab.pinned) continue;
             try {
-                stored.put(new JSONObject().put("url", tab.url).put("title", tab.title));
+                stored.put(new JSONObject().put("url", tab.url).put("title", tab.title)
+                        .put("bookmarkTitle", tab.bookmarkTitle).put("bookmarkGroup", tab.bookmarkGroup)
+                        .put("bookmarkUrl", tab.bookmarkUrl));
             } catch (Exception ignored) { }
         }
         preferences().edit().putString(PINNED_TABS, stored.toString()).apply();
@@ -1460,5 +1548,6 @@ final class WebTabBar extends LinearLayout {
 
     private static String compactTitle(String value) { return safe(value).trim(); }
     private static String safe(String value) { return value == null ? "" : value; }
-    private int dp(int value) { return Math.round(value * density); }
+    private float scaledSp(float value) { return value * interfaceScale; }
+    private int dp(int value) { return Math.round(value * density * interfaceScale); }
 }

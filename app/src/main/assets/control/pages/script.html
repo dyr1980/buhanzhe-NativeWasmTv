@@ -34,7 +34,13 @@
         </div>
       </section>
       <section id="scriptImportSection" class="browser-section">
-        <div class="section-head"><h2>从网站安装</h2></div>
+        <div class="section-head"><h2>安装脚本</h2></div>
+        <div class="script-import-row">
+          <button id="importLocalScriptButton" onclick="chooseLocalUserScript()">从本地文件安装</button>
+          <input id="scriptLocalFile" type="file" accept=".user.js,.js,text/javascript,application/javascript,text/plain"
+            aria-label="选择本地脚本文件" style="display:none" onchange="importUserScriptFromFile(this)" />
+        </div>
+        <div class="config-note">选择本机的 .user.js 或 .js 文件（UTF-8，含 UserScript 元数据头，最大 256KB）。每次导入新增一项，不覆盖已有脚本。</div>
         <div class="script-import-row">
           <input id="scriptInstallUrl" inputmode="url" autocomplete="off"
             placeholder="粘贴脚本页面或 .user.js 安装地址" />
@@ -46,7 +52,7 @@
           <a href="https://openuserjs.org" target="_blank" rel="noopener">OpenUserJS</a>
           <a href="https://github.com/topics/userscript" target="_blank" rel="noopener">GitHub</a>
         </div>
-        <div class="config-note">仅下载公开 HTTPS 地址；导入后会先显示名称、源码和兼容性提示，确认保存后才启用。</div>
+        <div class="config-note">也可从公开 HTTPS 地址导入。请仅安装可信脚本；导入后先预览，确认保存后才安装，总开关开启时生效。</div>
       </section>
       <section id="scriptListSection" class="browser-section">
         <div class="section-head">
@@ -97,7 +103,8 @@
       </section>
     </main>
     <div id="message" class="message"></div>
-    <script src="/js/common.js"></script>
-    <script src="/js/pages/script.js"></script>
+    <script src="/js/navigation.js?v=20260926"></script>
+    <script src="/js/common.js?v=20260926-nav"></script>
+    <script src="/js/pages/script.js?v=20260926-nav"></script>
   </body>
 </html>

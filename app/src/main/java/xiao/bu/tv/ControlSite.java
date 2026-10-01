@@ -27,6 +27,7 @@ final class ControlSite {
         if (isAdvancedAlias(path)) return true;
         if ("/".equals(path) || "/index.html".equals(path)
                 || "/css/common.css".equals(path) || "/js/common.js".equals(path)
+                || "/js/navigation.js".equals(path)
                 || "/css/night.css".equals(path) || "/js/theme.js".equals(path)
                 || "/css/media.css".equals(path)
                 || "/js/channel-picker.js".equals(path)

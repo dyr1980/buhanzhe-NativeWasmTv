@@ -452,7 +452,8 @@ public final class CjsPluginRuntime {
             throw new IOException("插件 native 文件无效：" + name);
         }
         int expectedClass = "arm64-v8a".equals(abi) ? 2 : 1;
-        int expectedMachine = "arm64-v8a".equals(abi) ? 183 : 40;
+        int expectedMachine = "arm64-v8a".equals(abi) ? 183
+                : "x86".equals(abi) ? 3 : 40;
         int elfClass = data[4] & 0xff;
         int machine = (data[18] & 0xff) | ((data[19] & 0xff) << 8);
         if (elfClass != expectedClass || machine != expectedMachine) {

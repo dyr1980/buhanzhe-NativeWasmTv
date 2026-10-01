@@ -110,6 +110,11 @@ final class ChannelCatalog {
             yangshipinChannel("33", "新疆卫视", "600152138", "2019927403")
     };
 
+    // Keep resolver lookup tables above unchanged: their .url is the CCTV CDN
+    // fallback, not the preferred source. Visible startup rows use the same URLs,
+    // order and dispatch mode as builtin_channels.txt, without parsing it on UI.
+    private static final Channel[] STARTUP_CCTV_CHANNELS = startupChannels(CCTV_CHANNELS);
+    private static final Channel[] STARTUP_SATELLITE_CHANNELS = startupChannels(SATELLITE_CHANNELS);
     private static Group[] customGroups = new Group[0];
     private static Channel[] favoriteChannels = new Channel[0];
     static volatile Group[] GROUPS = buildGroups();
@@ -123,8 +128,39 @@ final class ChannelCatalog {
     }
 
     static synchronized void setFavoriteChannels(Channel[] channels) {
-        favoriteChannels = channels == null ? new Channel[0] : channels;
+        favoriteChannels = nonNullChannels(channels);
         GROUPS = buildGroups();
+    }
+
+    static synchronized Group[] restorePlayableGroups() {
+        // Rebuild from the owned catalog, which always supplies built-in rows
+        // when imported/disabled groups contain no playable channels.
+        GROUPS = buildGroups();
+        return GROUPS;
+    }
+
+    static int playableGroupIndex(Group[] groups, int preferred) {
+        if (groups == null) return -1;
+        if (preferred >= 0 && preferred < groups.length && playable(groups[preferred]))
+            return preferred;
+        for (int index = 0; index < groups.length; index++)
+            if (playable(groups[index])) return index;
+        return -1;
+    }
+
+    private static boolean playable(Group group) {
+        return group != null && group.channels != null && group.channels.length > 0;
+    }
+
+    private static Channel[] nonNullChannels(Channel[] channels) {
+        if (channels == null) return new Channel[0];
+        int count = 0;
+        for (Channel channel : channels) if (channel != null) count++;
+        if (count == channels.length) return channels;
+        Channel[] result = new Channel[count];
+        int index = 0;
+        for (Channel channel : channels) if (channel != null) result[index++] = channel;
+        return result;
     }
 
     private static Group[] buildGroups() {
@@ -150,9 +186,31 @@ final class ChannelCatalog {
 
     private static Group[] builtInFallbackGroups() {
         return new Group[] {
-                new Group("央视频道", SOURCE_CCTV_WEB, CCTV_CHANNELS),
-                new Group("卫视频道", SOURCE_YSP_SATELLITE, SATELLITE_CHANNELS)
+                new Group("央视频道", SOURCE_CUSTOM, STARTUP_CCTV_CHANNELS),
+                new Group("卫视频道", SOURCE_CUSTOM, STARTUP_SATELLITE_CHANNELS)
         };
+    }
+
+    private static Channel[] startupChannels(Channel[] resolverChannels) {
+        Channel[] result = new Channel[resolverChannels.length];
+        for (int index = 0; index < resolverChannels.length; index++) {
+            Channel channel = resolverChannels[index];
+            boolean hasYangshipin = channel.yangshipinPid != null
+                    && channel.yangshipinPid.length() > 0;
+            String[] urls;
+            if (hasYangshipin) {
+                String preferred = "webview://https://yangshipin.cn/tv/home?pid="
+                        + channel.yangshipinPid;
+                urls = channel.url == null ? new String[] { preferred }
+                        : new String[] { preferred, channel.url };
+            } else {
+                urls = channel.urls;
+            }
+            result[index] = new Channel(channel.number, channel.name, channel.streamId,
+                    urls, channel.yangshipinPid, channel.yangshipinStreamId,
+                    channel.yangshipinMaxDefinition, channel.epgId);
+        }
+        return result;
     }
 
     /**
@@ -185,14 +243,17 @@ final class ChannelCatalog {
         if (groups == null || groups.length == 0) {
             return new Group[0];
         }
-        Group[] normalized = new Group[groups.length];
-        for (int index = 0; index < groups.length; index++) {
-            Group group = groups[index];
+        int count = 0;
+        for (Group group : groups) if (group != null) count++;
+        Group[] normalized = new Group[count];
+        int index = 0;
+        for (Group group : groups) {
+            if (group == null) continue;
             Channel[] channels = group.channels;
             if ("央视频道".equals(group.title)) {
                 channels = moveCctv5PlusToPosition18(channels);
             }
-            normalized[index] = new Group(group.title, group.source, channels);
+            normalized[index++] = new Group(group.title, group.source, channels);
         }
         return normalized;
     }
@@ -493,7 +554,7 @@ final class ChannelCatalog {
         Group(String title, int source, Channel[] channels) {
             this.title = title;
             this.source = source;
-            this.channels = channels;
+            this.channels = nonNullChannels(channels);
         }
     }
 }

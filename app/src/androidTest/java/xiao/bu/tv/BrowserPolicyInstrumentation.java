@@ -132,6 +132,11 @@ public final class BrowserPolicyInstrumentation extends Instrumentation {
         main(() -> {
             call(bar, "setBookmarkBarVisible", new Class<?>[] {boolean.class}, true);
             check(bar.getChildCount() == 2, "Address row still exists");
+            float density = bar.getResources().getDisplayMetrics().density;
+            ViewGroup tabStrip = (ViewGroup) get(bar, "tabStrip");
+            check(tabStrip.getChildAt(0).getLayoutParams().height == Math.round(22 * density), "Tab card not compact");
+            check(((View) get(bar, "tabsRow")).getLayoutParams().height == Math.round(26 * density), "Tab row has excess height");
+            check(bar.heightDp() == 58, "Toolbar content height not updated");
             View more = (View) get(bar, "moreButton");
             ViewGroup row = (ViewGroup) get(bar, "bookmarkRow");
             check(more.getParent() == row && row.indexOfChild(more) == row.getChildCount() - 1, "More is not rightmost/outside bookmark scroll");
@@ -177,21 +182,58 @@ public final class BrowserPolicyInstrumentation extends Instrumentation {
                 check(bar.active() == selected && selectedUrl.equals(selected.url), "Full pinned tabs replaced current page");
             } finally { selected.pinned = pinned; tabs.clear(); tabs.addAll(saved); }
         });
-        SystemClock.sleep(800);
-        android.graphics.Bitmap screenshot = getUiAutomation().takeScreenshot();
-        if (screenshot != null) {
+        main(() -> {
+            // Capture the actual toolbar view deterministically; unrelated native
+            // startup playback must not turn this layout check into a black screen.
+            android.graphics.Bitmap small = android.graphics.Bitmap.createBitmap(16, 16, android.graphics.Bitmap.Config.ARGB_8888);
+            small.eraseColor(0xff1976d2);
+            bar.updateActiveIcon(bar.active().url, small);
+            call(bar, "render", new Class<?>[0]);
+            int width = bar.getResources().getDisplayMetrics().widthPixels;
+            int height = Math.round(bar.heightDp() * bar.getResources().getDisplayMetrics().density);
+            bar.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY));
+            bar.layout(0, 0, width, height);
+            android.graphics.Bitmap screenshot = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888);
+            bar.draw(new android.graphics.Canvas(screenshot));
             File file = new File(getTargetContext().getExternalFilesDir(null), "browser-policy.png");
             try (java.io.FileOutputStream output = new java.io.FileOutputStream(file)) {
                 screenshot.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output);
             }
             screenshot.recycle();
-        }
+        });
         return "chrome: two rows, reachable More in both modes, retained policy identity, bounded resource injections, folder bookmarks open new tab, pinned capacity preserves current page";
+    }
+    private String testFavicons() throws Exception {
+        main(() -> {
+            android.graphics.Bitmap small = android.graphics.Bitmap.createBitmap(16, 16, android.graphics.Bitmap.Config.ARGB_8888);
+            small.eraseColor(android.graphics.Color.RED);
+            small.setDensity(120); // BitmapDrawable would enlarge this on high-DPI screens.
+            WebBookmarkStore store = new WebBookmarkStore(getTargetContext(),
+                    getTargetContext().getSharedPreferences("favicon-test", 0));
+            store.cacheIcon("https://small.example.test", small);
+            check(store.iconForUrl("https://small.example.test") == small, "Small favicon was resampled");
+            android.graphics.Bitmap wide = android.graphics.Bitmap.createBitmap(96, 48, android.graphics.Bitmap.Config.ARGB_8888);
+            store.cacheIcon("https://wide.example.test", wide);
+            android.graphics.Bitmap cached = store.iconForUrl("https://wide.example.test");
+            check(cached.getWidth() == 48 && cached.getHeight() == 24, "Favicon aspect ratio lost");
+            BrowserFaviconView icon = new BrowserFaviconView(getTargetContext(), small);
+            icon.layout(0, 0, 80, 40);
+            android.graphics.Rect bounds = (android.graphics.Rect) get(icon, "bounds");
+            int expected = Math.min(16, Math.round(14 * getTargetContext().getResources().getDisplayMetrics().density));
+            check(bounds.width() == expected && bounds.height() == expected, "Favicon enlarged by density or tab width");
+            android.graphics.Bitmap pixels = android.graphics.Bitmap.createBitmap(80, 40, android.graphics.Bitmap.Config.ARGB_8888);
+            icon.draw(new android.graphics.Canvas(pixels));
+            check(pixels.getPixel(bounds.left, bounds.top) == android.graphics.Color.RED, "Favicon pixels blurred at integer bounds");
+            check(pixels.getPixel(bounds.left - 1, bounds.top) == 0, "Favicon exceeds compact bounds");
+            pixels.recycle();
+        });
+        return "favicons: no upscaling, preserved aspect ratio, density-independent pixel bounds; ";
     }
     @Override public void onCreate(Bundle args) { super.onCreate(args); start(); }
     @Override public void onStart() {
         Bundle result = new Bundle(); int code = -1;
-        try { result.putString("stream", "PASS " + testScripts() + testRules() + testChrome() + "\n"); }
+        try { result.putString("stream", "PASS " + testScripts() + testRules() + testFavicons() + testChrome() + "\n"); }
         catch (Throwable error) { code = 0; result.putString("stream", android.util.Log.getStackTraceString(error)); }
         finish(code, result);
     }

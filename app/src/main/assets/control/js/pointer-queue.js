@@ -72,10 +72,10 @@
       }
       schedule();
     };
-    this.reset = function () {
-      if (!busy && !queue.length && !mayBeHeld) return;
+    this.reset = function (done) {
+      if (!busy && !queue.length && !mayBeHeld) { if (done) done(); return; }
       discard(new Error("飞鼠操作已取消"));
-      queue.push({ body: { action: "cancel" } });
+      queue.push({ body: { action: "cancel" }, done: done });
       // Keep the in-flight request as a barrier: cancel must follow DOWN, not race it.
       schedule();
     };

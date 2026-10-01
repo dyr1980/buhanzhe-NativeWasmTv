@@ -32,7 +32,7 @@ Build with Android NDK r14b:
 ./scripts/build-release.ps1 -RebuildQuickJs -NdkRoot C:/android-ndk-r14b
 ```
 
-ARM32 targets API 14 and ARM64 targets API 21. Prebuilt libraries are checked in so regular
-release builds need no NDK; the release script verifies both engine libraries exist.
+ARM32 and x86 target API 14; ARM64 targets API 21. Prebuilt libraries are checked in so
+regular release builds need no NDK; the release script verifies all three engine libraries exist.
 `app/src/androidTest/java/xiao/bu/tv/QuickJsInstrumentation.java` checks Unicode, native
 callbacks, Promise/BigInt, syntax errors, interruption, heap limits and runtime lifecycle.

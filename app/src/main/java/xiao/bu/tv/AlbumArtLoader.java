@@ -36,7 +36,9 @@ final class AlbumArtLoader {
     private final ThreadPoolExecutor tags = executor("album-id3");
     private final ThreadPoolExecutor neighbors = executor("album-neighbors");
     private Future<?> pendingNeighbors;
-    private int neighborGeneration;
+    private volatile int neighborGeneration;
+    private volatile boolean closed;
+    private static volatile int memoryGeneration;
     private Future<?> pending;
     private Future<?> pendingTag;
     private static AlbumArtCache coverCache;
@@ -54,7 +56,21 @@ final class AlbumArtLoader {
                 new java.io.File(app.getCacheDir(), "album-art-v1"), AlbumArtCache.MAX_BYTES);
         return coverCache;
     }
-    private int generation;
+    private volatile int generation;
+
+    static void trimMemory() {
+        synchronized (decoded) {
+            memoryGeneration++;
+            decoded.evictAll(); // Displayed covers remain valid; never recycle shared pixels.
+        }
+    }
+
+    private static void cacheDecoded(String key, Bitmap bitmap, int expectedGeneration) {
+        synchronized (decoded) {
+            if (expectedGeneration == memoryGeneration && !Thread.currentThread().isInterrupted())
+                decoded.put(key, bitmap);
+        }
+    }
 
     static Bitmap cachedLogo(String url) {
         if (url == null || url.isEmpty()) return null;
@@ -64,6 +80,7 @@ final class AlbumArtLoader {
 
     void prefetchNeighbors(Context context, String previous, String next, NeighborCallback callback) {
         cancelNeighbors();
+        if (closed) return;
         final int request = neighborGeneration;
         final Context app = context.getApplicationContext();
         pendingNeighbors = neighbors.submit(() -> {
@@ -73,7 +90,8 @@ final class AlbumArtLoader {
                 if (url == null || url.equals(last) || !(url.startsWith("http://") || url.startsWith("https://"))) continue;
                 last = url;
                 Bitmap art = readArtwork(app, url, null, true);
-                if (art != null) main.post(() -> { if (request == neighborGeneration) callback.loaded(url, art); });
+                if (art != null && !closed && request == neighborGeneration)
+                    main.post(() -> { if (!closed && request == neighborGeneration) callback.loaded(url, art); });
             }
         });
     }
@@ -97,6 +115,7 @@ final class AlbumArtLoader {
 
     void load(Context context, String address, String headers, String logoUrl, Callback callback) {
         clear();
+        if (closed) return;
         final int request = generation;
         final Context app = context.getApplicationContext();
         pending = worker.submit(() -> {
@@ -110,7 +129,7 @@ final class AlbumArtLoader {
             if (address == null || Thread.currentThread().isInterrupted()) return;
             final boolean hasLogo = logo != null;
             main.post(() -> {
-                if (request != generation) return;
+                if (closed || request != generation) return;
                 pendingTag = tags.submit(() -> {
                     Bitmap bitmap = readArtwork(app, address, headers, false);
                     // A real embedded cover supersedes the station logo when available.
@@ -121,10 +140,13 @@ final class AlbumArtLoader {
     }
 
     private void publish(int request, Callback callback, Bitmap art) {
-        main.post(() -> { if (request == generation) callback.loaded(art); });
+        if (closed || request != generation) return;
+        main.post(() -> { if (!closed && request == generation) callback.loaded(art); });
     }
 
     private static Bitmap readArtwork(Context app, String address, String headers, boolean image) {
+        final int expectedMemory = memoryGeneration;
+        if (Thread.currentThread().isInterrupted()) return null;
         HttpURLConnection connection = null;
         AlbumArtCache disk = null;
         String cacheKey = null;
@@ -140,7 +162,7 @@ final class AlbumArtLoader {
                     byte[] cached = disk.get(cacheKey);
                     if (cached != null) {
                         Bitmap hit = decodeArtwork(cached);
-                        if (hit != null) { decoded.put(cacheKey, hit); return hit; }
+                        if (hit != null) { cacheDecoded(cacheKey, hit, expectedMemory); return hit; }
                         disk.remove(cacheKey);
                     }
                 } catch (IOException ignored) { disk = null; } // Disk failure must not block playback.
@@ -168,7 +190,7 @@ final class AlbumArtLoader {
                 byte[] art = stream == null ? null : image ? readImage(stream) : Id3Artwork.read(stream);
                 if (art != null && !Thread.currentThread().isInterrupted()) {
                     Bitmap decoded = decodeArtwork(art);
-                    if (decoded != null && cacheKey != null) AlbumArtLoader.decoded.put(cacheKey, decoded);
+                    if (decoded != null && cacheKey != null) cacheDecoded(cacheKey, decoded, expectedMemory);
                     if (decoded != null && disk != null && !Thread.currentThread().isInterrupted()) {
                         try { disk.put(cacheKey, art); } catch (IOException ignored) { }
                     }
@@ -208,5 +230,10 @@ final class AlbumArtLoader {
         return null;
     }
 
-    void close() { clear(); cancelNeighbors(); worker.shutdownNow(); tags.shutdownNow(); neighbors.shutdownNow(); }
+    void close() {
+        closed = true;
+        clear(); cancelNeighbors();
+        main.removeCallbacksAndMessages(null);
+        worker.shutdownNow(); tags.shutdownNow(); neighbors.shutdownNow();
+    }
 }

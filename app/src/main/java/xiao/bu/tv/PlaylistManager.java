@@ -1182,6 +1182,7 @@ final class PlaylistManager {
         String pendingGroup = null;
         String pendingEpgId = null;
         String pendingLogo = null;
+        boolean pendingRadio = false;
         String pendingSubtitles = "";
         int count = 0;
         int lineStart = 0;
@@ -1207,6 +1208,8 @@ final class PlaylistManager {
                 pendingGroup = attribute(line, "group-title");
                 pendingEpgId = attribute(line, "tvg-id");
                 pendingLogo = attribute(line, "tvg-logo");
+                String radio = attribute(line, "radio");
+                pendingRadio = "true".equalsIgnoreCase(radio) || "1".equals(radio);
                 pendingSubtitles = Channel.resolveSubtitleUrl(attribute(line, "subtitles"), base);
                 if (pendingSubtitles.isEmpty()) pendingSubtitles = Channel.resolveSubtitleUrl(attribute(line, "subtitle"), base);
                 int comma = line.lastIndexOf(',');
@@ -1230,11 +1233,12 @@ final class PlaylistManager {
             }
             if (pendingName != null && isStreamUrl(line)) {
                 String groupName = emptyToDefault(pendingGroup, currentGroup);
-                add(groups, groupName, pendingName, line, pendingEpgId, pendingLogo, pendingSubtitles, count++);
+                add(groups, groupName, pendingName, line, pendingEpgId, pendingLogo, pendingSubtitles, pendingRadio, count++);
                 pendingName = null;
                 pendingGroup = null;
                 pendingEpgId = null;
                 pendingLogo = null;
+                pendingRadio = false;
                 pendingSubtitles = "";
             } else {
                 int comma = line.indexOf(',');
@@ -1249,7 +1253,7 @@ final class PlaylistManager {
                 if (value.matches("(?i)#genre#(?:\\s*,\\s*)*")) {
                     currentGroup = name.length() == 0 ? "在线频道" : name;
                 } else if (isStreamUrl(value)) {
-                    add(groups, currentGroup, name, value, null, null, "", count++);
+                    add(groups, currentGroup, name, value, null, null, "", false, count++);
                 }
             }
             if (lineEnd == text.length()) {
@@ -1282,7 +1286,7 @@ final class PlaylistManager {
     }
 
     private static void add(Map<String, ChannelBucket> groups, String groupName,
-            String name, String url, String epgId, String logoUrl, String subtitles, int index) {
+            String name, String url, String epgId, String logoUrl, String subtitles, boolean radio, int index) {
         String safeGroup = normalizeGroupTitle(groupName);
         ChannelBucket bucket = groups.get(safeGroup);
         if (bucket == null) {
@@ -1295,7 +1299,7 @@ final class PlaylistManager {
                 bucket.channels.size() + 1),
                 safeName, "custom_" + index, url, null, null, null,
                 epgId == null || epgId.trim().length() == 0 ? safeName : epgId.trim());
-        bucket.add(incoming.withLogo(logoUrl).withSubtitles(subtitles));
+        bucket.add(incoming.withLogo(logoUrl).withSubtitles(subtitles).withRadio(radio));
     }
 
     private static String channelNumber(String name, String epgId, int fallback) {
@@ -1349,6 +1353,7 @@ final class PlaylistManager {
             if (existing.logoUrl.length() == 0 && incoming.logoUrl.length() > 0)
                 existing = existing.withLogo(incoming.logoUrl);
             existing = existing.withSubtitles(incoming.subtitleUrlsText());
+            existing = existing.withRadio(existing.radio || incoming.radio);
             for (String url : incoming.urls) {
                 existing = existing.withAdditionalUrl(url);
             }

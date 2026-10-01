@@ -20,7 +20,11 @@ final class WebPageScriptManager {
     private static final String TAG = "WebPageScript";
     private final WebView view;
     private final List<ScriptHandler> handlers = new ArrayList<ScriptHandler>();
-    private final List<String> userScripts = new ArrayList<String>();
+    private List<String> userScripts = Collections.emptyList();
+    // One configuration only, no Activity/WebView references. Each document still
+    // gets its own handler and JavaScript realm; only immutable Java text is shared.
+    private static String sharedSources;
+    private static List<String> sharedUserScripts = Collections.emptyList();
     private String script = "";
     private boolean documentStart;
     private boolean configured, lastAdBlock, lastWebRtc, lastEnabled;
@@ -39,30 +43,49 @@ final class WebPageScriptManager {
         lastWebRtc = webRtc;
         lastEnabled = userScriptEnabled;
         lastSources = sources;
-        if (scriptsChanged) userScripts.clear();
+        if (scriptsChanged) userScripts = userScriptEnabled
+                ? compiledUserScripts(sources) : Collections.<String>emptyList();
         StringBuilder body = new StringBuilder();
+        body.append(WebMediaSession.script(view.getContext()));
         body.append(systemMouseSelectionScript());
         if (!webRtc) body.append(webRtcBlockScript());
         if (adBlock) body.append(WebAdBlocker.cosmeticScript());
-        if (scriptsChanged && userScriptEnabled && sources.trim().length() > 0) {
+        String next = body.length() == 0 ? "" : "(function(){var k=" + body.toString().hashCode()
+                + ";if(window.__ntvPagePolicy===k)return;window.__ntvPagePolicy=k;try{"
+                + body + "}catch(e){console.warn('nTv page policy: '+e);}})();";
+        script = next;
+        installHandlers();
+    }
+
+    private static synchronized List<String> compiledUserScripts(String sources) {
+        if (sources.equals(sharedSources)) return sharedUserScripts;
+        List<String> compiled = new ArrayList<>();
+        if (sources.trim().length() > 0) {
             try {
-                JSONArray entries = new JSONArray(sourcesJson);
+                JSONArray entries = new JSONArray(sources);
                 for (int index = 0; index < entries.length(); index++) {
                     JSONObject item = entries.optJSONObject(index);
                     if (item == null || !item.optBoolean("enabled", true)) continue;
                     String source = item.optString("source", "");
                     if (source.trim().length() == 0) continue;
-                    userScripts.add(userscript(source,
+                    compiled.add(userscript(source,
                             item.optString("name", "脚本 " + (index + 1))));
                 }
             } catch (JSONException error) {
                 Log.w(TAG, "Unable to parse userscript list", error);
             }
         }
-        String next = body.length() == 0 ? "" : "(function(){var k=" + body.toString().hashCode()
-                + ";if(window.__ntvPagePolicy===k)return;window.__ntvPagePolicy=k;try{"
-                + body + "}catch(e){console.warn('nTv page policy: '+e);}})();";
-        script = next;
+        sharedSources = sources;
+        sharedUserScripts = Collections.unmodifiableList(compiled);
+        return sharedUserScripts;
+    }
+
+    static synchronized void trimMemory() {
+        sharedSources = null;
+        sharedUserScripts = Collections.emptyList();
+    }
+
+    private void installHandlers() {
         dispose();
         if (Build.VERSION.SDK_INT >= 19) {
             try {
@@ -104,6 +127,13 @@ final class WebPageScriptManager {
         }
         handlers.clear();
         documentStart = false;
+    }
+
+    void release() {
+        dispose();
+        configured = false;
+        script = lastSources = "";
+        userScripts = Collections.emptyList();
     }
 
     private static String webRtcBlockScript() {

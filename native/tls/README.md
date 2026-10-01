@@ -16,8 +16,8 @@ are required; the application-specific configuration lives in `config.h`.
 
 ## Scope and size
 
-- ARM32/API 14 native library, used only on Android 4.0 (API 14/15). The ARM64
-  APK does not contain this library. API 16+ retains its existing TLS provider.
+- ARM32 and x86/API 14 native libraries, used only on Android 4.0 (API 14/15).
+  The ARM64 APK does not contain this library. API 16+ retains its existing TLS provider.
 - Loaded at the first legacy HTTPS handshake, never in `Application.onCreate`.
 - HTTPS client, TLS 1.2, ECDHE with RSA/ECDSA, AES-GCM/CBC, P-256/P-384/X25519.
   No server, DTLS, PSK, TLS 1.0/1.1/1.3, CLI, or certificate files bundled.

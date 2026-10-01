@@ -15,9 +15,9 @@
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
 
-# Release uses standard shrinking and short-name obfuscation. The selected default
-# Android profile deliberately disables bytecode optimization, avoiding deep call
-# rewriting and class merging on old TV runtimes while still reducing DEX size.
+# Release only shrinks unreachable code. Keep names and disable bytecode
+# optimization so old TV reflection and readable crash traces remain stable.
+-dontobfuscate
 
 # Ku9, web resolvers and the in-app remote invoke these methods from JavaScript.
 -keepclassmembers class * {

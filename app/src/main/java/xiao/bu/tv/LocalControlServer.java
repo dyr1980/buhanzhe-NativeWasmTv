@@ -56,7 +56,7 @@ final class LocalControlServer implements Closeable {
         Resource playlistSource(String location) throws Exception;
         String mergePlaylist(JSONObject request) throws Exception;
         Resource recording(String token) throws Exception;
-        Resource screenshot(boolean localOnly) throws Exception;
+        Resource screenshot(boolean localOnly, boolean preview) throws Exception;
         Resource artwork(String key, boolean localOnly) throws Exception;
         Resource browserDownload(long eventId) throws Exception;
         Resource page(String path) throws Exception;
@@ -534,7 +534,8 @@ final class LocalControlServer implements Closeable {
             send(socket, 200, resource.contentType, resource.body);
         } else if ("GET".equals(method) && VideoScreenshot.PATH.equals(path)) {
             Resource resource = listener.screenshot("1".equals(
-                    queryParameter(requestTarget, "local")));
+                    queryParameter(requestTarget, "local")),
+                    "1".equals(queryParameter(requestTarget, "preview")));
             send(socket, 200, resource.contentType, resource.body);
         } else if ("GET".equals(method) && "/api/browser/download".equals(path)) {
             long eventId;

@@ -162,7 +162,8 @@
       <section class="media-settings-sheet media-shot-sheet" role="dialog" aria-modal="true" aria-label="视频截图" onclick="event.stopPropagation()">
         <div class="media-sheet-header"><b>视频截图</b><button type="button" onclick="mediaCloseShot()">完成</button></div>
         <img id="mediaShotPreview" alt="当前视频截图" />
-        <a id="mediaShotSave" download="nTv-screenshot.png">保存截图（PNG）</a>
+        <a id="mediaShotSave" download="nTv-screenshot.jpg">保存截图</a>
+        <p id="mediaShotSaved" hidden></p>
       </section>
     </div>
     <div id="channelPickerBackdrop" class="channel-picker-backdrop" hidden>
@@ -181,8 +182,9 @@
       </div>
     </div>
     <div id="message" class="message"></div>
-    <script src="/js/common.js"></script>
-    <script src="/js/channel-picker.js"></script>
-    <script src="/js/pages/media.js?v=20260925-perf"></script>
+    <script src="/js/navigation.js?v=20260926"></script>
+    <script src="/js/common.js?v=20260926-nav"></script>
+    <script src="/js/channel-picker.js?v=20260926-nav"></script>
+    <script src="/js/pages/media.js?v=20260926-nav"></script>
   </body>
 </html>

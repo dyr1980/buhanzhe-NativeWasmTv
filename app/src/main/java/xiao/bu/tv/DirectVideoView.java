@@ -1,77 +1,93 @@
 package xiao.bu.tv;
 
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.PorterDuff;
+import android.graphics.SurfaceTexture;
+import android.os.Build;
 import android.util.AttributeSet;
+import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
+import android.view.TextureView;
+import android.widget.FrameLayout;
 
-/** A zero-copy MediaCodec target, preferred on KitKat-class TV hardware. */
-public final class DirectVideoView extends SurfaceView implements SurfaceHolder.Callback {
+/** Zero-copy video output; Android 9 and older use a capturable texture from startup. */
+public final class DirectVideoView extends FrameLayout implements SurfaceHolder.Callback,
+        TextureView.SurfaceTextureListener {
+    private final SurfaceView surfaceView;
+    private final TextureView textureView;
+    private Surface textureSurface;
     private SurfaceCallback callback;
     private SurfaceHolder activeHolder;
-    private int videoWidth;
-    private int videoHeight;
-    private int sarNum = 1;
-    private int sarDen = 1;
-    private boolean stretchVideo;
-    private boolean legacySurfaceMode;
+    private int videoWidth, videoHeight, sarNum = 1, sarDen = 1;
+    private boolean stretchVideo, legacySurfaceMode;
 
-    public DirectVideoView(Context context) {
-        this(context, null);
-    }
+    public DirectVideoView(Context context) { this(context, null); }
 
     public DirectVideoView(Context context, AttributeSet attrs) {
         super(context, attrs);
-        getHolder().setFormat(PixelFormat.OPAQUE);
-        applySurfaceType();
-        getHolder().addCallback(this);
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            surfaceView = null;
+            textureView = new TextureView(context);
+            textureView.setSurfaceTextureListener(this);
+            addView(textureView, new LayoutParams(-1, -1));
+        } else {
+            textureView = null;
+            surfaceView = new SurfaceView(context);
+            surfaceView.getHolder().setFormat(PixelFormat.OPAQUE);
+            applySurfaceType();
+            surfaceView.getHolder().addCallback(this);
+            addView(surfaceView, new LayoutParams(-1, -1));
+        }
         setKeepScreenOn(true);
     }
 
-    void setLegacySurfaceMode(boolean legacySurfaceMode) {
-        if (this.legacySurfaceMode == legacySurfaceMode) {
-            return;
-        }
-        this.legacySurfaceMode = legacySurfaceMode;
+    SurfaceView getSurfaceView() { return surfaceView; }
+    boolean usesTextureOutput() { return textureView != null; }
+
+    /** Only invoked for a screenshot; playback itself never reads frames. */
+    Bitmap captureTextureFrame(int width, int height) {
+        return textureView == null || !isSurfaceReady() || !textureView.isAvailable()
+                ? null : textureView.getBitmap(width, height);
+    }
+
+    void setLegacySurfaceMode(boolean enabled) {
+        if (legacySurfaceMode == enabled) return;
+        legacySurfaceMode = enabled;
         applySurfaceType();
     }
 
     private void applySurfaceType() {
-        // Android 4.3's framework VideoView uses PUSH_BUFFERS. Keep NORMAL available for
-        // ijkplayer-compatible devices and let the user A/B test the vendor overlay path.
+        if (surfaceView == null) return;
         //noinspection deprecation
-        getHolder().setType(legacySurfaceMode
-                ? SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS
-                : SurfaceHolder.SURFACE_TYPE_NORMAL);
+        surfaceView.getHolder().setType(legacySurfaceMode
+                ? SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS : SurfaceHolder.SURFACE_TYPE_NORMAL);
     }
 
-    void setSurfaceCallback(SurfaceCallback callback) {
-        this.callback = callback;
-        SurfaceHolder holder = activeHolder;
-        if (callback != null && holder != null && holder.getSurface() != null
-                && holder.getSurface().isValid()) {
-            callback.onVideoSurfaceCreated(holder);
-        }
+    void setSurfaceCallback(SurfaceCallback listener) {
+        callback = listener;
+        if (listener != null && isSurfaceReady())
+            listener.onVideoSurfaceCreated(getVideoSurfaceHolder(), getVideoSurface());
     }
 
     boolean isSurfaceReady() {
-        return activeHolder != null && activeHolder.getSurface() != null
-                && activeHolder.getSurface().isValid();
+        Surface surface = getVideoSurface();
+        return surface != null && surface.isValid();
     }
 
-    SurfaceHolder getVideoSurfaceHolder() {
-        return isSurfaceReady() ? activeHolder : null;
+    SurfaceHolder getVideoSurfaceHolder() { return activeHolder; }
+    Surface getVideoSurface() {
+        return textureView != null ? textureSurface
+                : activeHolder == null ? null : activeHolder.getSurface();
     }
 
-    void setStretchVideo(boolean stretchVideo) {
-        if (this.stretchVideo == stretchVideo) {
-            return;
-        }
-        this.stretchVideo = stretchVideo;
+    void setStretchVideo(boolean enabled) {
+        if (stretchVideo == enabled) return;
+        stretchVideo = enabled;
         requestLayout();
     }
 
@@ -80,110 +96,83 @@ public final class DirectVideoView extends SurfaceView implements SurfaceHolder.
         videoHeight = Math.max(0, height);
         this.sarNum = sarNum > 0 ? sarNum : 1;
         this.sarDen = sarDen > 0 ? sarDen : 1;
-        if (videoWidth > 0 && videoHeight > 0) {
-            // Keep the producer buffer at the encoded size. Old MStar/MediaCodec hardware
-            // overlays can render black when the Surface buffer remains at the window size.
-            getHolder().setFixedSize(videoWidth, videoHeight);
-        } else {
-            getHolder().setSizeFromLayout();
+        if (surfaceView != null) {
+            if (videoWidth > 0 && videoHeight > 0)
+                surfaceView.getHolder().setFixedSize(videoWidth, videoHeight);
+            else surfaceView.getHolder().setSizeFromLayout();
         }
         requestLayout();
     }
 
     void resetSurfaceBufferSizePreservingAspect() {
-        // A new decoder may use a different encoded size, so stop forcing the old
-        // producer buffer dimensions. Keep the last measured aspect ratio until the
-        // new stream reports its dimensions; otherwise the final old frame briefly
-        // stretches to the full window while a channel switch is resolving.
-        getHolder().setSizeFromLayout();
+        if (surfaceView != null) surfaceView.getHolder().setSizeFromLayout();
         requestLayout();
     }
 
-    /** Replaces queued decoder buffers so a released channel cannot flash again. */
     boolean clearLastFrame() {
+        if (surfaceView == null || !isSurfaceReady()) return false;
         SurfaceHolder holder = activeHolder;
-        if (holder == null || holder.getSurface() == null
-                || !holder.getSurface().isValid()) {
-            return false;
-        }
         boolean cleared = false;
-        // Surface queues are commonly double-buffered on legacy televisions. Posting
-        // two opaque black buffers prevents an older decoder buffer from resurfacing.
         for (int pass = 0; pass < 2; pass++) {
             Canvas canvas = null;
             try {
                 canvas = holder.lockCanvas();
-                if (canvas == null) {
-                    break;
-                }
+                if (canvas == null) break;
                 canvas.drawColor(Color.BLACK, PorterDuff.Mode.SRC);
                 cleared = true;
             } catch (RuntimeException error) {
                 return cleared;
             } finally {
                 if (canvas != null) {
-                    try {
-                        holder.unlockCanvasAndPost(canvas);
-                    } catch (RuntimeException ignored) {
-                    }
+                    try { holder.unlockCanvasAndPost(canvas); }
+                    catch (RuntimeException ignored) { }
                 }
             }
         }
         return cleared;
     }
 
-    void onPause() {
-        // SurfaceHolder owns the lifecycle; no GL context needs pausing.
-    }
-
-    void onResume() {
-        // SurfaceHolder recreates the surface when required.
-    }
-
-    @Override
-    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+    @Override protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         int availableWidth = MeasureSpec.getSize(widthMeasureSpec);
         int availableHeight = MeasureSpec.getSize(heightMeasureSpec);
-        int width = availableWidth;
-        int height = availableHeight;
+        int width = availableWidth, height = availableHeight;
         if (!stretchVideo && videoWidth > 0 && videoHeight > 0
                 && availableWidth > 0 && availableHeight > 0) {
             float videoAspect = (float) videoWidth * sarNum / ((float) videoHeight * sarDen);
-            float viewAspect = (float) availableWidth / availableHeight;
-            if (viewAspect > videoAspect) {
+            if ((float) availableWidth / availableHeight > videoAspect)
                 width = Math.round(availableHeight * videoAspect);
-            } else {
-                height = Math.round(availableWidth / videoAspect);
-            }
+            else height = Math.round(availableWidth / videoAspect);
         }
-        setMeasuredDimension(width, height);
+        super.onMeasure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
     }
 
-    @Override
-    public void surfaceCreated(SurfaceHolder holder) {
+    @Override public void surfaceCreated(SurfaceHolder holder) {
         activeHolder = holder;
-        if (callback != null) {
-            callback.onVideoSurfaceCreated(holder);
-        }
+        if (callback != null) callback.onVideoSurfaceCreated(holder, holder.getSurface());
+    }
+    @Override public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) { }
+    @Override public void surfaceDestroyed(SurfaceHolder holder) {
+        if (callback != null) callback.onVideoSurfaceDestroyed(holder, holder.getSurface());
+        if (activeHolder == holder) activeHolder = null;
     }
 
-    @Override
-    public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+    @Override public void onSurfaceTextureAvailable(SurfaceTexture texture, int width, int height) {
+        textureSurface = new Surface(texture);
+        if (callback != null) callback.onVideoSurfaceCreated(null, textureSurface);
     }
-
-    @Override
-    public void surfaceDestroyed(SurfaceHolder holder) {
-        if (callback != null) {
-            callback.onVideoSurfaceDestroyed(holder);
-        }
-        if (activeHolder == holder) {
-            activeHolder = null;
-        }
+    @Override public void onSurfaceTextureSizeChanged(SurfaceTexture texture, int width, int height) { }
+    @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture texture) {
+        Surface oldSurface = textureSurface;
+        if (callback != null) callback.onVideoSurfaceDestroyed(null, oldSurface);
+        textureSurface = null;
+        if (oldSurface != null) oldSurface.release();
+        return true;
     }
+    @Override public void onSurfaceTextureUpdated(SurfaceTexture texture) { }
 
     interface SurfaceCallback {
-        void onVideoSurfaceCreated(SurfaceHolder holder);
-
-        void onVideoSurfaceDestroyed(SurfaceHolder holder);
+        void onVideoSurfaceCreated(SurfaceHolder holder, Surface surface);
+        void onVideoSurfaceDestroyed(SurfaceHolder holder, Surface surface);
     }
 }

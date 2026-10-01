@@ -140,6 +140,11 @@ final class AdBlockRuleStore {
     }
 
     int ruleCount() { return ruleCount; }
+    void trimMemory() {
+        // Do not acquire databaseLock or close SQLite on the UI thread: a rule
+        // query/update may hold it. Drop only the disposable hot-host answers.
+        synchronized (hostCache) { hostCache.clear(); }
+    }
     long lastUpdatedAt() { return lastUpdatedAt; }
     String version() { return version; }
     boolean isUpdating() { return updating; }

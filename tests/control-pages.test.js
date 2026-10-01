@@ -60,6 +60,8 @@ test('browser settings save core options without exposing rule details', () => {
     webViewCacheBytes:0}});
   assert.equal(b.elements.get('webViewBrowserVersion').value,'128');
   assert.equal(b.elements.get('webViewAdBlock').checked,true);
+  assert.equal(b.elements.get('webViewAutoCloseSniffed').checked,true);
+  b.elements.get('webViewAutoCloseSniffed').checked=false;
   assert.equal(b.elements.get('webViewWebRtcEnabled').checked,false);
   b.elements.get('webViewBrowserVersion').value='138';
   b.elements.get('webViewWebRtcEnabled').checked=true;
@@ -67,6 +69,7 @@ test('browser settings save core options without exposing rule details', () => {
   const save=b.requests.find(r=>r.url==='/api/settings');
   assert.equal(JSON.parse(save.body).webViewBrowserVersion,'138');
   assert.equal(JSON.parse(save.body).webViewWebRtcEnabled,true);
+  assert.equal(JSON.parse(save.body).webViewAutoCloseSniffed,false);
   assert.equal('webViewUserScript' in JSON.parse(save.body),false);
 });
 
@@ -168,6 +171,74 @@ test('userscript reimport updates the same entry even at capacity and cannot rep
   assert.equal(c.editingScriptId,'');
 });
 
+test('local script entry reads UTF-8 for review, does not execute, and saves only on confirmation', () => {
+  const html=fs.readFileSync(path.join(root,'pages/script.html'),'utf8');
+  assert.match(html,/id="scriptLocalFile" type="file"/);
+  const b=browser('script'), c=b.context;
+  b.requests[0].respond({settings:{webViewUserScripts:[]}});
+  let reader;
+  c.FileReader=function(){ reader=this; this.readAsText=(file,encoding)=>assert.equal(encoding,'UTF-8'); };
+  const source='// ==UserScript==\n// @name 本地脚本\n// ==/UserScript==\nwindow.executed=true;';
+  const input={value:'selected',files:[{name:'test.user.js',size:source.length}]};
+  c.importUserScriptFromFile(input);
+  assert.equal(input.value,'');
+  assert.equal(b.elements.get('importScriptButton').disabled,true);
+  c.createUserScript(); assert.equal(c.editingScriptId,'');
+  reader.result=source; reader.onload();
+  const req=b.requests.find(r=>r.url==='/api/user-script/import');
+  assert.deepEqual(JSON.parse(req.body),{source,fileName:'test.user.js'});
+  assert.equal(c.window.executed,undefined);
+  req.respond({script:{name:'本地脚本',source,version:'1.2'},warnings:['GM_* 暂不支持']});
+  assert.equal(b.requests.filter(r=>r.url==='/api/settings').length,0);
+  assert.equal(b.elements.get('webViewUserScriptName').value,'本地脚本');
+  assert.match(b.elements.get('scriptImportInfo').textContent,/test.user.js.*1.2/);
+  assert.equal(c.editorDirty,true);
+  c.saveEditingScript();
+  const payload=JSON.parse(b.requests.find(r=>r.url==='/api/settings').body).webViewUserScripts[0];
+  assert.equal(payload.source,source); assert.equal(payload.installUrl,'');
+});
+
+test('local script failures release busy state and allow retry without stale read callbacks', () => {
+  for (const failure of ['error','abort','timeout','throw','empty','server']) {
+    const b=browser('script'),c=b.context;
+    b.requests[0].respond({settings:{webViewUserScripts:[]}});
+    let reader;
+    c.FileReader=function(){reader=this; this.readAsText=()=>{if(failure==='throw')throw Error();}; this.abort=()=>this.onabort();};
+    const input={files:[{name:'script.js',size:12}]};
+    c.importUserScriptFromFile(input);
+    if(failure==='error')reader.onerror();
+    if(failure==='abort')reader.onabort();
+    if(failure==='timeout')b.runTimers(15000);
+    if(failure==='empty') {reader.result='';reader.onload();}
+    if(failure==='server') {reader.result='invalid';reader.onload();b.requests.find(r=>r.url==='/api/user-script/import').respond({ok:false,message:'无效元数据'});}
+    assert.equal(c.scriptImportBusy,false,failure);
+    assert.equal(b.elements.get('importLocalScriptButton').disabled,false);
+    const count=b.requests.length;
+    reader.result='late'; reader.onload(); assert.equal(b.requests.length,count);
+    c.importUserScriptFromFile(input);
+    if(failure!=='throw')assert.equal(c.scriptImportBusy,true);
+  }
+});
+
+test('local script import rejects oversized/wrong files, capacity and active edits', () => {
+  const b=browser('script'),c=b.context;
+  b.requests[0].respond({settings:{webViewUserScripts:[]}});
+  c.FileReader=function(){throw Error('Must not read');};
+  for(const file of [null,{name:'page.html',size:1},{name:'big.js',size:262145}]) {
+    c.importUserScriptFromFile({files:file?[file]:[]});
+    assert.equal(c.scriptImportBusy,false);
+  }
+  c.userScripts=Array.from({length:32},(_,i)=>({id:'s'+i,source:'old'}));
+  c.importUserScriptFromFile({files:[{name:'test.js',size:1}]});
+  assert.equal(c.scriptImportBusy,false);
+  c.userScripts=[]; c.createUserScript(); const id=c.editingScriptId;
+  c.importUserScriptFromFile({files:[{name:'test.js',size:1}]});
+  c.document.getElementById('scriptInstallUrl').value='https://test.example/script.js';
+  c.importUserScriptFromUrl();
+  assert.equal(c.editingScriptId,id);
+  assert.equal(b.requests.filter(r=>r.url==='/api/user-script/import').length,0);
+});
+
 test('finite media downloads directly without recorder navigation; live streams keep the recorder flow', () => {
   const b=browser('media'), c=b.context, downloads=[];
   // The harness link href setter only extracts hostname; use plain anchor nodes here.
@@ -178,6 +249,7 @@ test('finite media downloads directly without recorder navigation; live streams 
   assert.equal(downloads.length,1);
   assert.equal(downloads[0].href,'/api/media/download?sourceKey=41%3A2%3A7');
   assert.equal(c.location.href,undefined);
+  c.window.NtvNavigation={go(url){c.location.href=url;}};
   c.mediaState={fileDownloadAvailable:false,sourceKey:'42:2:8'};
   c.openVideoRecorderPage();
   assert.match(c.location.href,/^\/video-recorder\.html\?/);
@@ -687,20 +759,39 @@ test('back dismisses the media sheet and leaves the controller available', () =>
   assert.equal(c.mediaDismissSheet(), false);
 });
 
-test('back closes a sniffed player through the native bridge before page navigation', () => {
+test('management back never invokes player bridges or exit commands', () => {
   const b=browser(), c=b.context;let returned=0;
-  c.NtvDevice=c.window.NtvDevice={returnFromSniffedResource:()=>{returned++;return true;}};
-  c.goBack();assert.equal(returned,1);assert.equal(c.location.replaced,undefined);
+  c.NtvDevice=c.window.NtvDevice={returnFromSniffedResource:()=>{returned++;return true;},
+    returnFromMultimedia:()=>{returned++;return true;}};
+  c.mediaState={canReturnToWeb:false,backExitsApp:true};
+  c.goBack();assert.equal(returned,0);assert.equal(c.location.replaced,'/index.html');
+  assert.equal(b.requests.length,0);
 });
 
-test('external media controller back restores the page without navigating away', () => {
-  const b=browser(), c=b.context;
-  c.mediaState={canReturnToWeb:true};
-  c.goBack();let request=b.requests[b.requests.length-1];
-  assert.equal(request.url,'/api/control');
-  assert.equal(JSON.parse(request.body).action,'returnToWeb');
-  request.respond({ok:true,returned:true});
-  assert.equal(c.mediaState.canReturnToWeb,false);assert.equal(c.location.replaced,undefined);
+test('page buttons delegate navigation to the shared module', () => {
+  const b=browser(),c=b.context, calls=[];
+  c.window.NtvNavigation={init(){calls.push('init');},go(url){calls.push(url);},back(native){calls.push(native);}};
+  c.rememberManagementNavigation(); c.navigateTo('/pages/media.html'); c.goBack();
+  assert.deepEqual(calls,['init','/pages/media.html',false]);
+  assert.equal(b.requests.length,0);
+});
+
+test('direct subpages and unrelated browser history fall back to first-level menu', () => {
+  for (const mode of ['external','direct','new-tab','storage-blocked']) {
+    const b=browser(),c=b.context;
+    c.location.pathname='/pages/script.html';c.location.href='http://192.168.1.9:9966/pages/script.html';
+    c.history.length=mode==='new-tab'?1:9;
+    c.history.replaceState=value=>{c.history.state=value;};
+    c.history.back=()=>{throw Error('Must not navigate unrelated history');};
+    c.document.referrer=mode==='external'?'https://example.com/':mode==='new-tab'?'http://192.168.1.9:9966/index.html':'';
+    c.sessionStorage={getItem:()=>{
+      if(mode==='storage-blocked')throw Error('Storage denied');
+      return JSON.stringify({url:'http://192.168.1.9:9966/index.html',hasMenu:true});
+    },setItem(){}};
+    c.rememberManagementNavigation(); c.goBack();
+    assert.equal(c.location.replaced,'/index.html',mode);
+    assert.equal(b.requests.length,0);
+  }
 });
 
 test('volume follows the finger in real time and release commits the latest value', () => {
@@ -831,6 +922,34 @@ test('M3U sidecars survive phone merge and invalid subtitles do not reject video
   assert.equal(merged.channels[0].subtitleUrls.length, 2);
   const round = c.parsePlaylistOnPhone(c.buildMergedM3u(merged).text, source);
   assert.deepEqual(Array.from(round.entries[0].subtitleUrls), Array.from(parsed.entries[0].subtitleUrls));
+});
+
+test('web media cover follows current page and clears stale load callbacks', () => {
+  const b=browser('media'),c=b.context;
+  c.mediaState={webPageVisible:true,webPageKey:'A',webArtworkUrl:'https://music.test/one.png'};
+  c.mediaUpdateArtwork(); const image=b.elements.get('mediaArtwork'),oldLoad=image.onload,oldError=image.onerror;
+  assert.equal(image.src,'https://music.test/one.png');
+  c.mediaState={webPageVisible:true,webPageKey:'B',webArtworkUrl:'https://music.test/two.png'};
+  c.mediaUpdateArtwork(); oldLoad(); assert.equal(image.hidden,true);
+  image.onload(); oldError(); assert.equal(image.hidden,false);
+  c.mediaState.webArtworkUrl='javascript:alert(1)'; c.mediaUpdateArtwork(); assert.equal(image.src,'');
+  assert.equal(image.hidden,true);
+  c.mediaState={audioOnly:true,prepared:true,artworkKey:'native',webPageVisible:false,webArtworkUrl:'https://old.test/art.png'};
+  c.mediaUpdateArtwork(); assert.equal(image.src,'/api/media/artwork?key=native');
+});
+
+test('web playback command uses explicit action and page/media identity', () => {
+  const b=browser('media'),c=b.context;
+  c.mediaControllerOpen=true;
+  c.mediaState={webPageVisible:true,webPageKey:'B:2',webMediaToken:'doc:7',playing:true};
+  c.mediaCommand('toggle');
+  let body=JSON.parse(b.requests[b.requests.length-1].body);
+  assert.equal(body.action,'pause'); assert.equal(body.webPageKey,'B:2'); assert.equal(body.webMediaToken,'doc:7');
+  c.mediaState.playing=false; c.mediaCommand('toggle');
+  assert.equal(JSON.parse(b.requests[b.requests.length-1].body).action,'play');
+  c.mediaState.webPageVisible=false; c.mediaCommand('toggle');
+  body=JSON.parse(b.requests[b.requests.length-1].body);
+  assert.equal(body.action,'toggle'); assert.equal('webPageKey' in body,false);
 });
 
 console.log('All ' + passed + ' control-page regression scenarios passed.');

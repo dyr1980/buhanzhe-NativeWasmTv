@@ -112,7 +112,7 @@ final class YangshipinWebResolver {
         if (webView != null) {
             return;
         }
-        webView = new WebView(activity.getApplicationContext());
+        webView = WebViewAvailability.create(() -> new WebView(activity.getApplicationContext()));
         webView.setBackgroundColor(Color.TRANSPARENT);
         webView.setAlpha(0.01f);
         webView.setVisibility(View.GONE);
@@ -282,7 +282,8 @@ final class YangshipinWebResolver {
                     webView.postDelayed(timeout, 15000L);
                 } catch (Exception error) {
                     Log.e(TAG, "Unable to build Yangshipin API request", error);
-                    fail(pendingRequest, "央视频请求生成失败");
+                    fail(pendingRequest, error instanceof WebViewAvailability.UnavailableException
+                            ? WebViewAvailability.MESSAGE : "央视频请求生成失败");
                 }
             }
         });

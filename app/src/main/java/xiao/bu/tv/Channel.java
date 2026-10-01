@@ -13,6 +13,7 @@ final class Channel {
     final String yangshipinMaxDefinition;
     final String epgId;
     final String logoUrl;
+    final boolean radio;
     final String[] subtitleUrls;
     final int catalogSource;
     final String favoriteKey;
@@ -63,6 +64,14 @@ final class Channel {
     private Channel(String number, String name, String streamId, String[] urls,
             String yangshipinPid, String yangshipinStreamId, String yangshipinMaxDefinition,
             String epgId, int catalogSource, String favoriteKey, String logoUrl, String[] subtitleUrls) {
+        this(number, name, streamId, urls, yangshipinPid, yangshipinStreamId,
+                yangshipinMaxDefinition, epgId, catalogSource, favoriteKey, logoUrl, subtitleUrls, false);
+    }
+
+    private Channel(String number, String name, String streamId, String[] urls,
+            String yangshipinPid, String yangshipinStreamId, String yangshipinMaxDefinition,
+            String epgId, int catalogSource, String favoriteKey, String logoUrl, String[] subtitleUrls,
+            boolean radio) {
         this.number = number;
         this.name = name;
         this.streamId = streamId;
@@ -73,6 +82,7 @@ final class Channel {
         this.yangshipinMaxDefinition = yangshipinMaxDefinition;
         this.epgId = epgId;
         this.logoUrl = logoUrl == null ? "" : logoUrl.trim();
+        this.radio = radio;
         this.subtitleUrls = subtitleUrls.clone();
         this.catalogSource = catalogSource;
         this.favoriteKey = favoriteKey;
@@ -93,7 +103,7 @@ final class Channel {
         combined[urls.length] = candidate;
         return new Channel(number, name, streamId, combined,
                 yangshipinPid, yangshipinStreamId, yangshipinMaxDefinition, epgId,
-                catalogSource, favoriteKey, logoUrl, subtitleUrls);
+                catalogSource, favoriteKey, logoUrl, subtitleUrls, radio);
     }
 
     static boolean sameSourceUrl(String first, String second) {
@@ -223,19 +233,26 @@ final class Channel {
     Channel asFavorite(String key, int source) {
         return new Channel(number, name, streamId, urls,
                 yangshipinPid, yangshipinStreamId, yangshipinMaxDefinition, epgId,
-                source, key, logoUrl, subtitleUrls);
+                source, key, logoUrl, subtitleUrls, radio);
     }
 
     Channel withCatalogSource(int source) {
         return new Channel(number, name, streamId, urls,
                 yangshipinPid, yangshipinStreamId, yangshipinMaxDefinition, epgId,
-                source, favoriteKey, logoUrl, subtitleUrls);
+                source, favoriteKey, logoUrl, subtitleUrls, radio);
     }
 
     Channel withLogo(String url) {
         return new Channel(number, name, streamId, urls, yangshipinPid,
                 yangshipinStreamId, yangshipinMaxDefinition, epgId,
-                catalogSource, favoriteKey, url, subtitleUrls);
+                catalogSource, favoriteKey, url, subtitleUrls, radio);
+    }
+
+    Channel withRadio(boolean value) {
+        if (radio == value) return this;
+        return new Channel(number, name, streamId, urls, yangshipinPid,
+                yangshipinStreamId, yangshipinMaxDefinition, epgId,
+                catalogSource, favoriteKey, logoUrl, subtitleUrls, value);
     }
 
     Channel withSubtitles(String values) {
@@ -247,7 +264,7 @@ final class Channel {
         }
         return new Channel(number, name, streamId, urls, yangshipinPid,
                 yangshipinStreamId, yangshipinMaxDefinition, epgId, catalogSource,
-                favoriteKey, logoUrl, result.toArray(new String[result.size()]));
+                favoriteKey, logoUrl, result.toArray(new String[result.size()]), radio);
     }
 
     String subtitleUrlsText() {

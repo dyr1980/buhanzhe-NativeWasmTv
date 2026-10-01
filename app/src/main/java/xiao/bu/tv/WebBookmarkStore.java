@@ -27,7 +27,8 @@ final class WebBookmarkStore {
         String title;
         String url;
         final ArrayList<Node> children = new ArrayList<Node>();
-        Bitmap icon;
+        // The bounded hot cache/views own pixels; a large bookmark tree must not.
+        java.lang.ref.WeakReference<Bitmap> icon;
         boolean iconLoaded;
 
         Node(boolean folder, String title, String url) {
@@ -58,7 +59,10 @@ final class WebBookmarkStore {
     WebBookmarkStore(Context context, SharedPreferences preferences) {
         this.context = context.getApplicationContext();
         this.preferences = preferences;
-        iconDirectory = new File(new File(context.getCacheDir(), "browser"), "favicons");
+        // v1 could cache the reused WebView's previous favicon under a new host
+        // during onPageStarted/onPageFinished. Do not migrate those untrusted
+        // pixels; bookmarks and browsing data remain untouched.
+        iconDirectory = new File(new File(context.getCacheDir(), "browser"), "favicons-native-v2");
         load();
     }
 
@@ -116,12 +120,16 @@ final class WebBookmarkStore {
 
     Bitmap icon(Node node) {
         if (node == null || node.folder) return null;
-        if (!node.iconLoaded) {
+        Bitmap cached = node.icon == null ? null : node.icon.get();
+        if (!node.iconLoaded || node.icon != null && (cached == null || cached.isRecycled())) {
             node.iconLoaded = true;
-            node.icon = iconForUrl(node.url);
+            cached = iconForUrl(node.url);
+            node.icon = cached == null ? null : new java.lang.ref.WeakReference<>(cached);
         }
-        return node.icon;
+        return cached;
     }
+
+    void trimMemory() { iconMemory.clear(); }
 
     Bitmap iconForUrl(String url) {
         String key = digestKey(url);
@@ -129,14 +137,26 @@ final class WebBookmarkStore {
         if (memory != null && !memory.isRecycled()) return memory;
         if (memory == null && iconMemory.containsKey(key)) return null;
         File file = iconFile(url);
-        Bitmap decoded = file.isFile() ? BitmapFactory.decodeFile(file.getAbsolutePath()) : null;
+        Bitmap decoded = null;
+        if (file.isFile()) {
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(file.getAbsolutePath(), options);
+            options.inSampleSize = 1;
+            while (Math.max(options.outWidth, options.outHeight) / options.inSampleSize > 48) options.inSampleSize *= 2;
+            options.inJustDecodeBounds = false;
+            decoded = BitmapFactory.decodeFile(file.getAbsolutePath(), options);
+        }
         iconMemory.put(key, decoded);
         return decoded;
     }
 
     void cacheIcon(String url, Bitmap bitmap) {
         if (bitmap == null || bitmap.isRecycled()) return;
-        final Bitmap scaled = Bitmap.createScaledBitmap(bitmap, 48, 48, true);
+        int largest = Math.max(bitmap.getWidth(), bitmap.getHeight());
+        final Bitmap scaled = largest <= 48 ? bitmap : Bitmap.createScaledBitmap(bitmap,
+                Math.max(1, Math.round(bitmap.getWidth() * 48f / largest)),
+                Math.max(1, Math.round(bitmap.getHeight() * 48f / largest)), true);
         iconMemory.put(digestKey(url), scaled);
         applyIcon(roots, digestKey(url), scaled);
         final File target = iconFile(url);
@@ -252,7 +272,7 @@ final class WebBookmarkStore {
         boolean changed = false;
         for (Node node : nodes) {
             if (!node.folder && domainKey.equals(digestKey(node.url))) {
-                node.icon = bitmap;
+                node.icon = new java.lang.ref.WeakReference<>(bitmap);
                 node.iconLoaded = true;
                 changed = true;
             }

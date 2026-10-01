@@ -22,7 +22,7 @@ final class Ku9ScriptLoader {
     private static final int MAX_SCRIPT_BYTES = 2 * 1024 * 1024;
     private static final long ONLINE_CACHE_MS = 30L * 60L * 1000L;
     private static final Pattern SAFE_NAME = Pattern.compile(
-            "[A-Za-z0-9_.-]+\\.js", Pattern.CASE_INSENSITIVE);
+            "[\\p{L}\\p{N}\\p{M}_.-]+\\.js", Pattern.CASE_INSENSITIVE);
 
     private final Activity activity;
 
@@ -34,7 +34,7 @@ final class Ku9ScriptLoader {
     static SavedScript saveUserScript(Activity activity, String fileName, byte[] body)
             throws IOException {
         String safeName = fileName == null ? "" : fileName.trim();
-        if (!SAFE_NAME.matcher(safeName).matches()) {
+        if (!isSafeScriptName(safeName)) {
             throw new IOException("只支持名称安全的 .js 文件");
         }
         if (HNYX_SCRIPT.equalsIgnoreCase(safeName)) {
@@ -133,7 +133,7 @@ final class Ku9ScriptLoader {
             throw new IOException("不是有效的酷9脚本地址");
         }
         String fileName = path.substring(path.lastIndexOf('/') + 1);
-        if (!SAFE_NAME.matcher(fileName).matches()) {
+        if (!isSafeScriptName(fileName)) {
             throw new IOException("酷9脚本文件名不安全");
         }
 
@@ -150,6 +150,10 @@ final class Ku9ScriptLoader {
                     : Ku9HttpClient.getText(scriptUrl, null, MAX_SCRIPT_BYTES);
         }
         return legacySyntax && HNYX_SCRIPT.equalsIgnoreCase(fileName) ? toLegacySyntax(script) : script;
+    }
+
+    static boolean isSafeScriptName(String fileName) {
+        return fileName != null && SAFE_NAME.matcher(fileName).matches();
     }
 
     private String readLocal(String fileName) throws IOException {

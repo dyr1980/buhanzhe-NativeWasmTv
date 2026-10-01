@@ -37,6 +37,8 @@ body.media-page-shell { background: #202529; color: #fff; }
 .media-page-shell .media-sniffed-sheet .media-sniffed-list { overflow-y: auto; min-height: 0; flex: 1; -webkit-overflow-scrolling: touch; }
 .media-shot-sheet img { display: block; max-width: 100%; max-height: 48vh; margin: auto; object-fit: contain; }
 .media-shot-sheet a { display: block; text-align: center; padding: 12px; color: #007aff; }
+.media-shot-sheet a[hidden], .media-shot-sheet p[hidden] { display: none; }
+.media-shot-sheet p { text-align: center; padding: 12px; color: #6c7278; }
 @media (max-height: 560px) {
   #mediaControllerBody .media-scene { padding-bottom: 8px; }
   #mediaControllerBody .media-now b { font-size: 22px; }

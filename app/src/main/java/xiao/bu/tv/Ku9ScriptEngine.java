@@ -91,7 +91,7 @@ final class Ku9ScriptEngine {
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     private void ensureWebView() {
         if (webView != null) return;
-        webView = new WebView(activity);
+        webView = WebViewAvailability.create(() -> new WebView(activity));
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(false);

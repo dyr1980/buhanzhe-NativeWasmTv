@@ -29,6 +29,9 @@ document.addEventListener("webkitfullscreenchange", updateFlyFullscreen, false);
 fitFlyViewport();
 
 var pointerScale = 1,
+  flyControlMode = "touch",
+  stopRemoteRepeats = function () {},
+  cancelTouchpadInput = function () {},
   pointerWasTakenOver = false,
   remoteModifiers = { shift: false, ctrl: false, alt: false },
   browserActionReady = false,
@@ -212,6 +215,7 @@ function pollBrowserAction() {
 }
 
 function switchControlMode(mode, userInitiated) {
+  flyControlMode = mode;
   if (mode !== "keyboard" || userInitiated) autoInputKeyboard = false;
   var names = ["Touch", "Keyboard", "Gamepad"];
   for (var i = 0; i < names.length; i++) {
@@ -382,6 +386,9 @@ function setupRemoteControls() {
     timerId = null;
     repeatId = null;
   }
+  stopRemoteRepeats = stop;
+  window.addEventListener("blur", stop, false);
+  window.addEventListener("pagehide", stop, false);
   for (var i = 0; i < buttons.length; i++) {
     (function (button) {
       function start(event) {
@@ -582,6 +589,8 @@ function stopGyroscope() {
 }
 
 function suspendRemoteControl() {
+  stopRemoteRepeats();
+  cancelTouchpadInput();
   // Native onPause and page visibility can both notify us. Do not lose resume intent.
   gyroResumeAfterPause = gyroResumeAfterPause || gyroRunning;
   if (gyroRunning) stopGyroscope();
@@ -787,7 +796,7 @@ function sensorReady(name) {
 }
 
 function openBrowserSettings() {
-  location.href = "/pages/browser.html";
+  navigateTo("/pages/browser.html");
 }
 
 function clampRate(value) {
@@ -846,6 +855,7 @@ function setupTouchpad() {
     twoFingerTapAt = 0,
     twoFingerOrigins = {},
     trackpadGesture = new NtvTrackpadGesture();
+  cancelTouchpadInput = function () { mouseDown = false; end(true); };
   window.addEventListener("pagehide", function () {
     twoFingerTap = false;
     releaseHold(true);
@@ -1101,6 +1111,29 @@ function renderPageState() {
 }
 setupTouchpad();
 setupRemoteControls();
+if (window.NtvNavigation) {
+  var savedFlyUi = NtvNavigation.readUi();
+  if (/^(touch|keyboard|gamepad)$/.test(savedFlyUi.mode || "")) switchControlMode(savedFlyUi.mode);
+  if (typeof savedFlyUi.text === "string") document.getElementById("remoteText").value = savedFlyUi.text;
+  if (savedFlyUi.fullKeyboard) setFullKeyboardVisible(true);
+  if (typeof savedFlyUi.symbols === "boolean") {
+    phoneSymbols = savedFlyUi.symbols;
+    phoneShift = !!savedFlyUi.phoneShift;
+    renderPhoneKeyboard();
+  }
+  NtvNavigation.beforeLeave(function (done) {
+    NtvNavigation.saveUi({ mode: flyControlMode, text: document.getElementById("remoteText").value,
+      fullKeyboard: document.getElementById("fullKeyboard").style.display !== "none",
+      symbols: phoneSymbols, phoneShift: phoneShift });
+    stopRemoteRepeats();
+    cancelTouchpadInput();
+    if (gyroRunning) stopGyroscope();
+    gyroResumeAfterPause = false; // Returning to this page must not resume pointer motion by itself.
+    remoteModifiers = { shift: false, ctrl: false, alt: false };
+    updateModifierButtons();
+    pointerQueue.reset(done); // Cancel follows any in-flight DOWN before changing documents.
+  });
+}
 window.addEventListener("online", resetPointerTransport, false);
 window.addEventListener("pageshow", resumeRemoteControl, false);
 window.addEventListener("pagehide", suspendRemoteControl, false);
