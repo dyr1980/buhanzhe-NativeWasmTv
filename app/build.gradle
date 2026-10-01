@@ -142,6 +142,7 @@ android {
 
     sourceSets {
         main {
+            java.srcDirs += [rootProject.file("third_party/android-transcoder/src")]
             jni.srcDirs = []
             jniLibs.srcDirs = ['src/main/libs']
         }
