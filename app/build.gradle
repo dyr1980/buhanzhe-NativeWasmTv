@@ -14,7 +14,7 @@ if (releaseKeystore.exists() != releaseSigningInfo.exists()) {
 def releaseSigningProperties = new Properties()
 def configuredTargetSdk = 25
 def configuredVersionCode = project.hasProperty('versionCodeOverride')
-        ? Integer.parseInt(project.property('versionCodeOverride').toString()) : 7
+        ? Integer.parseInt(project.property('versionCodeOverride').toString()) : 8
 if (releaseSigningAvailable) {
     releaseSigningInfo.withInputStream { releaseSigningProperties.load(it) }
     ['alias', 'storePassword', 'keyPassword'].each { propertyName ->
@@ -80,6 +80,15 @@ android {
             buildConfigField 'String', 'UPDATE_SHA256_FIELD', '"sha25664"'
             buildConfigField 'String', 'UPDATE_APK_ASSET', '"nTv64.apk"'
         }
+        x86 {
+            dimension 'architecture'
+            minSdkVersion 14
+            ndk { abiFilters 'x86' }
+            buildConfigField 'String', 'CJS_PLUGIN_ABI', '"x86"'
+            buildConfigField 'String', 'UPDATE_APK_URL_FIELD', '"apkX86Url"'
+            buildConfigField 'String', 'UPDATE_SHA256_FIELD', '"sha256X86"'
+            buildConfigField 'String', 'UPDATE_APK_ASSET', '"nTvX86.apk"'
+        }
     }
 
     buildTypes {
@@ -89,20 +98,22 @@ android {
             }
             buildConfigField 'boolean', 'EMBED_CONTROL_PAGES', 'true'
             buildConfigField 'String', 'RECOMMENDED_JOY_SOURCE_URL',
-                    '"https://raw.githubusercontent.com/dyr1980/webSourceM3U8/main/JoyPage.txt"'
+                    '"https://raw.githubusercontent.com/dyr1980/webSourceM3U8/refs/heads/main/JoyPage.txt"'
             buildConfigField 'String', 'RECOMMENDED_FM_SOURCE_URL',
-                    '"https://raw.githubusercontent.com/dyr1980/webSourceM3U8/main/fm.txt"'
+                    '"https://raw.githubusercontent.com/dyr1980/webSourceM3U8/refs/heads/main/fm.txt"'
             buildConfigField 'String', 'RECOMMENDED_TEST_SOURCE_URL',
-                    '"https://raw.githubusercontent.com/dyr1980/webSourceM3U8/main/test.txt"'
+                    '"https://raw.githubusercontent.com/dyr1980/webSourceM3U8/refs/heads/main/test.txt"'
             buildConfigField 'String', 'RECOMMENDED_WEBVIEW_SOURCE_URL',
-                    '"https://raw.githubusercontent.com/dyr1980/webSourceM3U8/main/webview.txt"'
+                    '"https://raw.githubusercontent.com/dyr1980/webSourceM3U8/refs/heads/main/webview.txt"'
             buildConfigField 'String', 'FLY_MOUSE_PAGE_SOURCE_URL', '""'
             buildConfigField 'String', 'VIDEO_RECORDER_PAGE_SOURCE_URL', '""'
             buildConfigField 'String', 'MP4_FINALIZER_SOURCE_URL', '""'
         }
         release {
+            // Remove unreachable Java code but preserve class names for old-device
+            // reflection, readable crash traces and release APK validation.
             minifyEnabled true
-            shrinkResources true
+            shrinkResources false
             if (releaseSigningAvailable) {
                 signingConfig signingConfigs.iptvRelease
             }
@@ -129,20 +140,7 @@ android {
         }
     }
 
-    // 新增：动态重命名生成的APK，确保CI脚本能正确找到并复制文件
-    applicationVariants.all { variant ->
-        variant.outputs.all { output ->
-            if (variant.flavorName == 'arm32') {
-                outputFileName = "XCZ.apk"
-            } else if (variant.flavorName == 'arm64') {
-                outputFileName = "XCZ64.apk"
-            }
-        }
-    }
-
     sourceSets {
-        // Only upstream TextureRender is retained, for legacy one-shot screenshots.
-        main.java.srcDirs += [rootProject.file("third_party/android-transcoder/src")]
         main {
             jni.srcDirs = []
             jniLibs.srcDirs = ['src/main/libs']
@@ -162,13 +160,6 @@ android {
     aaptOptions {
         // Keep AAPT's default exclusions and omit management-site authoring docs.
         ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~:README.md'
-    }
-}
-
-// 新增：定义 printVersionName 任务，供 GitHub Actions 读取版本号
-task printVersionName {
-    doLast {
-        println android.defaultConfig.versionName
     }
 }
 
@@ -198,6 +189,8 @@ task packageWebkitCorePair(type: Jar) {
 
 dependencies {
     implementation 'tv.danmaku.ijk.media:ijkplayer-java:0.8.8'
+    // ARM builds use the locally patched IJK libraries; x86 uses upstream 0.8.8.
+    x86Implementation 'tv.danmaku.ijk.media:ijkplayer-x86:0.8.8'
     implementation('androidx.webkit:webkit:1.9.0') {
         exclude group: 'androidx.core', module: 'core'
     }
@@ -235,8 +228,9 @@ task generateVersionFile {
         }
         String sha25632 = fileSha256('updateApk32')
         String sha25664 = fileSha256('updateApk64')
-        if (!sha25632 || !sha25664) {
-            throw new GradleException('Both -PupdateApk32 and -PupdateApk64 are required')
+        String sha256X86 = fileSha256('updateApkX86')
+        if (!sha25632 || !sha25664 || !sha256X86) {
+            throw new GradleException('-PupdateApk32, -PupdateApk64 and -PupdateApkX86 are required')
         }
         String releaseBase = 'https://github.com/dyr1980/buhanzhe-NativeWasmTv/releases/latest/download/'
 
@@ -247,9 +241,11 @@ task generateVersionFile {
                 apkUrl      : releaseBase + 'nTv.apk',
                 apk32Url    : releaseBase + 'nTv.apk',
                 apk64Url    : releaseBase + 'nTv64.apk',
+                apkX86Url   : releaseBase + 'nTvX86.apk',
                 sha256      : sha25632,
                 sha25632    : sha25632,
                 sha25664    : sha25664,
+                sha256X86   : sha256X86,
                 releaseNotes: project.findProperty('releaseNotes') ?: '修复问题并提升播放体验。'
         ]
         String manifestJson = JsonOutput.prettyPrint(JsonOutput.toJson(manifest)) + '\n'
@@ -261,6 +257,7 @@ task generateVersionFile {
             rootProject.file('version-iptv.json').setText(manifestJson, 'UTF-8')
         }
         logger.lifecycle("Generated ${liteOutput} (arm32=${sha25632 ?: 'unset'}, "
-                + "arm64=${sha25664 ?: 'unset'}, important=${importantUpdate})")
+                + "arm64=${sha25664 ?: 'unset'}, x86=${sha256X86 ?: 'unset'}, "
+                + "important=${importantUpdate})")
     }
 }
