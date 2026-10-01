@@ -128,6 +128,8 @@ public final class MainActivity extends Activity {
     private static final String VIDEO_SCALE_STRETCH = "stretch";
     private static final String UI_SCALE_MODE = "ui_scale_mode";
     private static final String UI_SCALE_AUTO = "auto";
+    private static final String UI_SCALE_SMALL = "small";
+    private static final String UI_SCALE_SLIGHTLY_SMALL = "slightly_small";
     private static final String UI_SCALE_STANDARD = "standard";
     private static final String UI_SCALE_LARGE = "large";
     private static final String UI_SCALE_EXTRA_LARGE = "extra_large";
@@ -202,7 +204,7 @@ public final class MainActivity extends Activity {
     private static final String SUBTITLE_SHADOW_STANDARD = "standard";
     private static final String SUBTITLE_SHADOW_STRONG = "strong";
     private static final String MEDIA_TRACK_DISABLED = MediaTrackSelection.DISABLED;
-    private static final String GITHUB_URL = "https://github.com/buhanzhe/NativeWasmTv";
+    private static final String GITHUB_URL = "https://github.com/dyr1980/buhanzhe-NativeWasmTv";
     private static final String FIRST_LAUNCH_GROUP_TITLE = "央视频道";
     private static final String FIRST_LAUNCH_CHANNEL_NUMBER = "1";
     private static final String FIRST_LAUNCH_CHANNEL_PID = "600001859";
@@ -7913,7 +7915,9 @@ public final class MainActivity extends Activity {
     }
 
     private static String sanitizeUiScaleMode(String mode) {
-        if (UI_SCALE_STANDARD.equals(mode) || UI_SCALE_LARGE.equals(mode)
+        if (UI_SCALE_SMALL.equals(mode) || UI_SCALE_SLIGHTLY_SMALL.equals(mode)
+                || UI_SCALE_STANDARD.equals(mode)
+                || UI_SCALE_LARGE.equals(mode)
                 || UI_SCALE_EXTRA_LARGE.equals(mode)
                 || UI_SCALE_EXTRA_EXTRA_LARGE.equals(mode)) {
             return mode;

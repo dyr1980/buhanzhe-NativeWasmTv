@@ -59,6 +59,12 @@ public final class ChannelUiInstrumentation extends Instrumentation {
                 "High-density 720p controls remain oversized");
         check(Math.abs(UiScalePolicy.viewportScale(1280, 720, 1f) - .8f) < .011f,
                 "Low-density 720p controls became unreadable");
+        check(Math.abs(UiScalePolicy.resolve(1920, 1080,
+                "small", -1f, 1f) - .80f) < .011f,
+                "80% interface-size preset was not applied");
+        check(Math.abs(UiScalePolicy.resolve(1920, 1080,
+                "slightly_small", -1f, 1f) - .90f) < .011f,
+                "90% interface-size preset was not applied");
         check(Math.abs(UiScalePolicy.resolve(1280, 720,
                 "extra_extra_large", -1f, 3f) - 1.34f) < .011f,
                 "User interface-size preset was not combined with viewport scale");

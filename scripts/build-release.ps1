@@ -129,6 +129,17 @@ function Get-ApkArchitectures([string]$apkPath) {
     }
 }
 
+function Get-Sha256([string]$path) {
+    $stream = [System.IO.File]::OpenRead($path)
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        return ([System.BitConverter]::ToString($sha256.ComputeHash($stream)) -replace '-', '').ToLowerInvariant()
+    } finally {
+        $sha256.Dispose()
+        $stream.Dispose()
+    }
+}
+
 $signingDirectory = Join-Path $repoRoot '.signing'
 foreach ($requiredFile in @('iptv-release.jks', 'keystore-info.properties')) {
     if (-not (Test-Path -LiteralPath (Join-Path $signingDirectory $requiredFile))) {
@@ -226,7 +237,7 @@ $results = foreach ($artifact in $artifacts) {
     if ($badgingExitCode -ne 0 -or -not $badging) {
         throw "Unable to read APK metadata: $destination"
     }
-    $hash = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
+    $hash = Get-Sha256 $destination
     $file = Get-Item -LiteralPath $destination
     [pscustomobject]@{
         APK = $artifact.Name

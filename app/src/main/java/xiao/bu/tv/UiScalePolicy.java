@@ -14,7 +14,11 @@ final class UiScalePolicy {
     static float resolve(int viewportWidth, int viewportHeight, String mode,
             float displayDiagonalInches, float density) {
         float preset = 1f;
-        if ("large".equals(mode)) {
+        if ("small".equals(mode)) {
+            preset = 0.80f;
+        } else if ("slightly_small".equals(mode)) {
+            preset = 0.90f;
+        } else if ("large".equals(mode)) {
             preset = 1.25f;
         } else if ("extra_large".equals(mode)) {
             preset = 1.50f;

@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">网页电视</string>
+    <string name="app_name">小橙子电视</string>
     <string name="management_scan_title">手机扫码管理</string>
     <string name="management_same_lan">同一局域网内访问</string>
     <string name="back_navigation_prompt">点击 OK/确定 进入菜单\n再次点击返回退出应用。</string>
