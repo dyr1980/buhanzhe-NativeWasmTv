@@ -177,6 +177,13 @@ android {
     }
 }
 
+// 供 GitHub Actions 读取版本号使用
+task printVersionName {
+    doLast {
+        println android.defaultConfig.versionName
+    }
+}
+
 // WebKit 1.9.0 only references Core's Pair (in WebViewAssetLoader.Builder).
 // Keep that exact upstream class and its equality helper without Core's resources, component
 // factory and consumer rules that retain parcelizers/lifecycle classes. Re-audit
