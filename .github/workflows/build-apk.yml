@@ -63,17 +63,17 @@ jobs:
       - name: 复制 APK 到 dist 目录
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/arm32/release/app-arm32-release.apk dist/nTv.apk
-          cp app/build/outputs/apk/arm64/release/app-arm64-release.apk dist/nTv64.apk
-          cp app/build/outputs/apk/x86/release/app-x86-release.apk dist/nTvX86.apk
+          cp app/build/outputs/apk/arm32/release/XCZ.apk dist/XCZ.apk
+          cp app/build/outputs/apk/arm64/release/XCZ64.apk dist/XCZ64.apk
+          cp app/build/outputs/apk/x86/release/XCZX86.apk dist/XCZX86.apk
           ls -lh dist/
 
       - name: 生成更新清单
         run: |
           ./gradlew generateVersionFile --no-daemon \
-            -PupdateApk32=dist/nTv.apk \
-            -PupdateApk64=dist/nTv64.apk \
-            -PupdateApkX86=dist/nTvX86.apk \
+            -PupdateApk32=dist/XCZ.apk \
+            -PupdateApk64=dist/XCZ64.apk \
+            -PupdateApkX86=dist/XCZX86.apk \
             -PimportantUpdate=true \
             -PreleaseNotes="小橙子电视 GitHub Actions 自动构建"
 
@@ -101,6 +101,6 @@ jobs:
               --target "$GITHUB_SHA" \
               --title "XCZTV ${TAG}" \
               --notes "小橙子电视 GitHub Actions 自动构建" \
-              dist/nTv.apk dist/nTv64.apk dist/nTvX86.apk \
+              dist/XCZ.apk dist/XCZ64.apk dist/XCZX86.apk \
               version.json version-iptv.json version-lite.json
           fi
