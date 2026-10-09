@@ -8,6 +8,7 @@
 -keep interface tv.danmaku.ijk.media.player.misc.IAndroidIO { *; }
 -keep interface tv.danmaku.ijk.media.player.misc.IMediaDataSource { *; }
 -keep class xiao.bu.tv.DolbyAudioOutput { public *; }
+-keep class xiao.bu.tv.IjkCodecPerformance { public *; }
 
 # Bugly reflection/JNI entry points and retraceable crash source locations.
 -keep class com.tencent.bugly.** { *; }
@@ -48,3 +49,6 @@
 -dontwarn org.codehaus.mojo.animal_sniffer.IgnoreJRERequirement
 -dontwarn org.conscrypt.**
 -keepnames class okhttp3.internal.publicsuffix.PublicSuffixDatabase
+
+# Called from the native MediaCodec output bridge.
+-keep class xiao.bu.tv.NativeHdrOutput { public *; }

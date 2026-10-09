@@ -28,7 +28,9 @@ reports/
 scripts/*
 !scripts/build-launcher-mark.py
 !scripts/build-tv-banner.py
+!scripts/build-video-frame.ps1
 /docs
-/docs
-/tests
+/tests/*
+!/tests/hls-cache-performance.test.py
 userscripts/
+tools/

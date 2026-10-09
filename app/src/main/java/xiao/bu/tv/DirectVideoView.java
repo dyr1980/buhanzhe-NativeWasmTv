@@ -1,26 +1,19 @@
 package xiao.bu.tv;
 
 import android.content.Context;
-import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.PorterDuff;
-import android.graphics.SurfaceTexture;
-import android.os.Build;
 import android.util.AttributeSet;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
-import android.view.TextureView;
 import android.widget.FrameLayout;
 
-/** Zero-copy video output; Android 9 and older use a capturable texture from startup. */
-public final class DirectVideoView extends FrameLayout implements SurfaceHolder.Callback,
-        TextureView.SurfaceTextureListener {
+/** Direct video surface, preserving native video resolution independently of the UI layer. */
+public final class DirectVideoView extends FrameLayout implements SurfaceHolder.Callback {
     private final SurfaceView surfaceView;
-    private final TextureView textureView;
-    private Surface textureSurface;
     private SurfaceCallback callback;
     private SurfaceHolder activeHolder;
     private int videoWidth, videoHeight, sarNum = 1, sarDen = 1;
@@ -30,31 +23,15 @@ public final class DirectVideoView extends FrameLayout implements SurfaceHolder.
 
     public DirectVideoView(Context context, AttributeSet attrs) {
         super(context, attrs);
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            surfaceView = null;
-            textureView = new TextureView(context);
-            textureView.setSurfaceTextureListener(this);
-            addView(textureView, new LayoutParams(-1, -1));
-        } else {
-            textureView = null;
-            surfaceView = new SurfaceView(context);
-            surfaceView.getHolder().setFormat(PixelFormat.OPAQUE);
-            applySurfaceType();
-            surfaceView.getHolder().addCallback(this);
-            addView(surfaceView, new LayoutParams(-1, -1));
-        }
+        surfaceView = new SurfaceView(context);
+        surfaceView.getHolder().setFormat(PixelFormat.OPAQUE);
+        applySurfaceType();
+        surfaceView.getHolder().addCallback(this);
+        addView(surfaceView, new LayoutParams(-1, -1));
         setKeepScreenOn(true);
     }
 
     SurfaceView getSurfaceView() { return surfaceView; }
-    boolean usesTextureOutput() { return textureView != null; }
-
-    /** Only invoked for a screenshot; playback itself never reads frames. */
-    Bitmap captureTextureFrame(int width, int height) {
-        return textureView == null || !isSurfaceReady() || !textureView.isAvailable()
-                ? null : textureView.getBitmap(width, height);
-    }
-
     void setLegacySurfaceMode(boolean enabled) {
         if (legacySurfaceMode == enabled) return;
         legacySurfaceMode = enabled;
@@ -81,8 +58,7 @@ public final class DirectVideoView extends FrameLayout implements SurfaceHolder.
 
     SurfaceHolder getVideoSurfaceHolder() { return activeHolder; }
     Surface getVideoSurface() {
-        return textureView != null ? textureSurface
-                : activeHolder == null ? null : activeHolder.getSurface();
+        return activeHolder == null ? null : activeHolder.getSurface();
     }
 
     void setStretchVideo(boolean enabled) {
@@ -157,19 +133,12 @@ public final class DirectVideoView extends FrameLayout implements SurfaceHolder.
         if (activeHolder == holder) activeHolder = null;
     }
 
-    @Override public void onSurfaceTextureAvailable(SurfaceTexture texture, int width, int height) {
-        textureSurface = new Surface(texture);
-        if (callback != null) callback.onVideoSurfaceCreated(null, textureSurface);
+    void releaseOutput() {
+        callback = null;
+        activeHolder = null;
+        // SurfaceView owns its Surface; only detach our listener on Activity teardown.
+        surfaceView.getHolder().removeCallback(this);
     }
-    @Override public void onSurfaceTextureSizeChanged(SurfaceTexture texture, int width, int height) { }
-    @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture texture) {
-        Surface oldSurface = textureSurface;
-        if (callback != null) callback.onVideoSurfaceDestroyed(null, oldSurface);
-        textureSurface = null;
-        if (oldSurface != null) oldSurface.release();
-        return true;
-    }
-    @Override public void onSurfaceTextureUpdated(SurfaceTexture texture) { }
 
     interface SurfaceCallback {
         void onVideoSurfaceCreated(SurfaceHolder holder, Surface surface);

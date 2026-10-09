@@ -1599,6 +1599,7 @@ a.settings-entry {
   flex: 1;
   min-width: 0;
 }
+.group-item.group-child { margin-left: 24px; border-left: 2px solid var(--border, #e5e5ed); }
 .group-copy b {
   display: block;
   overflow: hidden;

@@ -22,11 +22,11 @@ import java.util.List;
 final class ChannelCatalogStore extends SQLiteOpenHelper {
     private static final String TAG = "ChannelCatalogStore";
     private static final String DATABASE_NAME = "channel-catalog.db";
-    private static final int DATABASE_VERSION = 4;
+    private static final int DATABASE_VERSION = 5;
 
     private static final String CREATE_GROUPS = "CREATE TABLE catalog_groups ("
             + "_id INTEGER PRIMARY KEY, position INTEGER NOT NULL, "
-            + "title TEXT NOT NULL, source INTEGER NOT NULL)";
+            + "title TEXT NOT NULL, source INTEGER NOT NULL, playlist_source_id TEXT, playlist_source_name TEXT)";
     private static final String CREATE_CHANNELS = "CREATE TABLE catalog_channels ("
             + "_id INTEGER PRIMARY KEY, group_id INTEGER NOT NULL, "
             + "position INTEGER NOT NULL, number TEXT, name TEXT NOT NULL, "
@@ -57,6 +57,10 @@ final class ChannelCatalogStore extends SQLiteOpenHelper {
 
     @Override
     public void onUpgrade(SQLiteDatabase database, int oldVersion, int newVersion) {
+        if (oldVersion < 5) {
+            database.execSQL("ALTER TABLE catalog_groups ADD COLUMN playlist_source_id TEXT");
+            database.execSQL("ALTER TABLE catalog_groups ADD COLUMN playlist_source_name TEXT");
+        }
         if (oldVersion < 3) database.execSQL("ALTER TABLE catalog_channels ADD COLUMN subtitle_urls TEXT");
         if (oldVersion < 2) database.execSQL("ALTER TABLE catalog_channels ADD COLUMN logo_url TEXT");
         if (oldVersion < 4) {
@@ -79,7 +83,8 @@ final class ChannelCatalogStore extends SQLiteOpenHelper {
         }
         String sql = "SELECT g._id,g.title,g.source,c._id,c.number,c.name,c.stream_id,"
                 + "c.ysp_pid,c.ysp_stream_id,c.ysp_max_definition,c.epg_id,"
-                + "c.catalog_source,c.favorite_key,u.url,c.logo_url,c.subtitle_urls,c.radio "
+                + "c.catalog_source,c.favorite_key,u.url,c.logo_url,c.subtitle_urls,c.radio,"
+                + "g.playlist_source_id,g.playlist_source_name "
                 + "FROM catalog_groups g "
                 + "LEFT JOIN catalog_channels c ON c.group_id=g._id "
                 + "LEFT JOIN catalog_urls u ON u.channel_id=c._id "
@@ -102,7 +107,8 @@ final class ChannelCatalogStore extends SQLiteOpenHelper {
                     groupId = nextGroupId;
                     channelId = Long.MIN_VALUE;
                     channel = null;
-                    group = new GroupBuilder(cursor.getString(1), cursor.getInt(2));
+                    group = new GroupBuilder(cursor.getString(1), cursor.getInt(2),
+                            cursor.getString(17), cursor.getString(18));
                 }
                 if (cursor.isNull(3)) {
                     continue;
@@ -169,7 +175,7 @@ final class ChannelCatalogStore extends SQLiteOpenHelper {
             database.delete("catalog_groups", null, null);
             database.delete("catalog_meta", null, null);
             insertGroup = database.compileStatement("INSERT INTO catalog_groups"
-                    + "(_id,position,title,source) VALUES(?,?,?,?)");
+                    + "(_id,position,title,source,playlist_source_id,playlist_source_name) VALUES(?,?,?,?,?,?)");
             insertChannel = database.compileStatement("INSERT INTO catalog_channels"
                     + "(_id,group_id,position,number,name,stream_id,ysp_pid,ysp_stream_id,"
                     + "ysp_max_definition,epg_id,catalog_source,favorite_key,logo_url,subtitle_urls,radio) "
@@ -186,6 +192,8 @@ final class ChannelCatalogStore extends SQLiteOpenHelper {
                     insertGroup.bindLong(2, groupPosition);
                     insertGroup.bindString(3, safe(group.title));
                     insertGroup.bindLong(4, group.source);
+                    insertGroup.bindString(5, group.playlistSourceId);
+                    insertGroup.bindString(6, group.playlistSourceName);
                     insertGroup.executeInsert();
                     for (int channelPosition = 0;
                             channelPosition < group.channels.length; channelPosition++) {
@@ -301,11 +309,14 @@ final class ChannelCatalogStore extends SQLiteOpenHelper {
     private static final class GroupBuilder {
         final String title;
         final int source;
+        final String sourceId, sourceName;
         final List<Channel> channels = new ArrayList<Channel>();
 
-        GroupBuilder(String title, int source) {
+        GroupBuilder(String title, int source, String sourceId, String sourceName) {
             this.title = title;
             this.source = source;
+            this.sourceId = sourceId;
+            this.sourceName = sourceName;
         }
 
         void add(ChannelBuilder channel) {
@@ -316,7 +327,7 @@ final class ChannelCatalogStore extends SQLiteOpenHelper {
 
         ChannelCatalog.Group build() {
             return new ChannelCatalog.Group(title, source,
-                    channels.toArray(new Channel[channels.size()]));
+                    channels.toArray(new Channel[channels.size()]), sourceId, sourceName);
         }
     }
 

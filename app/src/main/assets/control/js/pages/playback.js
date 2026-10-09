@@ -215,7 +215,7 @@ function renderPageState() {
   document.getElementById("uiScaleMode").value = s.uiScaleMode || "auto";
   var display = state.display || {},
     size = Number(display.diagonalInches) || 0,
-    parts = ["当前 " + Math.round((Number(s.uiScaleFactor) || 1) * 100) + "%"];
+    parts = ["44dp 基准，随屏幕适配", "当前行高约 " + Math.round(46 * (Number(s.uiScaleFactor) || 1)) + "dp"];
   if (size > 0) parts.push("识别约 " + size.toFixed(1) + " 英寸");
   if (display.densityDpi) parts.push("DPI " + display.densityDpi);
   document.getElementById("uiScaleHint").textContent = parts.join(" · ");

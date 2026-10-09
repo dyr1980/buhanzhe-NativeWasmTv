@@ -9,16 +9,25 @@ method=source[a:b]
 java='''import java.io.IOException;
 public class VodReconnectCheck {
  static final String TAG="test";
- static class Log {static void i(String t,String s){}}
+ static class Log {static void i(String t,String s){}static void w(String t,String s,RuntimeException e){}}
+ static class Build {static class VERSION {static final int SDK_INT=19;}}
  static class Channel {}
- static class IjkMediaPlayer {
+ interface IMediaPlayer {long getDuration();long getCurrentPosition();}
+ static class IjkMediaPlayer implements IMediaPlayer {
   long duration,position,seek=-1; boolean paused;
   IjkMediaPlayer(long d,long p){duration=d;position=p;}
-  long getDuration(){return duration;} long getCurrentPosition(){return position;}
+  public long getDuration(){return duration;} public long getCurrentPosition(){return position;}
   void seekTo(long p){seek=p;} void pause(){paused=true;}
  }
  IjkMediaPlayer player;
  String directHttpMediaUrl; boolean fail, deferred;
+ int androidMp3FallbackRequestId=-1,playRequestId=1;
+ boolean systemHls,systemMp3;int systemStarts;
+ boolean useAndroidHlsPlayer(int sdk,String url){return systemHls;}
+ boolean useAndroidMp3Player(int sdk,String url){return systemMp3;}
+ void startAndroidMediaPlayer(Channel c,String url,boolean software,boolean hls)throws IOException {
+  systemStarts++;player=new IjkMediaPlayer(600000,0);
+ }
  void startIjkPlayer(Channel c,String u,boolean s,boolean direct,int[] tracks,long initialPositionMs)throws IOException {
   if(fail)throw new IOException("network");
   if(deferred)return;
@@ -52,6 +61,13 @@ public class VodReconnectCheck {
   try {c.restartPlayerPreservingPosition(new Channel(),"url",false);throw new AssertionError("Expected IOException");}
   catch(IOException expected){}
   check(c.player==old&&old.seek==-1,"Failed restart must not schedule stale seek");
+  c.fail=false;c.systemHls=true;c.restartPlayerPreservingPosition(new Channel(),"hls",false);
+  check(c.systemStarts==1,"System HLS recovery keeps its backend");
+  c.systemHls=false;c.systemMp3=true;c.restartPlayerPreservingPosition(new Channel(),"mp3",false);
+  check(c.systemStarts==2,"System MP3 recovery keeps its backend");
+  c.androidMp3FallbackRequestId=c.playRequestId;
+  c.restartPlayerPreservingPosition(new Channel(),"mp3",false);
+  check(c.systemStarts==2,"Failed system MP3 route falls back to IJK");
   System.out.println("PASS VOD initial seek, live, end clamp, invalid clock, old instance, deferred/failed restart");
  }
 }'''.replace('METHOD',method)

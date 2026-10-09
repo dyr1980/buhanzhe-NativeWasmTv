@@ -266,6 +266,9 @@ final class WebTabBar extends LinearLayout {
     Tab openChannel(String url, String title) {
         if (active == null || active.pinned) return openNew(url, title);
         active.url = safe(url);
+        // An explicit channel open replaces the document. Saved history belongs
+        // to the previous page and must only be restored when selecting a tab.
+        active.state = null;
         active.bookmarkTitle = active.bookmarkGroup = active.bookmarkUrl = "";
         active.title = displayTitle(title, url);
         active.icon = bookmarkStore.iconForUrl(active.url);

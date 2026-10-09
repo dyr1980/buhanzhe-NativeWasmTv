@@ -6,8 +6,6 @@ import android.content.Context;
 import android.database.Cursor;
 import android.database.MatrixCursor;
 import android.net.Uri;
-import android.os.Build;
-import android.os.Environment;
 import android.os.ParcelFileDescriptor;
 import android.provider.OpenableColumns;
 
@@ -20,8 +18,9 @@ public final class ApkFileProvider extends ContentProvider {
     private static final String PATH_UPDATES = "updates";
 
     static File updateDirectory(Context context) {
-        File base = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
-        if (base == null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+        // 使用应用私有目录，兼容老电视且无需外部存储权限。
+        File base = context.getFilesDir();
+        if (base == null) {
             base = context.getCacheDir();
         }
         return base == null ? null : new File(base, PATH_UPDATES);
@@ -125,6 +124,7 @@ public final class ApkFileProvider extends ContentProvider {
     }
 
     private static boolean isAllowedName(String name) {
-        return name != null && name.matches("(?:XCZ(?:64|X86)?|received)-[0-9]+\\.apk");
+        // 匹配 XCZ.apk、XCZ64.apk、XCZX86.apk，以及 received-12345.apk 或 XCZ-12345.apk
+        return name != null && name.matches("(?:XCZ(?:64|X86)?|received)(?:-[0-9]+)?\\.apk");
     }
 }

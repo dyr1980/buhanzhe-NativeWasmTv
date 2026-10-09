@@ -24,6 +24,7 @@ public final class ChannelScrollInstrumentation extends Instrumentation {
     private ViewGroup root;
     private FlyMouseCursorView cursor;
     private ListView[] lists;
+    private boolean remoteOnly;
     private Object field(String name) throws Exception {
         Field f=MainActivity.class.getDeclaredField(name); f.setAccessible(true); return f.get(activity);
     }
@@ -107,7 +108,72 @@ public final class ChannelScrollInstrumentation extends Instrumentation {
         check(bounds.top==row.getTop() && bounds.bottom==row.getBottom(),
                 "Selector detached from row: "+bounds+" vs "+row.getTop()+".."+row.getBottom());
     }
-    @Override public void onCreate(Bundle args) { super.onCreate(args); start(); }
+    private void checkRemoteChannelNavigation(StringBuilder report) throws Exception {
+        ListView list=lists[1];
+        ui(() -> {
+            int group=0;
+            for(int i=1;i<ChannelCatalog.GROUPS.length;i++)
+                if(ChannelCatalog.GROUPS[i].channels.length>ChannelCatalog.GROUPS[group].channels.length) group=i;
+            invoke("showChannelMenu",new Class<?>[]{int.class},group);
+            setInTouchMode(false);
+            list.requestFocus();
+            list.setItemChecked(0,true);
+            list.setSelectionFromTop(0,0);
+        });
+        SystemClock.sleep(250);
+        int[] before=new int[1];
+        ui(() -> before[0]=position(list));
+        for(int i=1;i<=3;i++) {
+            final int expected=i;
+            sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_DPAD_DOWN);
+            SystemClock.sleep(100);
+            ui(() -> {
+                check(list.getSelectedItemPosition()==expected,"Down key did not move focus");
+                check(position(list)==before[0],"Visible focus movement scrolled the list");
+                checkHighlightBounds(list);
+            });
+        }
+        for(int i=2;i>=0;i--) {
+            final int expected=i;
+            sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_DPAD_UP);
+            SystemClock.sleep(100);
+            ui(() -> {
+                check(list.getSelectedItemPosition()==expected,"Up key did not move focus");
+                check(position(list)==before[0],"Reverse visible movement scrolled the list");
+            });
+        }
+        int[] visible=new int[1];
+        ui(() -> visible[0]=list.getLastVisiblePosition());
+        for(int i=0;i<=visible[0];i++) {
+            sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_DPAD_DOWN);
+            SystemClock.sleep(80);
+        }
+        ui(() -> {
+            check(position(list)>before[0],"Navigation past bottom did not scroll");
+            View row=list.getSelectedView();
+            check(row!=null && row.getTop()>=list.getPaddingTop()
+                    && row.getBottom()<=list.getHeight()-list.getPaddingBottom(),
+                    "Focused edge row is clipped");
+            checkHighlightBounds(list);
+        });
+        int[] scrolled=new int[1];
+        ui(() -> scrolled[0]=position(list));
+        sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_DPAD_UP);
+        SystemClock.sleep(100);
+        ui(() -> check(position(list)==scrolled[0],"Reverse from bottom moved viewport prematurely"));
+        for(int i=0;i<=visible[0];i++) {
+            sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_DPAD_UP);
+            SystemClock.sleep(80);
+        }
+        ui(() -> {
+            check(list.getSelectedItemPosition()==0,"Up navigation did not return to first channel");
+            check(position(list)==before[0],"Up navigation did not restore top viewport");
+        });
+        report.append("PASS remote focus moves inside viewport and scrolls at bottom edge\n");
+    }
+    @Override public void onCreate(Bundle args) {
+        super.onCreate(args); remoteOnly=args!=null && "true".equals(args.getString("remoteOnly")); start();
+    }
     @Override public void onStart() {
         Bundle result=new Bundle(); StringBuilder report=new StringBuilder(); int code=-1;
         try {
@@ -125,6 +191,10 @@ public final class ChannelScrollInstrumentation extends Instrumentation {
                 root=(ViewGroup)field("root"); cursor=(FlyMouseCursorView)field("flyMouseCursor");
                 lists=new ListView[]{(ListView)field("groupList"),(ListView)field("channelList"),(ListView)field("epgList")};
             });
+            checkRemoteChannelNavigation(report);
+            if(remoteOnly) {
+                result.putString("stream",report.toString()); finish(code,result); return;
+            }
             checkRealChannelHighlight(report);
             ui(() -> {
                 Field expanded=MainActivity.class.getDeclaredField("epgExpanded");

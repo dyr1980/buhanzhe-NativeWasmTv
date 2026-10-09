@@ -49,6 +49,10 @@ final class UiScaleHelper {
         final int paddingBottom;
         final float textSizePx;
         final boolean textView;
+        final int textMinWidth;
+        final int textMinHeight;
+        final int minimumWidth;
+        final int minimumHeight;
         final int dividerHeight;
         final boolean listView;
 
@@ -73,6 +77,12 @@ final class UiScaleHelper {
             paddingBottom = view.getPaddingBottom();
             textView = view instanceof TextView;
             textSizePx = textView ? ((TextView) view).getTextSize() : 0f;
+            textMinWidth = textView && android.os.Build.VERSION.SDK_INT >= 16
+                    ? ((TextView) view).getMinWidth() : -1;
+            textMinHeight = textView && android.os.Build.VERSION.SDK_INT >= 16
+                    ? ((TextView) view).getMinHeight() : -1;
+            minimumWidth = android.os.Build.VERSION.SDK_INT >= 16 ? view.getMinimumWidth() : -1;
+            minimumHeight = android.os.Build.VERSION.SDK_INT >= 16 ? view.getMinimumHeight() : -1;
             listView = view instanceof ListView;
             dividerHeight = listView ? ((ListView) view).getDividerHeight() : 0;
         }
@@ -98,9 +108,13 @@ final class UiScaleHelper {
             }
             view.setPadding(scaled(paddingLeft, scale), scaled(paddingTop, scale),
                     scaled(paddingRight, scale), scaled(paddingBottom, scale));
+            if (minimumWidth >= 0) view.setMinimumWidth(scaled(minimumWidth, scale));
+            if (minimumHeight >= 0) view.setMinimumHeight(scaled(minimumHeight, scale));
             if (textView) {
                 ((TextView) view).setTextSize(TypedValue.COMPLEX_UNIT_PX,
                         textSizePx * scale);
+                if (textMinWidth >= 0) ((TextView) view).setMinWidth(scaled(textMinWidth, scale));
+                if (textMinHeight >= 0) ((TextView) view).setMinHeight(scaled(textMinHeight, scale));
             }
             if (listView) {
                 ((ListView) view).setDividerHeight(scaled(dividerHeight, scale));

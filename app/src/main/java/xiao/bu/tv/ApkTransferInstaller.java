@@ -9,6 +9,7 @@ import android.net.Uri;
 import android.os.Build;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 
@@ -93,20 +94,46 @@ final class ApkTransferInstaller {
     }
 
     static void launchInstaller(Activity activity, File apk) throws IOException {
-        Uri uri;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            uri = ApkFileProvider.uriForFile(activity, apk);
-        } else {
-            apk.setReadable(true, false);
-            uri = Uri.fromFile(apk);
+        Uri uri = ApkFileProvider.uriForFile(activity, apk);
+        if (Build.VERSION.SDK_INT < 24) {
+            // Several 4.x OEM installers register only file://, even for
+            // ACTION_INSTALL_PACKAGE. Give them a dedicated readable copy;
+            // never make the private received APK or other app files public.
+            uri = Uri.fromFile(legacyInstallerFile(activity, apk));
         }
-        Intent intent = new Intent(Intent.ACTION_VIEW)
+        Intent intent = new Intent(Intent.ACTION_INSTALL_PACKAGE)
                 .setDataAndType(uri, "application/vnd.android.package-archive")
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        }
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
         activity.startActivity(intent);
+    }
+
+    static File legacyInstallerFile(android.content.Context context, File apk) throws IOException {
+        ApkFileProvider.uriForFile(context, apk); // Validate the narrowly scoped source.
+        File cache = context.getCacheDir();
+        File directory = new File(cache, "apk-installer");
+        if (!directory.isDirectory() && !directory.mkdirs())
+            throw new IOException("无法创建安装临时目录");
+        File destination = new File(directory, apk.getName());
+        try (FileInputStream input = new FileInputStream(apk);
+                FileOutputStream output = new FileOutputStream(destination)) {
+            byte[] buffer = new byte[16384];
+            int count;
+            while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+            output.getFD().sync();
+        } catch (IOException error) {
+            destination.delete();
+            throw error;
+        }
+        // Old file-URI installers need traversal (not directory listing) through
+        // the app/cache parents. Only the dedicated APK copy is world-readable.
+        if (!new File(context.getApplicationInfo().dataDir).setExecutable(true, false)
+                || !cache.setExecutable(true, false)
+                || !directory.setExecutable(true, false)
+                || !destination.setReadable(true, false)) {
+            destination.delete();
+            throw new IOException("无法授权系统安装器读取 APK");
+        }
+        return destination;
     }
 
     private static String safeOriginalName(String suppliedName) throws IOException {

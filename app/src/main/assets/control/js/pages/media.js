@@ -41,8 +41,11 @@ function mediaCurrentSourceDescription(data) {
   if (!stats.audioOnly && Number(stats.width) > 0 && Number(stats.height) > 0)
     info.push(Math.round(Number(stats.width)) + "×" + Math.round(Number(stats.height)));
   if (bitrate) info.push(bitrate);
-  var frameRate = Number(stats.frameRate);
-  if (!stats.audioOnly && frameRate > 0)
+  var frameRate = Number(stats.frameRate), streamRate = Number(stats.videoStreamFrameRate);
+  if (!stats.audioOnly && (typeof stats.actualFrameRateAvailable === "boolean" || streamRate > 0)) {
+    var actual = stats.actualFrameRateAvailable ? Number(stats.actualFrameRate).toFixed(1) : "--";
+    info.push("实际 " + actual + " / 源 " + (streamRate > 0 ? streamRate.toFixed(1) : "--") + " fps");
+  } else if (!stats.audioOnly && frameRate > 0)
     info.push((frameRate >= 10 ? Math.round(frameRate) : frameRate.toFixed(1))
       + "fps" + (stats.sourceFrameRate ? "（源）" : ""));
   if (info.length) return info.join(" · ");

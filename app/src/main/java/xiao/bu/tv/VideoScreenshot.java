@@ -2,33 +2,59 @@ package xiao.bu.tv;
 
 import android.annotation.TargetApi;
 import android.graphics.Bitmap;
+import android.media.MediaMetadataRetriever;
+import android.media.MediaExtractor;
+import android.media.MediaFormat;
+import android.media.MediaMuxer;
+import android.media.MediaCodec;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
-import android.util.Log;
 import android.view.PixelCopy;
 
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.ByteBuffer;
+import java.lang.ref.WeakReference;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** One-shot copies only: no recording permission, extra decoder or per-frame work. */
+/** One-shot captures; legacy systems decode one cached segment only on demand. */
 final class VideoScreenshot {
-    private static final String TAG = "VideoScreenshot";
     static final String PATH = "/api/recording/screenshot";
     // Allow detailed full-resolution captures without silently downscaling them.
     private static final int MAX_BYTES = 64 * 1024 * 1024;
     private static final int PREVIEW_WIDTH = 640;
     private static final int PREVIEW_HEIGHT = 360;
+    private static final int LEGACY_PREVIEW_WIDTH = 320;
+    private static final int LEGACY_PREVIEW_HEIGHT = 180;
     private final AtomicBoolean busy = new AtomicBoolean();
+    private volatile LegacyImage cachedLegacy;
+
+    private static final class LegacyImage {
+        final WeakReference<Object> session;
+        final WeakReference<byte[]> segment;
+        final byte[] image;
+        final byte[] preview;
+        final long at = SystemClock.elapsedRealtime();
+        LegacyImage(Target target, byte[] image, byte[] preview) {
+            session = new WeakReference<Object>(target.session);
+            segment = new WeakReference<byte[]>(target.segment);
+            this.image = image;
+            this.preview = preview;
+        }
+    }
+
+    void clear() { cachedLegacy = null; }
 
     interface Source {
         Target current() throws IOException;
@@ -39,12 +65,21 @@ final class VideoScreenshot {
         final Object session;
         final int width;
         final int height;
+        final byte[] segment;
+        final File cacheDirectory;
 
         Target(DirectVideoView view, Object session, int width, int height) {
+            this(view, session, width, height, null, null);
+        }
+
+        Target(DirectVideoView view, Object session, int width, int height,
+                byte[] segment, File cacheDirectory) {
             this.view = view;
             this.session = session;
             this.width = Math.max(1, width);
             this.height = Math.max(1, height);
+            this.segment = segment;
+            this.cacheDirectory = cacheDirectory;
         }
 
         Target forPreview() {
@@ -64,10 +99,11 @@ final class VideoScreenshot {
     }
 
     private byte[] capture(final Source source, final boolean preview) throws IOException {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            return captureTexture(source, preview);
-        }
         acquire(preview);
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+            try { return captureLegacy(source, preview); }
+            finally { busy.set(false); }
+        }
         final Capture request = new Capture();
         final Handler main = new Handler(Looper.getMainLooper());
         main.post(new Runnable() {
@@ -113,58 +149,165 @@ final class VideoScreenshot {
         }
     }
 
-    private static <T> T onMain(java.util.concurrent.Callable<T> action) throws IOException {
-        java.util.concurrent.FutureTask<T> task = new java.util.concurrent.FutureTask<T>(action);
-        new Handler(Looper.getMainLooper()).post(task);
+    private Target currentOnMain(final Source source) throws IOException {
+        if (Looper.myLooper() == Looper.getMainLooper()) return source.current();
+        final Target[] target = new Target[1];
+        final IOException[] error = new IOException[1];
+        final CountDownLatch ready = new CountDownLatch(1);
+        new Handler(Looper.getMainLooper()).post(new Runnable() {
+            @Override public void run() {
+                try { target[0] = source.current(); }
+                catch (Exception failure) { error[0] = new IOException(failure.getMessage(), failure); }
+                finally { ready.countDown(); }
+            }
+        });
         try {
-            return task.get(8, TimeUnit.SECONDS);
-        } catch (java.util.concurrent.ExecutionException error) {
-            Throwable cause = error.getCause();
-            if (cause instanceof IOException) throw (IOException) cause;
-            throw new IOException("截图读取画面失败", cause);
-        } catch (java.util.concurrent.TimeoutException error) {
-            task.cancel(false);
-            throw new IOException("截图读取超时", error);
-        } catch (InterruptedException error) {
-            task.cancel(false);
+            if (!ready.await(3, TimeUnit.SECONDS)) throw new IOException("获取截图状态超时");
+        } catch (InterruptedException failure) {
             Thread.currentThread().interrupt();
-            throw new IOException("截图已取消", error);
+            throw new IOException("截图已取消", failure);
+        }
+        if (error[0] != null) throw error[0];
+        return target[0];
+    }
+
+    private byte[] captureLegacy(Source source, boolean preview) throws IOException {
+        Target target = currentOnMain(source);
+        LegacyImage cached = cachedLegacy;
+        if (cached != null && cached.session.get() != target.session) {
+            cachedLegacy = null; cached = null;
+        }
+        if (cached != null && preview && cached.preview != null
+                && (cached.segment.get() == target.segment
+                || SystemClock.elapsedRealtime() - cached.at < 3000L)) return cached.preview;
+        if (cached != null && !preview && cached.image != null
+                && (cached.segment.get() == target.segment
+                || SystemClock.elapsedRealtime() - cached.at < 3000L)) return cached.image;
+        if (target.segment == null || target.cacheDirectory == null)
+            throw new IOException("当前视频没有可抽帧的缓存分片，请稍后重试");
+        File file = null;
+        File remuxed = null;
+        Bitmap bitmap = null;
+        MediaMetadataRetriever retriever = null;
+        long begin = SystemClock.elapsedRealtime(), written, muxed, decoded;
+        try {
+            remuxed = File.createTempFile("video-frame-", ".mp4", target.cacheDirectory);
+            boolean avcFrame = AvcFrameMp4.write(target.segment, remuxed, target.width, target.height);
+            written = SystemClock.elapsedRealtime();
+            if (!avcFrame) {
+                file = File.createTempFile("video-frame-", ".ts", target.cacheDirectory);
+                FileOutputStream output = new FileOutputStream(file);
+                try { output.write(target.segment); } finally { output.close(); }
+                if (Build.VERSION.SDK_INT >= 18) SyncFrameMuxer.write(file, remuxed);
+                else { remuxed.delete(); remuxed = null; }
+            }
+            muxed = SystemClock.elapsedRealtime();
+            String path = (remuxed == null ? file : remuxed).getAbsolutePath();
+            if (avcFrame) bitmap = NativeVideoFrame.capture(path,
+                    LEGACY_PREVIEW_WIDTH, LEGACY_PREVIEW_HEIGHT, preview);
+            boolean nativeFrame = bitmap != null;
+            if (bitmap == null) {
+                retriever = new MediaMetadataRetriever();
+                retriever.setDataSource(path);
+                // A sync frame avoids decoding a whole GOP for an arbitrary timestamp.
+                bitmap = retriever.getFrameAtTime(-1L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
+            }
+            decoded = SystemClock.elapsedRealtime();
+            if (bitmap == null) throw new IOException("系统无法从当前视频分片抽取画面");
+            byte[] image = preview ? null : encode(bitmap, false);
+            float scale = Math.min(1f, Math.min((float) LEGACY_PREVIEW_WIDTH / bitmap.getWidth(),
+                    (float) LEGACY_PREVIEW_HEIGHT / bitmap.getHeight()));
+            if (scale < 1f) {
+                Bitmap small = Bitmap.createScaledBitmap(bitmap,
+                        Math.max(1, Math.round(bitmap.getWidth() * scale)),
+                        Math.max(1, Math.round(bitmap.getHeight() * scale)), true);
+                bitmap.recycle(); bitmap = small;
+            }
+            byte[] smallImage = encode(bitmap, true);
+            android.util.Log.i("VideoScreenshot", "legacy preview=" + preview + " native=" + nativeFrame
+                    + " writeMs=" + (written - begin)
+                    + " muxMs=" + (muxed - written) + " decodeMs=" + (decoded - muxed)
+                    + " encodeMs=" + (SystemClock.elapsedRealtime() - decoded));
+            if (currentOnMain(source).session != target.session)
+                throw new IOException("截屏时频道已切换，请重试");
+            cachedLegacy = new LegacyImage(target, image, smallImage);
+            return preview ? smallImage : image;
+        } catch (RuntimeException failure) {
+            throw new IOException("系统无法抽取当前视频画面", failure);
+        } catch (OutOfMemoryError failure) {
+            throw new IOException("内存不足，暂时无法截屏");
+        } finally {
+            if (bitmap != null) bitmap.recycle();
+            if (retriever != null) try { retriever.release(); } catch (RuntimeException ignored) { }
+            if (file != null) file.delete();
+            if (remuxed != null) remuxed.delete();
         }
     }
 
-    private byte[] captureTexture(final Source source, boolean preview) throws IOException {
-        acquire(preview);
-        Bitmap bitmap = null;
-        long started = SystemClock.elapsedRealtime();
-        try {
-            Target selected = onMain(() -> source.current());
-            final Target target = preview ? selected.forPreview() : selected;
-            if (!target.view.usesTextureOutput())
-                throw new IOException("当前视频输出不支持纹理截图");
-            final Target current = target;
-            // TextureView has received the decoder output since playback began.
-            // Read one source-size frame without changing MediaPlayer's Surface or codec state.
-            bitmap = onMain(() -> {
-                if (source.current().session != current.session) throw new IOException("频道已切换，请重试");
-                return current.view.captureTextureFrame(current.width, current.height);
-            });
-            if (bitmap == null) throw new IOException("未收到截图画面，请在播放时重试");
-            onMain(() -> {
-                if (source.current().session != current.session) throw new IOException("频道已切换，请重试");
-                return null;
-            });
-            long copied = SystemClock.elapsedRealtime();
-            byte[] bytes = encode(bitmap, preview);
-            Log.i(TAG, (preview ? "Preview" : "Screenshot") + " size="
-                    + target.width + "x" + target.height + " readMs=" + (copied - started)
-                    + " encodeMs=" + (SystemClock.elapsedRealtime() - copied)
-                    + " bytes=" + bytes.length);
-            return bytes;
-        } catch (OutOfMemoryError error) {
-            throw new IOException("内存不足，暂时无法截图");
-        } finally {
-            if (bitmap != null) bitmap.recycle();
-            busy.set(false);
+    @TargetApi(18)
+    private static final class SyncFrameMuxer {
+        static void write(File input, File output) throws IOException {
+            MediaExtractor extractor = new MediaExtractor();
+            MediaMuxer muxer = null;
+            boolean started = false;
+            try {
+                extractor.setDataSource(input.getAbsolutePath());
+                int video = -1;
+                MediaFormat format = null;
+                for (int track = 0; track < extractor.getTrackCount(); track++) {
+                    MediaFormat candidate = extractor.getTrackFormat(track);
+                    String mime = candidate.getString(MediaFormat.KEY_MIME);
+                    if (mime != null && mime.startsWith("video/")) {
+                        video = track; format = candidate; break;
+                    }
+                }
+                if (video < 0) throw new IOException("缓存分片没有可抽取的视频轨道");
+                extractor.selectTrack(video);
+                muxer = new MediaMuxer(output.getAbsolutePath(), MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
+                int track = muxer.addTrack(format);
+                muxer.start(); started = true;
+                // One compressed key frame, without decoding audio or intervening frames.
+                ByteBuffer data = ByteBuffer.allocate(Math.min(8 * 1024 * 1024, (int) input.length()));
+                MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+                for (int sample = 0; sample < 300; sample++) {
+                    int size = extractor.readSampleData(data, 0);
+                    if (size < 0) break;
+                    // Android 4.4's TS extractor can omit SAMPLE_FLAG_SYNC even for
+                    // an IDR. Inspect compressed NAL headers, without decoding frames.
+                    if ((extractor.getSampleFlags() & MediaExtractor.SAMPLE_FLAG_SYNC) != 0
+                            || hasSyncNal(data, size, format.getString(MediaFormat.KEY_MIME))) {
+                        info.set(0, size, 0L, MediaCodec.BUFFER_FLAG_SYNC_FRAME);
+                        muxer.writeSampleData(track, data, info);
+                        // Old muxers need a non-zero sample duration. Repeating the
+                        // compressed frame establishes it without another decode.
+                        data.position(0);
+                        info.presentationTimeUs = 40000L;
+                        muxer.writeSampleData(track, data, info);
+                        muxer.stop(); started = false;
+                        return;
+                    }
+                    if (!extractor.advance()) break;
+                }
+                throw new IOException("缓存分片尚无关键帧，请稍后重试");
+            } finally {
+                extractor.release();
+                if (muxer != null) {
+                    if (started) try { muxer.stop(); } catch (RuntimeException ignored) { }
+                    try { muxer.release(); } catch (RuntimeException ignored) { }
+                }
+            }
+        }
+
+        private static boolean hasSyncNal(ByteBuffer data, int size, String mime) {
+            if (!"video/avc".equals(mime) && !"video/hevc".equals(mime)) return false;
+            for (int at = 0; at + 3 < size; at++) {
+                if (data.get(at) == 0 && data.get(at + 1) == 0 && data.get(at + 2) == 1) {
+                    int header = data.get(at + 3) & 255;
+                    int type = "video/avc".equals(mime) ? header & 31 : (header >> 1) & 63;
+                    if ("video/avc".equals(mime) ? type == 5 : type >= 16 && type <= 21) return true;
+                }
+            }
+            return false;
         }
     }
 

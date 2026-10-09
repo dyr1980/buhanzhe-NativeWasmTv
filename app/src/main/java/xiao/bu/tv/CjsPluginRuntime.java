@@ -469,7 +469,7 @@ public final class CjsPluginRuntime {
         if (url.contains("github.com/") || url.contains("raw.githubusercontent.com/")) {
             url = GithubProxy.apply(url);
         }
-        HttpURLConnection connection = NetworkClient.open(new URL(url));
+        HttpURLConnection connection = NetworkClient.openComponent(new URL(url), resource.endsWith(".so"));
         connection.setConnectTimeout(10000);
         connection.setReadTimeout(20000);
         connection.setInstanceFollowRedirects(true);

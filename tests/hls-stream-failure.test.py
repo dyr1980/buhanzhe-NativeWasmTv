@@ -8,10 +8,13 @@ handle=method('    private void handle(Socket socket)', '    private static bool
 stream=method('    private void streamUpstream(', '    private static long contentLength(')
 java=r'''import java.io.*;import java.net.*;import java.util.regex.*;import java.nio.charset.*;import java.util.concurrent.atomic.*;
 public class HlsStreamFailureCheck {
+ static class Build {static class VERSION {static final int SDK_INT=19;}}
  static class android {static class os {static class Build {static class VERSION {static final int SDK_INT=19;}}}}
+ boolean sourceVideoProbeEnabled;byte[] screenshotSegment;long lastMediaSegmentServedAt;
+ boolean isTransportStream(String u,String t){return false;}void sampleSourceVideo(byte[] b){}
  static final Charset UTF_8=StandardCharsets.UTF_8;
  static final int UPSTREAM_MAX_ATTEMPTS=3,UPSTREAM_CONNECT_TIMEOUT_MS=3500,UPSTREAM_READ_TIMEOUT_MS=5500,UPSTREAM_RETRY_DELAY_MS=250;
- static final String TAG="test";boolean running=true,failHeaders,forbidden,failWritingHeaders,resumable,badRange,badEntity,ignoredRange,resumeFails;int opens;String resumeHeader,ifRange;
+ static final String TAG="test";boolean running=true,failHeaders,forbidden,failWritingHeaders,resumable,fullBody,badRange,badEntity,ignoredRange,resumeFails,noEntity;int opens;String resumeHeader,ifRange;
  PlaybackHttpError.Attempt playbackHttpError=new PlaybackHttpError.Attempt();
  AtomicLong upstreamDownloadedBytes=new AtomicLong(),streamedResponseBytes=new AtomicLong(),streamedResponseCount=new AtomicLong();
  ThreadLocal<byte[]> streamCopyBuffer=new ThreadLocal<byte[]>(){protected byte[] initialValue(){return new byte[65536];}};
@@ -21,6 +24,7 @@ public class HlsStreamFailureCheck {
  static class ProxyResponse{String contentType;byte[] body;}
  static class HlsSegmentBitrate{static class Sample{void add(byte[] b,int o,int c){}}Sample begin(String u){return null;}void complete(Sample s,long t){}}
  HlsSegmentBitrate segmentBitrate=new HlsSegmentBitrate();
+ HlsVodDiskCache vodDiskCache;
  boolean needsCjsTransform(String u){return false;}boolean canStreamWithoutRewrite(String u){return true;}
  boolean hasAesSegmentKey(String u){return false;}boolean hasGenericSegmentTask(String u){return false;}
  boolean isPlayerDisconnect(Exception e){return false;}boolean isRetryableUpstreamError(IOException e,String u){return false;}
@@ -33,13 +37,14 @@ public class HlsStreamFailureCheck {
  void writeStreamingHeaders(OutputStream o,int s,String t,long l,String r)throws IOException{o.write(("HTTP/1.1 "+s+"\r\nContent-Length: "+l+"\r\n\r\n").getBytes(UTF_8));o.flush();if(failWritingHeaders)throw new IOException("Injected header write failure");}
  HttpURLConnection openUpstreamConnection(String u)throws IOException{final int number=++opens;return new HttpURLConnection(new URL(u)){
   public void connect(){}public void disconnect(){}public boolean usingProxy(){return false;}
-  public int getResponseCode(){return forbidden?403:failHeaders?500:resumable&&!(ignoredRange&&number>1)?206:200;}
+  public int getResponseCode(){return forbidden?403:failHeaders?500:resumable&&!(fullBody&&number==1)&&!(ignoredRange&&number>1)?206:200;}
   public String getContentType(){return "video/mp4";}public void setRequestProperty(String key,String value){if(number>1){if(key.equals("Range"))resumeHeader=value;if(key.equals("If-Range"))ifRange=value;}}
   public String getHeaderField(String s){
    if(!resumable)return null;
    if(s.equals("Content-Length"))return number==1?"131072":"65536";
-   if(s.equals("ETag"))return badEntity&&number>1?"\"v2\"":"\"v1\"";
-   if(s.equals("Content-Range"))return number==1?"bytes 1000-132071/200000":badRange?"bytes 66537-132072/200000":"bytes 66536-132071/200000";
+   if(s.equals("ETag"))return noEntity?null:badEntity&&number>1?"\"v2\"":"\"v1\"";
+   if(s.equals("Content-Range"))return fullBody?(number==1?null:badRange?"bytes 65537-131072/131072":"bytes 65536-131071/131072"):
+     number==1?"bytes 1000-132071/200000":badRange?"bytes 66537-132072/200000":"bytes 66536-132071/200000";
    return null;
   }
   public InputStream getInputStream(){return new InputStream(){boolean emitted;
@@ -79,11 +84,34 @@ public class HlsStreamFailureCheck {
    check(!body.contains("WWWW")&&body.indexOf("HTTP/1.1",1)<0,"Unsafe range/entity change appended bytes");
    check(p.streamedResponseCount.get()==0,"Unsafe range reported complete");
   }
-  System.out.println("PASS validated byte-exact range resume, changed entity/range/200 rejection;  mid-body timeout closes stream without injecting HTTP error; pre-header failure returns 502");
+  p=new HlsStreamFailureCheck();p.resumable=true;p.fullBody=true;s=new MemorySocket();p.handle(s);body=new String(s.bytes.toByteArray(),UTF_8);
+  check(body.startsWith("HTTP/1.1 200")&&p.opens==2&&"bytes=65536-131071".equals(p.resumeHeader),"Full fragment must resume at received offset");
+  check(body.indexOf('W')-body.indexOf('V')==65536&&body.endsWith("WWWW")&&p.streamedResponseBytes.get()==131072,"Full fragment resume changed media bytes");
+  for(int bad=0;bad<4;bad++){
+   p=new HlsStreamFailureCheck();p.resumable=true;p.fullBody=true;p.badRange=bad==0;p.badEntity=bad==1;p.ignoredRange=bad==2;p.noEntity=bad==3;
+   s=new MemorySocket();p.handle(s);body=new String(s.bytes.toByteArray(),UTF_8);
+   check(!body.contains("WWWW")&&body.indexOf("HTTP/1.1",1)<0&&p.streamedResponseCount.get()==0,"Unsafe full fragment resume appended bytes");
+   if(p.noEntity)check(p.opens==1,"Missing entity tag must not retry by range");
+  }
+  p=new HlsStreamFailureCheck();
+  p.vodDiskCache=new HlsVodDiskCache(new File(args[0]),2,url -> new HttpURLConnection(new URL(url)) {
+   public void connect(){}public void disconnect(){}public boolean usingProxy(){return false;}
+   public int getResponseCode(){return 200;}public int getContentLength(){return 1024;}public String getContentType(){return "video/mp4";}
+   public InputStream getInputStream(){byte[] b=new byte[1024];java.util.Arrays.fill(b,(byte)'K');return new ByteArrayInputStream(b);}
+  });
+  p.vodDiskCache.register("https://example.test/list.m3u8",new String[]{"#EXTM3U","#EXTINF:20,","segment.mp4","#EXT-X-ENDLIST"});
+  s=new MemorySocket();p.handle(s);body=new String(s.bytes.toByteArray(),UTF_8);
+  check(body.startsWith("HTTP/1.1 200")&&body.endsWith("KKKK")&&p.opens==0,"Cached media must avoid upstream streaming");
+  ByteArrayOutputStream range=new ByteArrayOutputStream();p.serveVodCache("https://example.test/segment.mp4","bytes=10-99",range);
+  body=new String(range.toByteArray(),UTF_8);
+  check(body.startsWith("HTTP/1.1 206")&&body.length()-body.indexOf("\r\n\r\n")-4==90,"Cached range must copy exact requested bytes");
+  p.vodDiskCache.close();
+  System.out.println("PASS byte-exact HTTP 200 fragment and 206 range resume; changed entity/range/ignored range/missing ETag rejected; retries bounded; no HTTP errors injected into media");
  }
 }'''.replace('\n HANDLE\n',handle).replace('\n STREAM\n',stream)
 java += (root/'app/src/main/java/xiao/bu/tv/PlaybackHttpError.java').read_text(encoding='utf-8').replace('package xiao.bu.tv;', '').replace('import java.util.regex.Pattern;', '')
 out=root/'.codex-tmp/hls-stream-failure-test';out.mkdir(parents=True,exist_ok=True)
 f=out/'HlsStreamFailureCheck.java';f.write_text(java,encoding='utf-8');b=Path(os.environ['JAVA_HOME'])/'bin'
-subprocess.run([str(b/'javac.exe'),'-encoding','UTF-8',str(f)],check=True)
-subprocess.run([str(b/'java.exe'),'-cp',str(out),'HlsStreamFailureCheck'],check=True)
+cache=out/'HlsVodDiskCache.java';cache.write_text((root/'app/src/main/java/xiao/bu/tv/HlsVodDiskCache.java').read_text(encoding='utf-8').replace('package xiao.bu.tv;',''),encoding='utf-8')
+subprocess.run([str(b/'javac.exe'),'-encoding','UTF-8',str(f),str(cache)],check=True)
+subprocess.run([str(b/'java.exe'),'-cp',str(out),'HlsStreamFailureCheck',str(out/'cache')],check=True,timeout=30)

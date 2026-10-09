@@ -550,11 +550,19 @@ final class ChannelCatalog {
         final String title;
         final int source;
         final Channel[] channels;
+        final String playlistSourceId;
+        final String playlistSourceName;
 
         Group(String title, int source, Channel[] channels) {
+            this(title, source, channels, "", "");
+        }
+
+        Group(String title, int source, Channel[] channels, String sourceId, String sourceName) {
             this.title = title;
             this.source = source;
             this.channels = nonNullChannels(channels);
+            this.playlistSourceId = sourceId == null ? "" : sourceId;
+            this.playlistSourceName = sourceName == null ? "" : sourceName;
         }
     }
 }

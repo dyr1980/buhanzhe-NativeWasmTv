@@ -43,7 +43,7 @@
 
   
 
-  <link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/light-99f877e9ddfc0e51.css" /><link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/dark-79ad2ace604703b3.css" /><link data-color-theme="light_high_contrast" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/light_high_contrast-48fdd0811afbab3c.css" /><link data-color-theme="light_colorblind" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/light_colorblind-f4bf1142976e4bbf.css" /><link data-color-theme="light_colorblind_high_contrast" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/light_colorblind_high_contrast-f661b49995ba0bd8.css" /><link data-color-theme="light_tritanopia" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/light_tritanopia-0b38d22346321c92.css" /><link data-color-theme="light_tritanopia_high_contrast" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/light_tritanopia_high_contrast-f1c62c9e70259b9f.css" /><link data-color-theme="dark_high_contrast" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/dark_high_contrast-24484a076f02295f.css" /><link data-color-theme="dark_colorblind" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/dark_colorblind-f50cacf0a86b9929.css" /><link data-color-theme="dark_colorblind_high_contrast" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/dark_colorblind_high_contrast-e61d4f4ca17852c2.css" /><link data-color-theme="dark_tritanopia" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/dark_tritanopia-39c10993d5603fac.css" /><link data-color-theme="dark_tritanopia_high_contrast" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/dark_tritanopia_high_contrast-73236c840c0c7d90.css" /><link data-color-theme="dark_dimmed" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/dark_dimmed-0de76f07cc035b10.css" /><link data-color-theme="dark_dimmed_high_contrast" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/dark_dimmed_high_contrast-fd1500c8744e40d6.css" />
+  <link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/light-5c4e9fc574bf49f3.css" /><link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/dark-afff6c53aef9b9d1.css" /><link data-color-theme="light_high_contrast" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/light_high_contrast-fb37c309e0603a69.css" /><link data-color-theme="light_colorblind" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/light_colorblind-0f910d8806d5761b.css" /><link data-color-theme="light_colorblind_high_contrast" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/light_colorblind_high_contrast-a7abd4d4c49ac593.css" /><link data-color-theme="light_tritanopia" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/light_tritanopia-5fc4c4a9cb41e596.css" /><link data-color-theme="light_tritanopia_high_contrast" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/light_tritanopia_high_contrast-ed0cee9214dedabd.css" /><link data-color-theme="dark_high_contrast" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/dark_high_contrast-c409873d7987dffa.css" /><link data-color-theme="dark_colorblind" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/dark_colorblind-78a2491d538dab5a.css" /><link data-color-theme="dark_colorblind_high_contrast" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/dark_colorblind_high_contrast-c26b63d7c532d0a2.css" /><link data-color-theme="dark_tritanopia" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/dark_tritanopia-a6f60cea68c08405.css" /><link data-color-theme="dark_tritanopia_high_contrast" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/dark_tritanopia_high_contrast-f66faf28b2ea18b6.css" /><link data-color-theme="dark_dimmed" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/dark_dimmed-6701f6218c53cf5b.css" /><link data-color-theme="dark_dimmed_high_contrast" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/dark_dimmed_high_contrast-7037fa46ae124d97.css" />
 
   <style type="text/css">
     :root {
@@ -55,58 +55,61 @@
     }
   </style>
 
-    <link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/primer-primitives-ed9ca172356fd545.css" />
-    <link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/primer-tailwind-compatible-ec7f30b2efac8de6.css" />
-    <link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/global-54ba76e934a49d7c.css" />
-    <link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/github-7338c07b3a07b8be.css" />
-    <link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/tailwind-ae55fd5ac3da3ac0.css" />
-  <link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/dashboard-75b3aff28747e679.css" />
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/discussions-b9ff4b38851a57ab.css" />
+    <link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/primer-primitives-97df7784617ce1ea.css" />
+    <link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/primer-tailwind-compatible-2c1fd7ca3364e935.css" />
+    <link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/global-62747e27e61258dc.css" />
+    <link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/github-7a418ea859d1654d.css" />
+    <link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/tailwind-e606849b5ccd8654.css" />
+  <link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/dashboard-b1a5d0fb1468801d.css" />
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/discussions-0ac2b0906e8f3d93.css" />
 
   
 
-  <script type="application/json" id="client-env">{"locale":"en","featureFlags":["actions_enable_background_steps","actions_new_hosted_runner_image_select_sizes_and_versions","actions_workflow_language_service_allow_case_function","activity_diff_file_tree","activity_repos_file_tree","activity_repos_overview_header","activity_repos_overview_sidebar","agent_author_search_expansion","agent_author_search_expansion_ui_pulls","alternate_user_config_repo","async_conversion_coverage_enabled","billing_billable_licenses_cost_center_bucket_fix","billing_budget_expiration","billing_cost_center_list_assigned_resources","billing_discount_threshold_notification","ccr_implement_suggestion_refresh","code_quality_enablement_banner_targeting","code_quality_remove_preview","code_view_checks_live_updates","code_view_raf_sticky_lines","codemirror_inp_optimizations","codespaces_prebuild_region_target_update","coding_agent_third_party_model_ui","copilot_agent_snippy","copilot_api_agentic_issue_marshal_yaml","copilot_automation_repo_mcp_servers","copilot_automations_pagination","copilot_base_model_policy_row","copilot_chat_auto_mode_v2","copilot_chat_clear_model_selection_for_default_change","copilot_chat_disable_model_picker_while_streaming","copilot_chat_increase_token_padding","copilot_chat_vision_dotcom_chat_ga_gate","copilot_css_textarea_autosize","copilot_custom_copilots","copilot_custom_copilots_feature_preview","copilot_duplicate_thread","copilot_extensions_removal_on_marketplace","copilot_fix_failed_workflows_all_skus","copilot_hide_hovercard","copilot_immersive_task_hyperlinking","copilot_issue_list_show_more","copilot_mc_cli_resume_any_users_task","copilot_mission_control_agent_merge_fix_ci","copilot_mission_control_agent_merge_resolve_conflicts","copilot_mission_control_early_stop","copilot_mission_control_managed_sandbox_environments","copilot_mission_control_needs_attention","copilot_mission_control_reasoning_effort","copilot_mission_control_sandbox_remote_bypass","copilot_mission_control_task_alive_updates","copilot_mission_control_task_sharing","copilot_org_policy_page_focus_mode","copilot_share_active_subthread","copilot_spaces_ga","copilot_spaces_individual_policies_ga","copilot_swe_agent_authorization_status_ui","copilot_swe_agent_automation_resource_scoped_writes","copilot_swe_agent_hide_model_picker_if_only_auto","copilot_swe_agent_issue_comment_trigger","copilot_swe_agent_pr_comment_model_picker","copilot_swe_agent_pull_request_comment_trigger","copilot_swe_agent_pull_request_merged_trigger","copilot_swe_agent_pull_request_opened_trigger","copilot_swe_agent_pull_request_synchronize_trigger","copilot_swe_agent_use_subagents","copilot_task_api_github_rest_style","copilot_task_scoped_alive_channel","copilot_token_based_billing","copilot_unconfigured_is_inherited","copilot_user_can_upgrade_plan_field","copilot_workbench_sunset_redirect","dashboard_indexeddb_caching","dashboard_lists_max_age_filter","dashboard_universe_2025_feedback_dialog","datadog_rum","fgpat_permissions_selector_redesign","glc_code_quality_repo_settings_workflow_config","hyperspace_2025_logged_out_batch_1","hyperspace_2025_logged_out_batch_2","hyperspace_2025_logged_out_batch_3","in_product_messaging_datadog_monitoring","ipm_ubb_individual_budget_banner","issue_fields_multi_select","issue_inline_avatars","issue_pinned_views","issue_pinned_views_team_vs_personal","issue_relative_time_micro","issues_dashboard_sso_structured_errors","issues_expanded_file_types","issues_hide_closed_sub_issues","issues_index_data_router","issues_index_query_persistence","issues_lazy_load_comment_box_suggestions","issues_react_chrome_container_query_fix","issues_react_include_bots_in_pickers","issues_react_ui_feedback","labels_archiving","labels_archiving_info","landing_pages_ninetailed","lifecycle_label_name_updates","marketing_cookie_consent_banner","marketing_pages_search_explore_provider","memex_default_issue_create_repository","memex_live_update_hovercard","memex_mwl_filter_field_delimiter","memex_remove_deprecated_type_issue","memex_roadmap_drag_style","merge_queue_restricted_pushers_warning","merge_status_header_feedback","mergeability_refetch_dedupe","milestone_closed_issues_prioritization","milestone_show_data_router","octocaptcha_origin_optimization","pr_sfv_new_diff_fetch","primer_react_css_anchor_positioning","primer_react_merged_forwarded_refs","prs_copilot_app_open_action","prs_css_anchor_positioning","prs_docked_comments_replies","prs_thread_reply_as_primary_action","prs_timeline_filters","prx_files","pull_request_copilot_attribution_header","pull_request_files_virtualization","pull_request_overview_panel_edit_description","pull_request_persister","pull_request_stacks_feedback_dialog","pull_request_virtualization_image_estimate","pull_request_virtualization_loader_batching","pull_request_virtualization_scroll_compensation","pull_request_virtualization_scroll_intent","quick_search_lazy_suggestions","react_blob_isolate_code_lines","react_blob_overlay","react_blob_ssr_content_visibility","react_data_router_tanstack_allowed","react_query_props_with_key","react_sandbox_future_tanstack","repo_app_turbo","repo_issues_sidebar_layout","repo_pulls_dashboard_declutter","repo_pulls_dashboard_ga","repo_pulls_dashboard_persistence","repo_pulls_dashboard_sidebar_links","repo_pulls_dashboard_surface","repos_contributors_limited_default_range","repository_suggester_elastic_search","review_involves_filter","rule_ignored_file_paths","rulesets_actor_list_editor","sample_network_conn_type","sanitize_preset_math_renderer","security_center_artifact_filters_popover","see_who_reacted","semantic_similarity_duplicate_issue_detection","session_logs_ungroup_reasoning_text","set_sha256_on_repo_creation_form","site_banner_desktop_copilot_app","site_ghca_pixel_mona","site_github_app_ga_page","site_github_app_ga_page_highlight","site_github_app_mobile_native_share","site_global_banner_dev_days_attendee","site_global_nav_spark_models_removed","speculation_rules_ui_service","suggest_custom_property_values_copilot","suppress_automated_browser_vitals","swp_forms_disable_octocaptcha","thread_resolution_reason","track_notifications_settings_usage","ui_route_code_view","ui_route_repos","unified_batch_pr_comments","universe26_banners_septsession","update_issue_suggestions","viewscreen_sandbox","warn_inaccessible_attachments","webp_support","workstream_plugin_bootstrap"],"login":"dyr1980","githubDomain":"https://github.com","copilotApiOverrideUrl":"https://api.individual.githubcopilot.com","cmcApiUrl":"https://api.github.com/cmc_internal/api"}</script>
-<script type="application/json" id="datadog-rum-config">{"version":1,"applicationId":"851db457-c3a9-463b-b2e5-906d1ef37118","clientToken":"eyJfcmFpbHMiOnsibWVzc2FnZSI6IkJBaEpJaEpoZFhSb1pXNTBhV05oZEdWa0Jqb0dSVlE9IiwiZXhwIjoiMjAyNi0xMC0wMlQxMjo0MjoxNS41NjRaIiwicHVyIjoiYnJvd3Nlcl9zdGF0czpjbGllbnRfdG9rZW4ifX0--8ad4138f2e6f205a3899db8bbb2ddc3c84ed8432","site":"datadoghq.com","service":"github-ui","env":"production","proxyUrl":"https://api.github.com/_private/browser/rum","sessionSampleRate":100.0,"profilingSampleRate":5.0}</script>
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/wp-runtime-7f4e42583d46e10a.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/app-foundation-69691b300d797200.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/app-runtime-9d34ae1c49571756.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/fetch-utilities-4b62182bc6e3c348.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/ser-91fba67ac4479923.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/tp-18fbcd3be071aa02.js" />
-<script crossorigin="anonymous" type="module" src="https://github.githubassets.com/assets/environment-de8dcc64e5483969.js" defer="defer"></script>
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/app-runtime.c97ea7e7b9bd7544.module.css" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/catalyst-86a8f5de995615f8.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/selector-observer-e88088f989b27670.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/relative-time-element-fa0968675d128a19.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/by-6b3c07383371bf58.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/ja9-36f036c13c2e3a4c.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/kwb-985b266c34021458.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/r1-b075aab3204f32f9.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/jz5-7c5d1669717041f8.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/hj-5126390ff433704d.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/j05-1b324859b9512e2d.js" />
-<script crossorigin="anonymous" type="module" src="https://github.githubassets.com/assets/github-elements-50811e1d4024a4fb.js" defer="defer"></script>
-<script crossorigin="anonymous" type="module" src="https://github.githubassets.com/assets/element-registry-b554a118613f3618.js" defer="defer"></script>
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/runtime-helpers-5ca1e1883536e092.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/aria-live-edd4f18194230d9e.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/hotkey-5109c77d7ac61078.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/react-core-682155419c984691.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/a9-059e9811745f26d7.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/ur-024971cb63acad59.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/4t-364e19c63d726e9a.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/6ny-c969fbae697a356f.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/yhq-3a209035a30b1a09.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/z1v-da5b33b877bfa358.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/wo-8044e1bac6e0c328.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/9y-cd2a0ff87351e9aa.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/j0-41a4cf04cbd99503.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/0p-81491ed0d9d666e2.js" />
-<script crossorigin="anonymous" type="module" src="https://github.githubassets.com/assets/behaviors-9ff0183e109b5f05.js" defer="defer"></script>
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/react-core.4a0933a4f8e47de3.module.css" />
+  <script type="application/json" id="client-env">{"locale":"en","featureFlags":["actions_caches_react_shell","actions_enable_background_steps","actions_new_hosted_runner_image_select_sizes_and_versions","actions_runners_react_shell","actions_workflow_language_service_allow_case_function","activity_diff_file_tree","activity_repos_file_tree","activity_repos_overview_header","activity_repos_overview_sidebar","agent_author_search_expansion","agent_author_search_expansion_ui_pulls","alternate_user_config_repo","async_conversion_coverage_enabled","billing_billable_licenses_cost_center_bucket_fix","billing_budget_expiration","billing_cost_center_list_assigned_resources","billing_discount_threshold_notification","ccr_implement_suggestion_refresh","code_quality_enablement_banner_targeting","code_quality_remove_preview","code_view_checks_live_updates","code_view_raf_sticky_lines","codemirror_inp_optimizations","codespaces_prebuild_region_target_update","coding_agent_third_party_model_ui","copilot_agent_snippy","copilot_api_agentic_issue_marshal_yaml","copilot_automation_repo_mcp_servers","copilot_automations_pagination","copilot_base_model_policy_row","copilot_chat_auto_mode_v2","copilot_chat_clear_model_selection_for_default_change","copilot_chat_disable_model_picker_while_streaming","copilot_chat_early_task_provisioning","copilot_chat_increase_token_padding","copilot_chat_persist_session_drafts","copilot_chat_vision_dotcom_chat_ga_gate","copilot_css_textarea_autosize","copilot_custom_copilots","copilot_custom_copilots_feature_preview","copilot_duplicate_thread","copilot_extensions_removal_on_marketplace","copilot_fix_failed_workflows_all_skus","copilot_hide_hovercard","copilot_immersive_task_hyperlinking","copilot_issue_list_show_more","copilot_mc_cli_resume_any_users_task","copilot_mission_control_agent_merge_fix_ci","copilot_mission_control_agent_merge_resolve_conflicts","copilot_mission_control_awps_batching","copilot_mission_control_early_stop","copilot_mission_control_managed_sandbox_environments","copilot_mission_control_needs_attention","copilot_mission_control_reasoning_effort","copilot_mission_control_sandbox_remote_bypass","copilot_mission_control_task_alive_updates","copilot_mission_control_task_sharing","copilot_org_policy_page_focus_mode","copilot_share_active_subthread","copilot_spaces_ga","copilot_spaces_individual_policies_ga","copilot_swe_agent_authorization_status_ui","copilot_swe_agent_automation_resource_scoped_writes","copilot_swe_agent_discussion_comment_trigger","copilot_swe_agent_discussion_opened_trigger","copilot_swe_agent_discussion_updated_trigger","copilot_swe_agent_hide_model_picker_if_only_auto","copilot_swe_agent_issue_assigned_trigger","copilot_swe_agent_issue_comment_trigger","copilot_swe_agent_issue_labeled_trigger","copilot_swe_agent_pr_comment_model_picker","copilot_swe_agent_pull_request_assigned_trigger","copilot_swe_agent_pull_request_comment_trigger","copilot_swe_agent_pull_request_labeled_trigger","copilot_swe_agent_pull_request_merged_trigger","copilot_swe_agent_pull_request_opened_trigger","copilot_swe_agent_pull_request_ready_for_review_trigger","copilot_swe_agent_pull_request_review_requested_trigger","copilot_swe_agent_pull_request_review_submitted_trigger","copilot_swe_agent_pull_request_synchronize_trigger","copilot_swe_agent_sub_issue_added_trigger","copilot_swe_agent_use_subagents","copilot_task_api_github_rest_style","copilot_task_scoped_alive_channel","copilot_token_based_billing","copilot_unconfigured_is_inherited","copilot_user_can_upgrade_plan_field","copilot_web_integration_cutover","copilot_workbench_sunset_redirect","dashboard_agents_module_auth_token_check","dashboard_indexeddb_caching","dashboard_lists_max_age_filter","datadog_rum","datadog_rum_custom_metrics","fgpat_permissions_selector_redesign","glc_code_quality_repo_settings_workflow_config","hyperspace_2025_logged_out_batch_1","hyperspace_2025_logged_out_batch_2","hyperspace_2025_logged_out_batch_3","in_product_messaging_datadog_monitoring","ipm_ubb_individual_budget_banner","issue_fields_multi_select","issue_inline_avatars","issue_pinned_views","issue_pinned_views_team_vs_personal","issue_relative_time_micro","issue_viewer_paved_path","issues_expanded_file_types","issues_hide_closed_sub_issues","issues_index_query_persistence","issues_lazy_load_comment_box_suggestions","issues_react_chrome_container_query_fix","issues_react_include_bots_in_pickers","issues_react_ui_feedback","labels_archiving","labels_archiving_info","landing_pages_ninetailed","licensing_code_quality_committer_report","lifecycle_label_name_updates","marketing_cookie_consent_banner","marketing_pages_search_explore_provider","memex_default_issue_create_repository","memex_live_update_hovercard","memex_mwl_filter_field_delimiter","memex_remove_deprecated_type_issue","memex_roadmap_drag_style","merge_queue_restricted_pushers_warning","merge_status_header_feedback","milestone_closed_issues_prioritization","octocaptcha_origin_optimization","pr_sfv_new_diff_fetch","primer_react_css_anchor_positioning","primer_react_merged_forwarded_refs","primer_react_timeline_list_semantics","prs_copilot_app_open_action","prs_css_anchor_positioning","prx_files","pull_request_copilot_attribution_header","pull_request_files_virtualization","pull_request_overview_merge_control","pull_request_overview_panel_edit_description","pull_request_persister","pull_request_stacks_navigation_shortcuts","pull_request_virtualization_image_estimate","pull_request_virtualization_loader_batching","pull_request_virtualization_scroll_compensation","pull_request_virtualization_scroll_intent","quick_search_lazy_suggestions","react_blob_isolate_code_lines","react_blob_overlay","react_blob_ssr_content_visibility","react_data_router_tanstack_allowed","react_logged_out_repository_header","react_query_props_with_key","react_sandbox_future_tanstack","repo_app_turbo","repo_issues_sidebar_layout","repo_pulls_dashboard_declutter","repo_pulls_dashboard_ga","repo_pulls_dashboard_persistence","repo_pulls_dashboard_sidebar_links","repo_pulls_dashboard_surface","repos_contributors_limited_default_range","repository_suggester_elastic_search","review_involves_filter","rule_ignored_file_paths","rulesets_actor_list_editor","sample_network_conn_type","security_center_artifact_filters_popover","see_who_reacted","semantic_similarity_duplicate_issue_detection","session_logs_ungroup_reasoning_text","set_sha256_on_repo_creation_form","site_banner_desktop_copilot_app","site_ghca_pixel_mona","site_github_app_ga_page","site_github_app_ga_page_highlight","site_github_app_mobile_native_share","site_global_banner_dev_days_attendee","site_global_nav_spark_models_removed","speculation_rules_ui_service","suggest_custom_property_values_copilot","suppress_automated_browser_vitals","swp_forms_disable_octocaptcha","thread_resolution_reason","track_notifications_settings_usage","ui_route_code_view","ui_route_repos","unified_batch_pr_comments","update_issue_suggestions","viewscreen_sandbox","warn_inaccessible_attachments","webp_support","workstream_plugin_bootstrap"],"login":"wzxxcz","uiComputeCohort":"control","githubDomain":"https://github.com","copilotApiOverrideUrl":"https://api.individual.githubcopilot.com","cmcApiUrl":"https://api.github.com/cmc_internal/api"}</script>
+<script type="application/json" id="datadog-rum-config">{"version":1,"applicationId":"851db457-c3a9-463b-b2e5-906d1ef37118","clientToken":"eyJfcmFpbHMiOnsibWVzc2FnZSI6IkJBaEpJaEpoZFhSb1pXNTBhV05oZEdWa0Jqb0dSVlE9IiwiZXhwIjoiMjAyNi0xMC0xMFQxNDozMzoxNy45NjJaIiwicHVyIjoiYnJvd3Nlcl9zdGF0czpjbGllbnRfdG9rZW4ifX0--602d1d7205ff3ddc472660cb854cd5b82f97710b","site":"datadoghq.com","service":"github-ui","env":"production","proxyUrl":"https://api.github.com/_private/browser/rum","sessionSampleRate":100.0,"profilingSampleRate":5.0}</script>
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/wp-runtime-3cb890321e352e11.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/app-foundation-156c6259e31cc551.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/app-runtime-ebf089472d3c6aef.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/fetch-utilities-804a14996977c014.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/ser-fb5d13278eb42203.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/tp-ea613009a991e211.js" />
+<script crossorigin="anonymous" type="module" src="https://github.githubassets.com/assets/environment-d6aac7ba0630e331.js" defer="defer"></script>
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/app-runtime.150eb44e82b17bb4.module.css" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/catalyst-52ed81112a548e10.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/selector-observer-e8810f64c443fb9b.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/relative-time-element-0417f617ad744a0d.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/by-9da36843ba9d191d.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/ja9-9a1160b939f2cd52.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/3h-55903cf2303047ad.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/hk-0d35a1220587d888.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/jz5-7aa1ff0a0e750f41.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/hj-1d800d09e9a8720a.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/j0-5115849ba84b3e7b.js" />
+<script crossorigin="anonymous" type="module" src="https://github.githubassets.com/assets/github-elements-f0e4ce02016fcccd.js" defer="defer"></script>
+<script crossorigin="anonymous" type="module" src="https://github.githubassets.com/assets/element-registry-0a31e6eda3a5ebaa.js" defer="defer"></script>
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/runtime-helpers-5e0b3ae3c4036207.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/aria-live-752acdc868e2da64.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/hotkey-9080b92ee55ecdce.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/react-core-1057ea0a7e3e7402.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/a9-34620c7b13885011.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/ur-643d2814115561a9.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/4t6-5d0869970ac0aac0.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/pb0-a5c5ec36d311aeef.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/6n-afcf86ccabc4cad2.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/zj-4d9cf83cf08e1643.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/o6-2a1c68d269710ee9.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/h9a-c6405aa090de0e84.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/vy-e96ad491bfe068d3.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/js1-33d314328fce1d13.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/g7-baf9e817ae102b01.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/unc-500c651f273a8d6f.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/nu-65322a6997c6c93c.js" />
+<script crossorigin="anonymous" type="module" src="https://github.githubassets.com/assets/behaviors-902b6c5491b3ba44.js" defer="defer"></script>
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/react-core.e6bcc2edfb76dc6f.module.css" />
   
-  <link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/ls-c53db744b9e161b6.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/kx5-e92da1429a608638.js" />
-<script crossorigin="anonymous" type="module" src="https://github.githubassets.com/assets/dashboard-58586fe2b2f7a23b.js" defer="defer"></script>
+  <link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/lst-64da228a52ae6f27.js" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/mq-148d5397217003be.js" />
+<script crossorigin="anonymous" type="module" src="https://github.githubassets.com/assets/dashboard-a19954cd5de67d12.js" defer="defer"></script>
 
 
   <title>GitHub</title>
@@ -116,13 +119,13 @@
   <meta name="route-pattern" content="/" data-turbo-transient>
   <meta name="route-controller" content="dashboard" data-turbo-transient>
   <meta name="route-action" content="index" data-turbo-transient>
-  <meta name="fetch-nonce" content="v2:a4aa5dee-44d3-dc3c-1d33-b83a3950eb2a">
+  <meta name="fetch-nonce" content="v2:9f4ecabf-04d8-d266-c46d-c9f8d15265fa">
 
     
   <meta name="current-catalog-service-hash" content="40dc28bd654b20f337468a532ff456ed5863889cfbb4e982b793597321d48d3f">
 
 
-  <meta name="request-id" content="7F7C:2037A2:3D37B:54EDB:6ABE5523" data-turbo-transient="true" /><meta name="html-safe-nonce" content="2ef027ee8f487262b4d4a2fb112a5c53b7730b6818e167071cda6d254d5ebfbe" data-turbo-transient="true" /><meta name="visitor-payload" content="eyJyZWZlcnJlciI6Imh0dHBzOi8vZ2l0aHViLmNvbS9keXIxOTgwL2J1aGFuemhlLU5hdGl2ZVdhc21Udi9ibG9iL21hc3Rlci9hcHAvc3JjL21haW4vYXNzZXRzL2NvbnRyb2wvanMvcGFnZXMvaG9tZS5qcyIsInJlcXVlc3RfaWQiOiI3RjdDOjIwMzdBMjozRDM3Qjo1NEVEQjo2QUJFNTUyMyIsInZpc2l0b3JfaWQiOiI0MTk3NDYzMDMxODM3NTY1OTI2IiwicmVnaW9uX2VkZ2UiOiJqYXBhbmVhc3QiLCJyZWdpb25fcmVuZGVyIjoiaWFkIn0=" data-turbo-transient="true" /><meta name="visitor-hmac" content="0a0ab5ad8d82739778cc068ec4ada10bf4241b7ee53d4f3631ba201d709bdabc" data-turbo-transient="true" />
+  <meta name="request-id" content="49B0:23F2F2:148B4:1D691:6AC8FB27" data-turbo-transient="true" /><meta name="html-safe-nonce" content="1c9eb4e8ddf564544e4267832adaffedeb5d3533dedee846ef58191c31ef2615" data-turbo-transient="true" /><meta name="visitor-payload" content="eyJyZWZlcnJlciI6Imh0dHBzOi8vZ2l0aHViLmNvbS93enh4Y3ovYnVoYW56aGVOYXRpdmVXYXNtVHYyMDI2MTAwOTEvYmxvYi9tYXN0ZXIvYXBwL3NyYy9tYWluL2Fzc2V0cy9jb250cm9sL2pzL3BhZ2VzL2hvbWUuanMiLCJyZXF1ZXN0X2lkIjoiNDlCMDoyM0YyRjI6MTQ4QjQ6MUQ2OTE6NkFDOEZCMjciLCJ2aXNpdG9yX2lkIjoiMzkzNDEzNDI0MDQwMDg4NTA1MSIsInJlZ2lvbl9lZGdlIjoiamFwYW5lYXN0IiwicmVnaW9uX3JlbmRlciI6ImlhZCJ9" data-turbo-transient="true" /><meta name="visitor-hmac" content="c152386ca64d5b5bab189b31169243d5e7b00fca49eb07faea1e678e8a574927" data-turbo-transient="true" />
 
 
 
@@ -136,7 +139,7 @@
 
     <meta name="google-site-verification" content="Apib7-x98H0j5cPqHWwSMm6dNU4GmODRoqxLiDzdx9I">
 
-<meta name="octolytics-url" content="https://collector.github.com/github/collect" /><meta name="octolytics-actor-id" content="148692883" /><meta name="octolytics-actor-login" content="dyr1980" /><meta name="octolytics-actor-hash" content="eca93ef09ad9c571bc6f6eed2cb0a36d408ee02bc156433ce8ed8148f4b61695" />
+<meta name="octolytics-url" content="https://collector.github.com/github/collect" /><meta name="octolytics-actor-id" content="155713461" /><meta name="octolytics-actor-login" content="wzxxcz" /><meta name="octolytics-actor-hash" content="724d29f61b9baa9170ed312836a36146abe68031412dcdcff14b175e217b46a5" />
 
 
 
@@ -149,7 +152,7 @@
 
 
 
-    <meta name="user-login" content="dyr1980">
+    <meta name="user-login" content="wzxxcz">
 
   <link rel="sudo-modal" href="/sessions/sudo_modal">
 
@@ -157,7 +160,7 @@
 
     
 
-      <meta name="description" content="GitHub is where people build software. More than 150 million people use GitHub to discover, fork, and contribute to over 420 million projects.">
+      <meta name="description" content="GitHub is where people build software. More than 225 million people use GitHub to discover, fork, and contribute to over 800 million projects.">
 
       <link rel="search" type="application/opensearchdescription+xml" href="/opensearch.xml" title="GitHub">
 
@@ -168,7 +171,7 @@
       <meta property="og:url" content="https://github.com">
   <meta property="og:site_name" content="GitHub">
   <meta property="og:title" content="Build software better, together">
-  <meta property="og:description" content="GitHub is where people build software. More than 150 million people use GitHub to discover, fork, and contribute to over 420 million projects.">
+  <meta property="og:description" content="GitHub is where people build software. More than 225 million people use GitHub to discover, fork, and contribute to over 800 million projects.">
   <meta property="og:image" content="https://github.githubassets.com/assets/github-logo-55c5b9a1fe52.png">
   <meta property="og:image:type" content="image/png">
   <meta property="og:image:width" content="1200">
@@ -188,15 +191,14 @@
   <meta property="twitter:creator:id" content="13334762">
   <meta property="twitter:card" content="summary_large_image">
   <meta property="twitter:title" content="GitHub">
-  <meta property="twitter:description" content="GitHub is where people build software. More than 150 million people use GitHub to discover, fork, and contribute to over 420 million projects.">
+  <meta property="twitter:description" content="GitHub is where people build software. More than 225 million people use GitHub to discover, fork, and contribute to over 800 million projects.">
   <meta property="twitter:image" content="https://github.githubassets.com/assets/github-logo-55c5b9a1fe52.png">
   <meta property="twitter:image:width" content="1200">
   <meta property="twitter:image:height" content="1200">
 
 
-      <link rel="shared-web-socket" href="wss://alive.github.com/_sockets/u/148692883/ws?session=eyJ2IjoiVjMiLCJ1IjoxNDg2OTI4ODMsInMiOjIyNDgwMzI0MzksImMiOjQ0NTE2NDM5NiwidCI6MTc5MDg1ODUzNX0=--f5539f42dd989731c5dcc36650097ce721b795cf25e2f863b4fb5451ebaacf78" data-refresh-url="/_alive" data-session-id="a6d10e2b4b7246141287f39675aad4cec8ddab79722558fa056f7efbe60e1020">
+      <link rel="shared-web-socket" href="wss://alive.github.com/_sockets/u/155713461/ws?session=eyJ2IjoiVjMiLCJ1IjoxNTU3MTM0NjEsInMiOjIyODMzMDM1NDgsImMiOjI3OTAxMDQ0NjAsInQiOjE3OTE1NTYzOTd9--2d6dd5e5c99e95877a45eef85092fe385dbbda587d11d563729edb068375f425" data-refresh-url="/_alive" data-session-id="90c7e335b3e850a0ba7c09fbe9bbcb0aed4b62e17e824336b5ee3cde7fd3e111">
 
-      <link rel="service-worker-src" href="/assets-cdn/worker/service-worker-ba03a1330be46c89.js?current_user=dyr1980&amp;errors_url=https%3A%2F%2Fapi.github.com%2F_private%2Fbrowser%2Ferrors&amp;release=fa1b59a21b58c9d061675aa9a34a085e298477ec&amp;actor_id=148692883&amp;is_staff=false&amp;issues_index_data_router=0&amp;issue_viewer_data_router=0&amp;analytics_collector_url=https%3A%2F%2Fcollector.github.com%2Fgithub%2Fcollect">
 
       <meta name="hostname" content="github.com">
 
@@ -208,15 +210,15 @@
         <meta name="expected-hostname" content="github.com">
 
 
-  <meta http-equiv="x-pjax-version" content="05d1b649a382f721456cec1401d0f5c331f5e8442ce63d298f836ba2e0ee4338" data-turbo-track="reload">
+  <meta http-equiv="x-pjax-version" content="e83782ddb3fa0b42e909a603b15faef8398846fa7e4193c5b9d724886f9d4b23" data-turbo-track="reload">
   <meta http-equiv="x-pjax-csp-version" content="a1a7adad81e885c962e0eb7478724d77c34e2d18a2ae4f4da4b9a65f06e0b8da" data-turbo-track="reload">
-  <meta http-equiv="x-pjax-css-version" content="4e64a97e5e886e99bcf47a5adeecf4c238f1ab18ffbc37e890c65003e5c96056" data-turbo-track="reload">
-  <meta http-equiv="x-pjax-js-version" content="2afa329614c25b2ecfd5ab75f3235cab8eb6b5d2de9c868b2420e45d2859ca3f" data-turbo-track="reload">
+  <meta http-equiv="x-pjax-css-version" content="1ff3f1d4e1abd61f6f135b47d3b815e2f7169f8dd418f0118c6b1cf4de6cbc86" data-turbo-track="reload">
+  <meta http-equiv="x-pjax-js-version" content="a0a73c624b44d5c76b3d97bf33407b03818961786dd2c61f165a80bfd933cd90" data-turbo-track="reload">
 
   <meta name="turbo-cache-control" content="no-preview" data-turbo-transient="">
 
-      <link rel="alternate" type="application/atom+xml" title="ATOM" href="/dyr1980.private.atom?token=BDON7E2777Q5SY67RG35FCOIZOD2O" />
-  <link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/github-7338c07b3a07b8be.css" />
+      <link rel="alternate" type="application/atom+xml" title="ATOM" href="/wzxxcz.private.atom?token=BFD77NJL47KTQ52HVU2GRXOI2YW22" />
+  <link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/github-7a418ea859d1654d.css" />
 
 
 
@@ -231,7 +233,7 @@
 
   <meta name="browser-errors-url" content="https://api.github.com/_private/browser/errors">
 
-  <meta name="release" content="fa1b59a21b58c9d061675aa9a34a085e298477ec" data-turbo-track="reload">
+  <meta name="release" content="f11fa6094e9362414cc25f968aef0d4c314275ce" data-turbo-track="reload">
   <meta name="ui-target" content="full">
 
   <link rel="mask-icon" href="https://github.githubassets.com/assets/pinned-octocat-093da3e6fa40.svg" color="#000000">
@@ -241,6 +243,8 @@
 <meta name="theme-color" content="#1e2327">
 <meta name="color-scheme" content="light dark" />
 
+  <meta name="msapplication-TileImage" content="/windows-tile.png">
+  <meta name="msapplication-TileColor" content="#ffffff">
 
   <link rel="manifest" href="/manifest.json" crossOrigin="use-credentials">
 
@@ -257,10 +261,10 @@
       <span data-view-component="true" class="progress-pjax-loader Progress position-fixed width-full">
     <span style="width: 0%;" data-view-component="true" class="Progress-item progress-pjax-loader-bar left-0 top-0 color-bg-accent-emphasis"></span>
 </span>      
-      <link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/l7j-2ddd8b435dadae28.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/keyboard-shortcuts-dialog-436b7ea7d9adfb1c.js" fetchpriority="low" />
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/primer-react-css.46296dcf75e7a0b0.module.css" />
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/keyboard-shortcuts-dialog.ece0dc1b8ee97540.module.css" />
+      <link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/19-8bbca9e8a0da6d27.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/keyboard-shortcuts-dialog-a5a8d546fb6e4357.js" fetchpriority="low" />
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/primer-react-css.e4334163c54cccf5.module.css" />
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/keyboard-shortcuts-dialog.346f2232dbd3700f.module.css" />
 
 <react-partial
   partial-name="keyboard-shortcuts-dialog"
@@ -279,10 +283,9 @@
 
       
 
-          <link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/pw-4f91498888595802.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/app-install-banner-partial-3daf4284c2b66927.js" fetchpriority="low" />
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/primer-react-css.46296dcf75e7a0b0.module.css" />
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/app-install-banner-partial.4cdce000348a6377.module.css" />
+          <link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/app-install-banner-partial-4890c522f6bf6f10.js" fetchpriority="low" />
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/primer-react-css.e4334163c54cccf5.module.css" />
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/app-install-banner-partial.256e6d8dad5daabf.module.css" />
 
 <react-partial
   partial-name="app-install-banner-partial"
@@ -298,21 +301,20 @@
 
           
 
-                  <link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/8t-354981527b09ffac.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/dh-b2f3762e16cb5f15.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/ry-9d5893b8c8da59ee.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/0w-7748d12d0a4ac314.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/s80-60dce1ea17214afc.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/af-dd319dc59c304f83.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/t0-ba3694f373fc552d.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/bn-90ed6f0ace539eca.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/2j-91f7a06d8b49aa5e.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/gez-cea3aa69f572483f.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/h8-d622b869e5d0599f.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/global-nav-bar-27229f06a775807b.js" fetchpriority="low" />
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/primer-react-css.46296dcf75e7a0b0.module.css" />
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/ql0.bdd6be015c087bbc.module.css" />
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/global-nav-bar.b386e7dce04593eb.module.css" />
+                  <link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/kv-ecceb6acb1923ec6.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/gex-2fd683ed4866c058.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/t5-1efccaab8bdfe5b6.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/5f-64f8e7d5bcbd4787.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/z52-5bbbcbc84edc2a25.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/8h-df80ad296f1235f2.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/fq-a0bb6493a494ea3a.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/a7a-129708cc94fc5576.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/xfx-c82d8352413aea0a.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/j4c-ccf9c419269610ae.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/global-nav-bar-796b1454f0956de6.js" fetchpriority="low" />
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/primer-react-css.e4334163c54cccf5.module.css" />
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/pj.434cecfce8c3a85d.module.css" />
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/global-nav-bar.2ea1478cbde6c112.module.css" />
 
 <react-partial
   partial-name="global-nav-bar"
@@ -321,8 +323,8 @@
   data-react-profiling="false"
 >
   
-  <script type="application/json" data-target="react-partial.embeddedData">{"props":{"contextRegion":{"crumbs":[{"crumb_type":"basic","label":"Dashboard","is_root":false,"path":"https://github.com/"}],"localNavigation":[],"localNavigationUpdateChannel":null,"selectedLink":null},"owner":{"login":"dyr1980","name":null,"avatarUrl":"https://avatars.githubusercontent.com/u/148692883?v=4"},"headerLogo":{"href":"/","aria-label":"Homepage "},"notifications":{"indicatorMode":"none","websocketChannel":"eyJjIjoibm90aWZpY2F0aW9uLWNoYW5nZWQ6MTQ4NjkyODgzIiwidCI6MTc5MDg1ODUzNX0=--ba033368f28ca28a1af47f68d18fa9d741aa90feb868510745962ede1dc07553","fetchIndicatorSrc":"/notifications/indicator","fetchIndicatorEnabled":true},"issues":{"href":"/issues"},"pulls":{"href":"/pulls"},"contributedRepos":{"href":"/repos"},"copilot":{"show":true,"showAgentsButton":false,"showRelaunchAnnouncement":false,"copilotChatUrl":"/github-copilot/chat?skip_anchor=true","copilotApiUrl":"https://api.individual.githubcopilot.com"},"search":{"show":true,"showCommandPalette":false,"isSearchPage":false,"isJumpToSearch":false,"searchContext":{}},"enterpriseBar":{"show":false},"globalTransactionalMessage":[],"payloadsUrl":"/_global-navigation/payloads.json?can_toggle_site_admin_and_employee_status=0\u0026is_admin_mode_on=0\u0026is_ui_opted_out=0\u0026show_ui_opt_out=0\u0026v=5","contextRegionUrl":"/_global-navigation/context-region.json"}}</script>
-  <div data-target="react-partial.reactRoot"><link rel="preload" as="image" href="https://avatars.githubusercontent.com/u/148692883?v=4&amp;size=64"/><header aria-label="Global navigation menu" data-component="Stack" class="GlobalNav styles-module__appHeader__YzYWk prc-Stack-Stack-UQ9k6" data-gap="none" data-direction="vertical" data-align="stretch" data-wrap="nowrap" data-justify="start" data-padding="none"><div data-component="Stack" class="prc-Stack-Stack-UQ9k6" data-direction="horizontal" data-align="center" data-wrap="nowrap" data-justify="center" data-padding="none"><div data-testid="top-nav-left" data-component="Stack" class="styles-module__left__Fylw7 prc-Stack-Stack-UQ9k6" data-gap="condensed" data-direction="horizontal" data-align="stretch" data-wrap="nowrap" data-justify="start" data-padding="normal"><div data-loading-wrapper="true"><button data-component="IconButton" type="button" aria-haspopup="dialog" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderButton__axedQ prc-Button-IconButton-fyge7" data-loading="false" data-no-visuals="true" data-size="medium" data-variant="invisible" aria-labelledby="_R_1b5_"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-three-bars" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M1 2.75A.75.75 0 0 1 1.75 2h12.5a.75.75 0 0 1 0 1.5H1.75A.75.75 0 0 1 1 2.75Zm0 5A.75.75 0 0 1 1.75 7h12.5a.75.75 0 0 1 0 1.5H1.75A.75.75 0 0 1 1 7.75ZM1.75 12h12.5a.75.75 0 0 1 0 1.5H1.75a.75.75 0 0 1 0-1.5Z"></path></svg></button></div><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true" id="_R_1b5_">Open menu</span><a data-component="IconButton" type="button" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderHome__nkA_U prc-Button-IconButton-fyge7" data-loading="false" data-no-visuals="true" data-size="medium" data-variant="invisible" aria-labelledby="_R_1j5_" href="/" data-discover="true"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-mark-github" viewBox="0 0 24 24" width="32" height="32" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M10.226 17.284c-2.965-.36-5.054-2.493-5.054-5.256 0-1.123.404-2.336 1.078-3.144-.292-.741-.247-2.314.09-2.965.898-.112 2.111.36 2.83 1.01.853-.269 1.752-.404 2.853-.404 1.1 0 1.999.135 2.807.382.696-.629 1.932-1.1 2.83-.988.315.606.36 2.179.067 2.942.72.854 1.101 2 1.101 3.167 0 2.763-2.089 4.852-5.098 5.234.763.494 1.28 1.572 1.28 2.807v2.336c0 .674.561 1.056 1.235.786 4.066-1.55 7.255-5.615 7.255-10.646C23.5 6.188 18.334 1 11.978 1 5.62 1 .5 6.188.5 12.545c0 4.986 3.167 9.12 7.435 10.669.606.225 1.19-.18 1.19-.786V20.63a2.9 2.9 0 0 1-1.078.224c-1.483 0-2.359-.808-2.987-2.313-.247-.607-.517-.966-1.034-1.033-.27-.023-.359-.135-.359-.27 0-.27.45-.471.898-.471.652 0 1.213.404 1.797 1.235.45.651.921.943 1.483.943.561 0 .92-.202 1.437-.719.382-.381.674-.718.944-.943"></path></svg></a><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true"><span id="_R_1j5_">Homepage <span class="prc-src-InternalVisuallyHidden-2YaI6">(<!-- -->g then d<!-- -->)</span></span><span class="prc-TooltipV2-KeybindingHintContainer-Ymj-3 prc-TooltipV2-HasTextBefore-fdOXj" aria-hidden="true" data-component="Tooltip.KeybindingHintContainer"><kbd class="prc-KeybindingHint-KeybindingHint-qpYIs prc-Text-Text-9mHv3" data-component="KeybindingHint" data-testid="keybinding-hint"><span class="prc-components-Chord-DdhWN prc-components-ChordOnEmphasis-O-4BS prc-components-ChordSmall-c-P-x prc-Text-Text-9mHv3" data-component="Text" data-kbd-chord="true"> <span class="prc-src-InternalVisuallyHidden-2YaI6">g</span><span aria-hidden="true">G</span></span><span class="prc-src-InternalVisuallyHidden-2YaI6">then</span> <span class="prc-components-Chord-DdhWN prc-components-ChordOnEmphasis-O-4BS prc-components-ChordSmall-c-P-x prc-Text-Text-9mHv3" data-component="Text" data-kbd-chord="true"> <span class="prc-src-InternalVisuallyHidden-2YaI6">d</span><span aria-hidden="true">D</span></span></kbd></span></span><div class="d-none"></div></div><div data-testid="top-nav-center" data-component="Stack" class="styles-module__center__R3QRv prc-Stack-Stack-UQ9k6" data-gap="condensed" data-direction="horizontal" data-align="stretch" data-wrap="nowrap" data-justify="start" data-padding="normal"><nav class="styles-module__contextRegion__VbSp2 prc-Breadcrumbs-BreadcrumbsBase-3Gb-B" aria-label="Breadcrumbs" data-overflow="menu" data-variant="normal" data-component="Breadcrumbs"><ol class="prc-Breadcrumbs-BreadcrumbsList-BKjpe"><li class="prc-Breadcrumbs-ItemWrapper-k0NLn"><a class="styles-module__contextCrumb__IzGIq prc-Breadcrumbs-Item-jcraJ" data-component="Breadcrumbs.Item" href="https://github.com/"><span class="styles-module__contextCrumbLast__tI2e3">Dashboard</span></a></li></ol></nav><div class="Search-module__searchButtonGroup__aetw5 prc-ButtonGroup-ButtonGroup-vFUrY" data-component="ButtonGroup"><div class="prc-ButtonGroup-Item-PqvDl"><button data-component="Button" type="button" aria-label="Open quick search dialog, type / to search" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderButton__axedQ Search-module__searchButton__aiE0a" data-loading="false" data-size="medium" data-variant="invisible"><span data-component="buttonContent" data-align="center" class="prc-Button-ButtonContent-Iohp5"><span data-component="leadingVisual" class="prc-Button-Visual-YNt2F prc-Button-LeadingVisual-UySKu prc-Button-VisualWrap-E4cnq"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-search" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"></path></svg></span><span data-component="text" class="prc-Button-Label-FWkx3"><span class="Search-module__placeholder__p9hbG Search-module__text__veSYi Search-module__value__TFoak">Type <kbd class="Search-module__kbd__WCskr">/</kbd> to search</span></span></span></button></div><div class="prc-ButtonGroup-Item-PqvDl"></div></div><button data-component="IconButton" type="button" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderButton__axedQ Search-module__smallSearchButton___8Gvn prc-Button-IconButton-fyge7" data-loading="false" data-no-visuals="true" data-size="medium" data-variant="invisible" aria-labelledby="_R_al5_"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-search" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"></path></svg></button><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true"><span id="_R_al5_">Open quick search dialog, type / to search<span class="prc-src-InternalVisuallyHidden-2YaI6">(<!-- -->forward slash<!-- -->)</span></span><span class="prc-TooltipV2-KeybindingHintContainer-Ymj-3 prc-TooltipV2-HasTextBefore-fdOXj" aria-hidden="true" data-component="Tooltip.KeybindingHintContainer"><kbd class="prc-KeybindingHint-KeybindingHint-qpYIs prc-Text-Text-9mHv3" data-component="KeybindingHint" data-testid="keybinding-hint"><span class="prc-components-Chord-DdhWN prc-components-ChordOnEmphasis-O-4BS prc-components-ChordSmall-c-P-x prc-Text-Text-9mHv3" data-component="Text" data-kbd-chord="true"> <span class="prc-src-InternalVisuallyHidden-2YaI6">forward slash</span><span aria-hidden="true">/</span></span></kbd></span></span><div class="d-none"></div></div><div data-testid="top-nav-right" data-component="Stack" class="styles-module__right__mlBQg styles-module__rightWithResponsiveCreateButton__SKn2W prc-Stack-Stack-UQ9k6" data-gap="condensed" data-direction="horizontal" data-align="center" data-wrap="nowrap" data-justify="start" data-padding="normal"><div data-testid="top-bar-actions" data-component="Stack" class="prc-Stack-Stack-UQ9k6" data-gap="condensed" data-direction="horizontal" data-align="center" data-wrap="nowrap" data-justify="start" data-padding="none"><div class="hide-sm hide-md"><div class="CopilotItems-module__Wrapper__BFG9q"><div class="prc-ButtonGroup-ButtonGroup-vFUrY" data-component="ButtonGroup"><div class="prc-ButtonGroup-Item-PqvDl"><a data-component="IconButton" type="button" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderButton__axedQ prc-Button-IconButton-fyge7" data-loading="false" data-no-visuals="true" data-size="medium" data-variant="invisible" aria-labelledby="_R_1aif5_" href="/copilot" data-discover="true"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-copilot" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M7.998 15.035c-4.562 0-7.873-2.914-7.998-3.749V9.338c.085-.628.677-1.686 1.588-2.065.013-.07.024-.143.036-.218.029-.183.06-.384.126-.612-.201-.508-.254-1.084-.254-1.656 0-.87.128-1.769.693-2.484.579-.733 1.494-1.124 2.724-1.261 1.206-.134 2.262.034 2.944.765.05.053.096.108.139.165.044-.057.094-.112.143-.165.682-.731 1.738-.899 2.944-.765 1.23.137 2.145.528 2.724 1.261.566.715.693 1.614.693 2.484 0 .572-.053 1.148-.254 1.656.066.228.098.429.126.612.012.076.024.148.037.218.924.385 1.522 1.471 1.591 2.095v1.872c0 .766-3.351 3.795-8.002 3.795Zm0-1.485c2.28 0 4.584-1.11 5.002-1.433V7.862l-.023-.116c-.49.21-1.075.291-1.727.291-1.146 0-2.059-.327-2.71-.991A3.222 3.222 0 0 1 8 6.303a3.24 3.24 0 0 1-.544.743c-.65.664-1.563.991-2.71.991-.652 0-1.236-.081-1.727-.291l-.023.116v4.255c.419.323 2.722 1.433 5.002 1.433ZM6.762 2.83c-.193-.206-.637-.413-1.682-.297-1.019.113-1.479.404-1.713.7-.247.312-.369.789-.369 1.554 0 .793.129 1.171.308 1.371.162.181.519.379 1.442.379.853 0 1.339-.235 1.638-.54.315-.322.527-.827.617-1.553.117-.935-.037-1.395-.241-1.614Zm4.155-.297c-1.044-.116-1.488.091-1.681.297-.204.219-.359.679-.242 1.614.091.726.303 1.231.618 1.553.299.305.784.54 1.638.54.922 0 1.28-.198 1.442-.379.179-.2.308-.578.308-1.371 0-.765-.123-1.242-.37-1.554-.233-.296-.693-.587-1.713-.7Z"></path><path d="M6.25 9.037a.75.75 0 0 1 .75.75v1.501a.75.75 0 0 1-1.5 0V9.787a.75.75 0 0 1 .75-.75Zm4.25.75v1.501a.75.75 0 0 1-1.5 0V9.787a.75.75 0 0 1 1.5 0Z"></path></svg></a><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true" id="_R_1aif5_">Chat with Copilot</span></div><div class="prc-ButtonGroup-Item-PqvDl"><div class="d-none"></div><button data-component="ActionMenu.Button" type="button" aria-label="Open Copilot…" aria-haspopup="true" aria-expanded="false" tabindex="0" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderButton__axedQ CopilotItems-module__CopilotMenu__DVdfE" data-loading="false" data-size="medium" data-variant="invisible" id="_R_2iif5_"><span data-component="buttonContent" data-align="center" class="prc-Button-ButtonContent-Iohp5"><span data-component="leadingVisual" class="prc-Button-Visual-YNt2F prc-Button-LeadingVisual-UySKu prc-Button-VisualWrap-E4cnq"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-copilot" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M7.998 15.035c-4.562 0-7.873-2.914-7.998-3.749V9.338c.085-.628.677-1.686 1.588-2.065.013-.07.024-.143.036-.218.029-.183.06-.384.126-.612-.201-.508-.254-1.084-.254-1.656 0-.87.128-1.769.693-2.484.579-.733 1.494-1.124 2.724-1.261 1.206-.134 2.262.034 2.944.765.05.053.096.108.139.165.044-.057.094-.112.143-.165.682-.731 1.738-.899 2.944-.765 1.23.137 2.145.528 2.724 1.261.566.715.693 1.614.693 2.484 0 .572-.053 1.148-.254 1.656.066.228.098.429.126.612.012.076.024.148.037.218.924.385 1.522 1.471 1.591 2.095v1.872c0 .766-3.351 3.795-8.002 3.795Zm0-1.485c2.28 0 4.584-1.11 5.002-1.433V7.862l-.023-.116c-.49.21-1.075.291-1.727.291-1.146 0-2.059-.327-2.71-.991A3.222 3.222 0 0 1 8 6.303a3.24 3.24 0 0 1-.544.743c-.65.664-1.563.991-2.71.991-.652 0-1.236-.081-1.727-.291l-.023.116v4.255c.419.323 2.722 1.433 5.002 1.433ZM6.762 2.83c-.193-.206-.637-.413-1.682-.297-1.019.113-1.479.404-1.713.7-.247.312-.369.789-.369 1.554 0 .793.129 1.171.308 1.371.162.181.519.379 1.442.379.853 0 1.339-.235 1.638-.54.315-.322.527-.827.617-1.553.117-.935-.037-1.395-.241-1.614Zm4.155-.297c-1.044-.116-1.488.091-1.681.297-.204.219-.359.679-.242 1.614.091.726.303 1.231.618 1.553.299.305.784.54 1.638.54.922 0 1.28-.198 1.442-.379.179-.2.308-.578.308-1.371 0-.765-.123-1.242-.37-1.554-.233-.296-.693-.587-1.713-.7Z"></path><path d="M6.25 9.037a.75.75 0 0 1 .75.75v1.501a.75.75 0 0 1-1.5 0V9.787a.75.75 0 0 1 .75-.75Zm4.25.75v1.501a.75.75 0 0 1-1.5 0V9.787a.75.75 0 0 1 1.5 0Z"></path></svg></span></span><span data-component="trailingAction" class="prc-Button-Visual-YNt2F prc-Button-VisualWrap-E4cnq"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-triangle-down" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="m4.427 7.427 3.396 3.396a.25.25 0 0 0 .354 0l3.396-3.396A.25.25 0 0 0 11.396 7H4.604a.25.25 0 0 0-.177.427Z"></path></svg></span></button></div></div></div></div><div class="styles-module__itemDivider__nunbs hide-sm hide-md"></div><button data-component="ActionMenu.Button" type="button" aria-haspopup="true" aria-expanded="false" tabindex="0" class="prc-Button-ButtonBase-9n-Xk GlobalCreateMenu-module__actionMenuButton__Hj_iB GlobalCreateMenu-module__responsiveCreateMenu__zTmSP hide-sm" data-loading="false" data-size="medium" data-variant="invisible" aria-labelledby="global-create-menu-tooltip-_R_6f5_" id="_R_mf5_"><span data-component="buttonContent" data-align="center" class="prc-Button-ButtonContent-Iohp5"><span data-component="leadingVisual" class="prc-Button-Visual-YNt2F prc-Button-LeadingVisual-UySKu prc-Button-VisualWrap-E4cnq"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-plus" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z"></path></svg></span></span><span data-component="trailingAction" class="prc-Button-Visual-YNt2F prc-Button-VisualWrap-E4cnq"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-triangle-down" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="m4.427 7.427 3.396 3.396a.25.25 0 0 0 .354 0l3.396-3.396A.25.25 0 0 0 11.396 7H4.604a.25.25 0 0 0-.177.427Z"></path></svg></span></button><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true" id="global-create-menu-tooltip-_R_6f5_">Create new...</span><div data-component="Stack" class="hide-sm hide-md prc-Stack-Stack-UQ9k6" data-gap="condensed" data-direction="horizontal" data-align="center" data-wrap="nowrap" data-justify="start" data-padding="none"><a data-component="IconButton" type="button" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderButton__axedQ prc-Button-IconButton-fyge7" data-loading="false" data-no-visuals="true" data-size="medium" data-variant="invisible" aria-labelledby="_R_2of5_" href="/issues" data-discover="true"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-issue-opened" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"></path><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"></path></svg></a><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true"><span id="_R_2of5_">All issues<span class="prc-src-InternalVisuallyHidden-2YaI6">(<!-- -->g then i<!-- -->)</span></span><span class="prc-TooltipV2-KeybindingHintContainer-Ymj-3 prc-TooltipV2-HasTextBefore-fdOXj" aria-hidden="true" data-component="Tooltip.KeybindingHintContainer"><kbd class="prc-KeybindingHint-KeybindingHint-qpYIs prc-Text-Text-9mHv3" data-component="KeybindingHint" data-testid="keybinding-hint"><span class="prc-components-Chord-DdhWN prc-components-ChordOnEmphasis-O-4BS prc-components-ChordSmall-c-P-x prc-Text-Text-9mHv3" data-component="Text" data-kbd-chord="true"> <span class="prc-src-InternalVisuallyHidden-2YaI6">g</span><span aria-hidden="true">G</span></span><span class="prc-src-InternalVisuallyHidden-2YaI6">then</span> <span class="prc-components-Chord-DdhWN prc-components-ChordOnEmphasis-O-4BS prc-components-ChordSmall-c-P-x prc-Text-Text-9mHv3" data-component="Text" data-kbd-chord="true"> <span class="prc-src-InternalVisuallyHidden-2YaI6">i</span><span aria-hidden="true">I</span></span></kbd></span></span><div class="d-none"></div><a data-component="IconButton" type="button" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderButton__axedQ prc-Button-IconButton-fyge7" data-loading="false" data-no-visuals="true" data-size="medium" data-variant="invisible" aria-labelledby="_R_38f5_" href="/pulls" data-discover="true"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-git-pull-request" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"></path></svg></a><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true"><span id="_R_38f5_">All pull requests<span class="prc-src-InternalVisuallyHidden-2YaI6">(<!-- -->g then p<!-- -->)</span></span><span class="prc-TooltipV2-KeybindingHintContainer-Ymj-3 prc-TooltipV2-HasTextBefore-fdOXj" aria-hidden="true" data-component="Tooltip.KeybindingHintContainer"><kbd class="prc-KeybindingHint-KeybindingHint-qpYIs prc-Text-Text-9mHv3" data-component="KeybindingHint" data-testid="keybinding-hint"><span class="prc-components-Chord-DdhWN prc-components-ChordOnEmphasis-O-4BS prc-components-ChordSmall-c-P-x prc-Text-Text-9mHv3" data-component="Text" data-kbd-chord="true"> <span class="prc-src-InternalVisuallyHidden-2YaI6">g</span><span aria-hidden="true">G</span></span><span class="prc-src-InternalVisuallyHidden-2YaI6">then</span> <span class="prc-components-Chord-DdhWN prc-components-ChordOnEmphasis-O-4BS prc-components-ChordSmall-c-P-x prc-Text-Text-9mHv3" data-component="Text" data-kbd-chord="true"> <span class="prc-src-InternalVisuallyHidden-2YaI6">p</span><span aria-hidden="true">P</span></span></kbd></span></span><div class="d-none"></div><a data-component="IconButton" type="button" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderButton__axedQ prc-Button-IconButton-fyge7" data-loading="false" data-no-visuals="true" data-size="medium" data-variant="invisible" aria-labelledby="_R_3of5_" href="/repos" data-discover="true"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-repo" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8ZM5 12.25a.25.25 0 0 1 .25-.25h3.5a.25.25 0 0 1 .25.25v3.25a.25.25 0 0 1-.4.2l-1.45-1.087a.249.249 0 0 0-.3 0L5.4 15.7a.25.25 0 0 1-.4-.2Z"></path></svg></a><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true" id="_R_3of5_">All repositories</span><div class="d-none"></div></div></div><a data-component="IconButton" type="button" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderButton__axedQ prc-Button-IconButton-fyge7" data-loading="false" data-no-visuals="true" data-size="medium" data-variant="invisible" aria-labelledby="_R_2n5_" href="/notifications" data-discover="true"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-inbox" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M2.8 2.06A1.75 1.75 0 0 1 4.41 1h7.18c.7 0 1.333.417 1.61 1.06l2.74 6.395c.04.093.06.194.06.295v4.5A1.75 1.75 0 0 1 14.25 15H1.75A1.75 1.75 0 0 1 0 13.25v-4.5c0-.101.02-.202.06-.295Zm1.61.44a.25.25 0 0 0-.23.152L1.887 8H4.75a.75.75 0 0 1 .6.3L6.625 10h2.75l1.275-1.7a.75.75 0 0 1 .6-.3h2.863L11.82 2.652a.25.25 0 0 0-.23-.152Zm10.09 7h-2.875l-1.275 1.7a.75.75 0 0 1-.6.3h-3.5a.75.75 0 0 1-.6-.3L4.375 9.5H1.5v3.75c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25Z"></path></svg></a><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true"><span id="_R_2n5_">You have no unread notifications<span class="prc-src-InternalVisuallyHidden-2YaI6">(<!-- -->g then n<!-- -->)</span></span><span class="prc-TooltipV2-KeybindingHintContainer-Ymj-3 prc-TooltipV2-HasTextBefore-fdOXj" aria-hidden="true" data-component="Tooltip.KeybindingHintContainer"><kbd class="prc-KeybindingHint-KeybindingHint-qpYIs prc-Text-Text-9mHv3" data-component="KeybindingHint" data-testid="keybinding-hint"><span class="prc-components-Chord-DdhWN prc-components-ChordOnEmphasis-O-4BS prc-components-ChordSmall-c-P-x prc-Text-Text-9mHv3" data-component="Text" data-kbd-chord="true"> <span class="prc-src-InternalVisuallyHidden-2YaI6">g</span><span aria-hidden="true">G</span></span><span class="prc-src-InternalVisuallyHidden-2YaI6">then</span> <span class="prc-components-Chord-DdhWN prc-components-ChordOnEmphasis-O-4BS prc-components-ChordSmall-c-P-x prc-Text-Text-9mHv3" data-component="Text" data-kbd-chord="true"> <span class="prc-src-InternalVisuallyHidden-2YaI6">n</span><span aria-hidden="true">N</span></span></kbd></span></span><div class="d-none"></div><div class="GlobalNavUserMenu-module__container__NaVIt"><button data-component="IconButton" type="button" aria-haspopup="menu" data-login="dyr1980" class="prc-Button-ButtonBase-9n-Xk GlobalNavUserMenu-module__anchor__Dcej6 prc-Button-IconButton-fyge7" data-loading="false" data-no-visuals="true" data-size="medium" data-variant="invisible" aria-labelledby="_R_av5_"><img data-component="Avatar" class="prc-Avatar-Avatar-0xaUi" alt="User avatar" width="32" height="32" style="--avatarSize-regular:32px" src="https://avatars.githubusercontent.com/u/148692883?v=4&amp;size=64" data-testid="github-avatar"/></button><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true" id="_R_av5_">Open user navigation menu</span></div></div></div></header></div>
+  <script type="application/json" data-target="react-partial.embeddedData">{"props":{"contextRegion":{"crumbs":[{"crumb_type":"basic","label":"Dashboard","is_root":false,"path":"https://github.com/"}],"localNavigation":[],"localNavigationUpdateChannel":null,"selectedLink":null},"owner":{"login":"wzxxcz","name":null,"avatarUrl":"https://avatars.githubusercontent.com/u/155713461?v=4"},"headerLogo":{"href":"/","aria-label":"Homepage "},"notifications":{"indicatorMode":"none","websocketChannel":"eyJjIjoibm90aWZpY2F0aW9uLWNoYW5nZWQ6MTU1NzEzNDYxIiwidCI6MTc5MTU1NjM5OH0=--62800af1ecc73ad323b8addb17162da2a342653cb042cd94e5c7760a3181d877","fetchIndicatorSrc":"/notifications/indicator","fetchIndicatorEnabled":true},"issues":{"href":"/issues"},"pulls":{"href":"/pulls"},"contributedRepos":{"href":"/repos"},"copilot":{"show":true,"showAgentsButton":false,"showRelaunchAnnouncement":false,"copilotChatUrl":"/github-copilot/chat?skip_anchor=true","copilotApiUrl":"https://api.individual.githubcopilot.com"},"search":{"show":true,"showCommandPalette":false,"isSearchPage":false,"isJumpToSearch":false,"searchContext":{}},"commandPalette":null,"enterpriseBar":{"show":false},"globalTransactionalMessage":[],"payloadsUrl":"/_global-navigation/payloads.json?can_toggle_site_admin_and_employee_status=0\u0026is_admin_mode_on=0\u0026is_ui_opted_out=0\u0026show_ui_opt_out=0\u0026v=6","contextRegionUrl":"/_global-navigation/context-region.json"}}</script>
+  <div data-target="react-partial.reactRoot"><link rel="preload" as="image" href="https://avatars.githubusercontent.com/u/155713461?v=4&amp;size=64"/><header aria-label="Global navigation menu" data-component="Stack" class="GlobalNav styles-module__appHeader__YzYWk prc-Stack-Stack-UQ9k6" data-gap="none" data-direction="vertical" data-align="stretch" data-wrap="nowrap" data-justify="start" data-padding="none"><div data-component="Stack" class="prc-Stack-Stack-UQ9k6" data-direction="horizontal" data-align="center" data-wrap="nowrap" data-justify="center" data-padding="none"><div data-testid="top-nav-left" data-component="Stack" class="styles-module__left__Fylw7 prc-Stack-Stack-UQ9k6" data-gap="condensed" data-direction="horizontal" data-align="stretch" data-wrap="nowrap" data-justify="start" data-padding="normal"><div data-loading-wrapper="true"><button data-component="IconButton" type="button" aria-haspopup="dialog" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderButton__axedQ prc-Button-IconButton-fyge7" data-loading="false" data-no-visuals="true" data-size="medium" data-variant="invisible" aria-labelledby="_R_1b5_"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-three-bars" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M1 2.75A.75.75 0 0 1 1.75 2h12.5a.75.75 0 0 1 0 1.5H1.75A.75.75 0 0 1 1 2.75Zm0 5A.75.75 0 0 1 1.75 7h12.5a.75.75 0 0 1 0 1.5H1.75A.75.75 0 0 1 1 7.75ZM1.75 12h12.5a.75.75 0 0 1 0 1.5H1.75a.75.75 0 0 1 0-1.5Z"></path></svg></button></div><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true" id="_R_1b5_">Open menu</span><a data-component="IconButton" type="button" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderHome__nkA_U prc-Button-IconButton-fyge7" data-loading="false" data-no-visuals="true" data-size="medium" data-variant="invisible" aria-labelledby="_R_1j5_" href="/" data-discover="true"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-mark-github" viewBox="0 0 24 24" width="32" height="32" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M10.226 17.284c-2.965-.36-5.054-2.493-5.054-5.256 0-1.123.404-2.336 1.078-3.144-.292-.741-.247-2.314.09-2.965.898-.112 2.111.36 2.83 1.01.853-.269 1.752-.404 2.853-.404 1.1 0 1.999.135 2.807.382.696-.629 1.932-1.1 2.83-.988.315.606.36 2.179.067 2.942.72.854 1.101 2 1.101 3.167 0 2.763-2.089 4.852-5.098 5.234.763.494 1.28 1.572 1.28 2.807v2.336c0 .674.561 1.056 1.235.786 4.066-1.55 7.255-5.615 7.255-10.646C23.5 6.188 18.334 1 11.978 1 5.62 1 .5 6.188.5 12.545c0 4.986 3.167 9.12 7.435 10.669.606.225 1.19-.18 1.19-.786V20.63a2.9 2.9 0 0 1-1.078.224c-1.483 0-2.359-.808-2.987-2.313-.247-.607-.517-.966-1.034-1.033-.27-.023-.359-.135-.359-.27 0-.27.45-.471.898-.471.652 0 1.213.404 1.797 1.235.45.651.921.943 1.483.943.561 0 .92-.202 1.437-.719.382-.381.674-.718.944-.943"></path></svg></a><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true"><span id="_R_1j5_">Homepage <span class="prc-src-InternalVisuallyHidden-2YaI6">(<!-- -->g then d<!-- -->)</span></span><span class="prc-TooltipV2-KeybindingHintContainer-Ymj-3 prc-TooltipV2-HasTextBefore-fdOXj" aria-hidden="true" data-component="Tooltip.KeybindingHintContainer"><kbd class="prc-KeybindingHint-KeybindingHint-qpYIs prc-Text-Text-9mHv3" data-component="KeybindingHint" data-testid="keybinding-hint"><span class="prc-components-Chord-DdhWN prc-components-ChordOnEmphasis-O-4BS prc-components-ChordSmall-c-P-x prc-Text-Text-9mHv3" data-component="Text" data-kbd-chord="true"> <span class="prc-src-InternalVisuallyHidden-2YaI6">g</span><span aria-hidden="true">G</span></span><span class="prc-src-InternalVisuallyHidden-2YaI6">then</span> <span class="prc-components-Chord-DdhWN prc-components-ChordOnEmphasis-O-4BS prc-components-ChordSmall-c-P-x prc-Text-Text-9mHv3" data-component="Text" data-kbd-chord="true"> <span class="prc-src-InternalVisuallyHidden-2YaI6">d</span><span aria-hidden="true">D</span></span></kbd></span></span><div class="d-none"></div></div><div data-testid="top-nav-center" data-component="Stack" class="styles-module__center__R3QRv prc-Stack-Stack-UQ9k6" data-gap="condensed" data-direction="horizontal" data-align="stretch" data-wrap="nowrap" data-justify="start" data-padding="normal"><nav class="styles-module__contextRegion__VbSp2 prc-Breadcrumbs-BreadcrumbsBase-3Gb-B" aria-label="Breadcrumbs" data-overflow="menu" data-variant="normal" data-component="Breadcrumbs"><ol class="prc-Breadcrumbs-BreadcrumbsList-BKjpe"><li class="prc-Breadcrumbs-ItemWrapper-k0NLn"><a class="styles-module__contextCrumb__IzGIq prc-Breadcrumbs-Item-jcraJ" data-component="Breadcrumbs.Item" href="https://github.com/"><span class="styles-module__contextCrumbLast__tI2e3">Dashboard</span></a></li></ol></nav><div class="Search-module__searchButtonGroup__aetw5 prc-ButtonGroup-ButtonGroup-vFUrY" data-component="ButtonGroup"><div class="prc-ButtonGroup-Item-PqvDl"><button data-component="Button" type="button" aria-label="Open quick search dialog, type / to search" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderButton__axedQ Search-module__searchButton__aiE0a" data-loading="false" data-size="medium" data-variant="invisible"><span data-component="buttonContent" data-align="center" class="prc-Button-ButtonContent-Iohp5"><span data-component="leadingVisual" class="prc-Button-Visual-YNt2F prc-Button-LeadingVisual-UySKu prc-Button-VisualWrap-E4cnq"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-search" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"></path></svg></span><span data-component="text" class="prc-Button-Label-FWkx3"><span class="Search-module__placeholder__p9hbG Search-module__text__veSYi Search-module__value__TFoak">Type <kbd class="Search-module__kbd__WCskr">/</kbd> to search</span></span></span></button></div><div class="prc-ButtonGroup-Item-PqvDl"></div></div><button data-component="IconButton" type="button" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderButton__axedQ Search-module__smallSearchButton___8Gvn prc-Button-IconButton-fyge7" data-loading="false" data-no-visuals="true" data-size="medium" data-variant="invisible" aria-labelledby="_R_al5_"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-search" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"></path></svg></button><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true"><span id="_R_al5_">Open quick search dialog, type / to search<span class="prc-src-InternalVisuallyHidden-2YaI6">(<!-- -->forward slash<!-- -->)</span></span><span class="prc-TooltipV2-KeybindingHintContainer-Ymj-3 prc-TooltipV2-HasTextBefore-fdOXj" aria-hidden="true" data-component="Tooltip.KeybindingHintContainer"><kbd class="prc-KeybindingHint-KeybindingHint-qpYIs prc-Text-Text-9mHv3" data-component="KeybindingHint" data-testid="keybinding-hint"><span class="prc-components-Chord-DdhWN prc-components-ChordOnEmphasis-O-4BS prc-components-ChordSmall-c-P-x prc-Text-Text-9mHv3" data-component="Text" data-kbd-chord="true"> <span class="prc-src-InternalVisuallyHidden-2YaI6">forward slash</span><span aria-hidden="true">/</span></span></kbd></span></span><div class="d-none"></div></div><div data-testid="top-nav-right" data-component="Stack" class="styles-module__right__mlBQg styles-module__rightWithResponsiveCreateButton__SKn2W prc-Stack-Stack-UQ9k6" data-gap="condensed" data-direction="horizontal" data-align="center" data-wrap="nowrap" data-justify="start" data-padding="normal"><div data-testid="top-bar-actions" data-component="Stack" class="prc-Stack-Stack-UQ9k6" data-gap="condensed" data-direction="horizontal" data-align="center" data-wrap="nowrap" data-justify="start" data-padding="none"><div class="hide-sm hide-md"><div class="CopilotItems-module__Wrapper__BFG9q"><div class="prc-ButtonGroup-ButtonGroup-vFUrY" data-component="ButtonGroup"><div class="prc-ButtonGroup-Item-PqvDl"><a data-component="IconButton" type="button" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderButton__axedQ prc-Button-IconButton-fyge7" data-loading="false" data-no-visuals="true" data-size="medium" data-variant="invisible" aria-labelledby="_R_1aif5_" href="/copilot" data-discover="true"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-copilot" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M7.998 15.035c-4.562 0-7.873-2.914-7.998-3.749V9.338c.085-.628.677-1.686 1.588-2.065.013-.07.024-.143.036-.218.029-.183.06-.384.126-.612-.201-.508-.254-1.084-.254-1.656 0-.87.128-1.769.693-2.484.579-.733 1.494-1.124 2.724-1.261 1.206-.134 2.262.034 2.944.765.05.053.096.108.139.165.044-.057.094-.112.143-.165.682-.731 1.738-.899 2.944-.765 1.23.137 2.145.528 2.724 1.261.566.715.693 1.614.693 2.484 0 .572-.053 1.148-.254 1.656.066.228.098.429.126.612.012.076.024.148.037.218.924.385 1.522 1.471 1.591 2.095v1.872c0 .766-3.351 3.795-8.002 3.795Zm0-1.485c2.28 0 4.584-1.11 5.002-1.433V7.862l-.023-.116c-.49.21-1.075.291-1.727.291-1.146 0-2.059-.327-2.71-.991A3.222 3.222 0 0 1 8 6.303a3.24 3.24 0 0 1-.544.743c-.65.664-1.563.991-2.71.991-.652 0-1.236-.081-1.727-.291l-.023.116v4.255c.419.323 2.722 1.433 5.002 1.433ZM6.762 2.83c-.193-.206-.637-.413-1.682-.297-1.019.113-1.479.404-1.713.7-.247.312-.369.789-.369 1.554 0 .793.129 1.171.308 1.371.162.181.519.379 1.442.379.853 0 1.339-.235 1.638-.54.315-.322.527-.827.617-1.553.117-.935-.037-1.395-.241-1.614Zm4.155-.297c-1.044-.116-1.488.091-1.681.297-.204.219-.359.679-.242 1.614.091.726.303 1.231.618 1.553.299.305.784.54 1.638.54.922 0 1.28-.198 1.442-.379.179-.2.308-.578.308-1.371 0-.765-.123-1.242-.37-1.554-.233-.296-.693-.587-1.713-.7Z"></path><path d="M6.25 9.037a.75.75 0 0 1 .75.75v1.501a.75.75 0 0 1-1.5 0V9.787a.75.75 0 0 1 .75-.75Zm4.25.75v1.501a.75.75 0 0 1-1.5 0V9.787a.75.75 0 0 1 1.5 0Z"></path></svg></a><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true" id="_R_1aif5_">Chat with Copilot</span></div><div class="prc-ButtonGroup-Item-PqvDl"><div class="d-none"></div><button data-component="ActionMenu.Button" type="button" aria-label="Open Copilot…" aria-haspopup="true" aria-expanded="false" tabindex="0" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderButton__axedQ CopilotItems-module__CopilotMenu__DVdfE" data-loading="false" data-size="medium" data-variant="invisible" id="_R_2iif5_"><span data-component="buttonContent" data-align="center" class="prc-Button-ButtonContent-Iohp5"><span data-component="leadingVisual" class="prc-Button-Visual-YNt2F prc-Button-LeadingVisual-UySKu prc-Button-VisualWrap-E4cnq"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-copilot" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M7.998 15.035c-4.562 0-7.873-2.914-7.998-3.749V9.338c.085-.628.677-1.686 1.588-2.065.013-.07.024-.143.036-.218.029-.183.06-.384.126-.612-.201-.508-.254-1.084-.254-1.656 0-.87.128-1.769.693-2.484.579-.733 1.494-1.124 2.724-1.261 1.206-.134 2.262.034 2.944.765.05.053.096.108.139.165.044-.057.094-.112.143-.165.682-.731 1.738-.899 2.944-.765 1.23.137 2.145.528 2.724 1.261.566.715.693 1.614.693 2.484 0 .572-.053 1.148-.254 1.656.066.228.098.429.126.612.012.076.024.148.037.218.924.385 1.522 1.471 1.591 2.095v1.872c0 .766-3.351 3.795-8.002 3.795Zm0-1.485c2.28 0 4.584-1.11 5.002-1.433V7.862l-.023-.116c-.49.21-1.075.291-1.727.291-1.146 0-2.059-.327-2.71-.991A3.222 3.222 0 0 1 8 6.303a3.24 3.24 0 0 1-.544.743c-.65.664-1.563.991-2.71.991-.652 0-1.236-.081-1.727-.291l-.023.116v4.255c.419.323 2.722 1.433 5.002 1.433ZM6.762 2.83c-.193-.206-.637-.413-1.682-.297-1.019.113-1.479.404-1.713.7-.247.312-.369.789-.369 1.554 0 .793.129 1.171.308 1.371.162.181.519.379 1.442.379.853 0 1.339-.235 1.638-.54.315-.322.527-.827.617-1.553.117-.935-.037-1.395-.241-1.614Zm4.155-.297c-1.044-.116-1.488.091-1.681.297-.204.219-.359.679-.242 1.614.091.726.303 1.231.618 1.553.299.305.784.54 1.638.54.922 0 1.28-.198 1.442-.379.179-.2.308-.578.308-1.371 0-.765-.123-1.242-.37-1.554-.233-.296-.693-.587-1.713-.7Z"></path><path d="M6.25 9.037a.75.75 0 0 1 .75.75v1.501a.75.75 0 0 1-1.5 0V9.787a.75.75 0 0 1 .75-.75Zm4.25.75v1.501a.75.75 0 0 1-1.5 0V9.787a.75.75 0 0 1 1.5 0Z"></path></svg></span></span><span data-component="trailingAction" class="prc-Button-Visual-YNt2F prc-Button-VisualWrap-E4cnq"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-triangle-down" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="m4.427 7.427 3.396 3.396a.25.25 0 0 0 .354 0l3.396-3.396A.25.25 0 0 0 11.396 7H4.604a.25.25 0 0 0-.177.427Z"></path></svg></span></button></div></div></div></div><div class="styles-module__itemDivider__nunbs hide-sm hide-md"></div><button data-component="ActionMenu.Button" type="button" aria-haspopup="true" aria-expanded="false" tabindex="0" class="prc-Button-ButtonBase-9n-Xk GlobalCreateMenu-module__actionMenuButton__Hj_iB GlobalCreateMenu-module__responsiveCreateMenu__zTmSP hide-sm" data-loading="false" data-size="medium" data-variant="invisible" aria-labelledby="global-create-menu-tooltip-_R_6f5_" id="_R_mf5_"><span data-component="buttonContent" data-align="center" class="prc-Button-ButtonContent-Iohp5"><span data-component="leadingVisual" class="prc-Button-Visual-YNt2F prc-Button-LeadingVisual-UySKu prc-Button-VisualWrap-E4cnq"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-plus" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z"></path></svg></span></span><span data-component="trailingAction" class="prc-Button-Visual-YNt2F prc-Button-VisualWrap-E4cnq"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-triangle-down" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="m4.427 7.427 3.396 3.396a.25.25 0 0 0 .354 0l3.396-3.396A.25.25 0 0 0 11.396 7H4.604a.25.25 0 0 0-.177.427Z"></path></svg></span></button><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true" id="global-create-menu-tooltip-_R_6f5_">Create new...</span><div data-component="Stack" class="hide-sm hide-md prc-Stack-Stack-UQ9k6" data-gap="condensed" data-direction="horizontal" data-align="center" data-wrap="nowrap" data-justify="start" data-padding="none"><a data-component="IconButton" type="button" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderButton__axedQ prc-Button-IconButton-fyge7" data-loading="false" data-no-visuals="true" data-size="medium" data-variant="invisible" aria-labelledby="_R_2of5_" href="/issues" data-discover="true"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-issue-opened" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"></path><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"></path></svg></a><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true"><span id="_R_2of5_">All issues<span class="prc-src-InternalVisuallyHidden-2YaI6">(<!-- -->g then i<!-- -->)</span></span><span class="prc-TooltipV2-KeybindingHintContainer-Ymj-3 prc-TooltipV2-HasTextBefore-fdOXj" aria-hidden="true" data-component="Tooltip.KeybindingHintContainer"><kbd class="prc-KeybindingHint-KeybindingHint-qpYIs prc-Text-Text-9mHv3" data-component="KeybindingHint" data-testid="keybinding-hint"><span class="prc-components-Chord-DdhWN prc-components-ChordOnEmphasis-O-4BS prc-components-ChordSmall-c-P-x prc-Text-Text-9mHv3" data-component="Text" data-kbd-chord="true"> <span class="prc-src-InternalVisuallyHidden-2YaI6">g</span><span aria-hidden="true">G</span></span><span class="prc-src-InternalVisuallyHidden-2YaI6">then</span> <span class="prc-components-Chord-DdhWN prc-components-ChordOnEmphasis-O-4BS prc-components-ChordSmall-c-P-x prc-Text-Text-9mHv3" data-component="Text" data-kbd-chord="true"> <span class="prc-src-InternalVisuallyHidden-2YaI6">i</span><span aria-hidden="true">I</span></span></kbd></span></span><div class="d-none"></div><a data-component="IconButton" type="button" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderButton__axedQ prc-Button-IconButton-fyge7" data-loading="false" data-no-visuals="true" data-size="medium" data-variant="invisible" aria-labelledby="_R_38f5_" href="/pulls" data-discover="true"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-git-pull-request" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"></path></svg></a><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true"><span id="_R_38f5_">All pull requests<span class="prc-src-InternalVisuallyHidden-2YaI6">(<!-- -->g then p<!-- -->)</span></span><span class="prc-TooltipV2-KeybindingHintContainer-Ymj-3 prc-TooltipV2-HasTextBefore-fdOXj" aria-hidden="true" data-component="Tooltip.KeybindingHintContainer"><kbd class="prc-KeybindingHint-KeybindingHint-qpYIs prc-Text-Text-9mHv3" data-component="KeybindingHint" data-testid="keybinding-hint"><span class="prc-components-Chord-DdhWN prc-components-ChordOnEmphasis-O-4BS prc-components-ChordSmall-c-P-x prc-Text-Text-9mHv3" data-component="Text" data-kbd-chord="true"> <span class="prc-src-InternalVisuallyHidden-2YaI6">g</span><span aria-hidden="true">G</span></span><span class="prc-src-InternalVisuallyHidden-2YaI6">then</span> <span class="prc-components-Chord-DdhWN prc-components-ChordOnEmphasis-O-4BS prc-components-ChordSmall-c-P-x prc-Text-Text-9mHv3" data-component="Text" data-kbd-chord="true"> <span class="prc-src-InternalVisuallyHidden-2YaI6">p</span><span aria-hidden="true">P</span></span></kbd></span></span><div class="d-none"></div><a data-component="IconButton" type="button" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderButton__axedQ prc-Button-IconButton-fyge7" data-loading="false" data-no-visuals="true" data-size="medium" data-variant="invisible" aria-labelledby="_R_3of5_" href="/repos" data-discover="true"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-repo" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8ZM5 12.25a.25.25 0 0 1 .25-.25h3.5a.25.25 0 0 1 .25.25v3.25a.25.25 0 0 1-.4.2l-1.45-1.087a.249.249 0 0 0-.3 0L5.4 15.7a.25.25 0 0 1-.4-.2Z"></path></svg></a><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true" id="_R_3of5_">All repositories</span><div class="d-none"></div></div></div><a data-component="IconButton" type="button" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderButton__axedQ prc-Button-IconButton-fyge7" data-loading="false" data-no-visuals="true" data-size="medium" data-variant="invisible" aria-labelledby="_R_2n5_" href="/notifications" data-discover="true"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-inbox" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M2.8 2.06A1.75 1.75 0 0 1 4.41 1h7.18c.7 0 1.333.417 1.61 1.06l2.74 6.395c.04.093.06.194.06.295v4.5A1.75 1.75 0 0 1 14.25 15H1.75A1.75 1.75 0 0 1 0 13.25v-4.5c0-.101.02-.202.06-.295Zm1.61.44a.25.25 0 0 0-.23.152L1.887 8H4.75a.75.75 0 0 1 .6.3L6.625 10h2.75l1.275-1.7a.75.75 0 0 1 .6-.3h2.863L11.82 2.652a.25.25 0 0 0-.23-.152Zm10.09 7h-2.875l-1.275 1.7a.75.75 0 0 1-.6.3h-3.5a.75.75 0 0 1-.6-.3L4.375 9.5H1.5v3.75c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25Z"></path></svg></a><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true"><span id="_R_2n5_">You have no unread notifications<span class="prc-src-InternalVisuallyHidden-2YaI6">(<!-- -->g then n<!-- -->)</span></span><span class="prc-TooltipV2-KeybindingHintContainer-Ymj-3 prc-TooltipV2-HasTextBefore-fdOXj" aria-hidden="true" data-component="Tooltip.KeybindingHintContainer"><kbd class="prc-KeybindingHint-KeybindingHint-qpYIs prc-Text-Text-9mHv3" data-component="KeybindingHint" data-testid="keybinding-hint"><span class="prc-components-Chord-DdhWN prc-components-ChordOnEmphasis-O-4BS prc-components-ChordSmall-c-P-x prc-Text-Text-9mHv3" data-component="Text" data-kbd-chord="true"> <span class="prc-src-InternalVisuallyHidden-2YaI6">g</span><span aria-hidden="true">G</span></span><span class="prc-src-InternalVisuallyHidden-2YaI6">then</span> <span class="prc-components-Chord-DdhWN prc-components-ChordOnEmphasis-O-4BS prc-components-ChordSmall-c-P-x prc-Text-Text-9mHv3" data-component="Text" data-kbd-chord="true"> <span class="prc-src-InternalVisuallyHidden-2YaI6">n</span><span aria-hidden="true">N</span></span></kbd></span></span><div class="d-none"></div><div class="GlobalNavUserMenu-module__container__NaVIt"><button data-component="IconButton" type="button" aria-haspopup="menu" data-login="wzxxcz" class="prc-Button-ButtonBase-9n-Xk GlobalNavUserMenu-module__anchor__Dcej6 prc-Button-IconButton-fyge7" data-loading="false" data-no-visuals="true" data-size="medium" data-variant="invisible" aria-labelledby="_R_av5_"><img data-component="Avatar" class="prc-Avatar-Avatar-0xaUi" alt="User avatar" width="32" height="32" style="--avatarSize-regular:32px" src="https://avatars.githubusercontent.com/u/155713461?v=4&amp;size=64" data-testid="github-avatar"/></button><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true" id="_R_av5_">Open user navigation menu</span></div></div></div></header></div>
 </react-partial>
 
 
@@ -337,16 +339,16 @@
         <span class="js-stale-session-flash-signed-out" hidden>You signed out in another tab or window. <a class="Link--inTextBlock" href="">Reload</a> to refresh your session.</span>
         <span class="js-stale-session-flash-switched" hidden>You switched accounts on another tab or window. <a class="Link--inTextBlock" href="">Reload</a> to refresh your session.</span>
 
-    <button id="icon-button-a9dffed4-db58-4e09-bf6c-f2320d8297ef" aria-labelledby="tooltip-ec64d7f5-2b29-45d4-ace5-317769dfa83e" type="button" data-view-component="true" class="Button Button--iconOnly Button--invisible Button--medium flash-close js-flash-close">  <svg aria-hidden="true" data-component="Octicon" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-x Button-visual">
+    <button id="icon-button-a91b763a-022e-4702-9d73-c095549a3713" aria-labelledby="tooltip-a8e5acbb-8b3e-4ce3-a915-d1b1b92274d1" type="button" data-view-component="true" class="Button Button--iconOnly Button--invisible Button--medium flash-close js-flash-close">  <svg aria-hidden="true" data-component="Octicon" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-x Button-visual">
     <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L9.06 8l3.22 3.22a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L8 9.06l-3.22 3.22a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"></path>
 </svg>
-</button><tool-tip id="tooltip-ec64d7f5-2b29-45d4-ace5-317769dfa83e" for="icon-button-a9dffed4-db58-4e09-bf6c-f2320d8297ef" popover="manual" data-direction="s" data-type="label" data-view-component="true" class="sr-only position-absolute">Dismiss alert</tool-tip>
+</button><tool-tip id="tooltip-a8e5acbb-8b3e-4ce3-a915-d1b1b92274d1" for="icon-button-a91b763a-022e-4702-9d73-c095549a3713" popover="manual" data-direction="s" data-type="label" data-view-component="true" class="sr-only position-absolute">Dismiss alert</tool-tip>
 
 
   
 </div>
         
-          <include-fragment src="/in-product-messaging/copilot-budget-request-banner?page_path=%2F" data-nonce="v2:a4aa5dee-44d3-dc3c-1d33-b83a3950eb2a" data-view-component="true">
+          <include-fragment src="/in-product-messaging/copilot-budget-request-banner?page_path=%2F" data-nonce="v2:9f4ecabf-04d8-d266-c46d-c9f8d15265fa" data-view-component="true">
   
   <div data-show-on-forbidden-error hidden>
     <div class="Box">
@@ -362,7 +364,7 @@
 </div>  </div>
 </div>  </div>
 </include-fragment>
-          <include-fragment src="/in-product-messaging/code-scanning-ai-findings-preview-banner?page_path=%2F" data-nonce="v2:a4aa5dee-44d3-dc3c-1d33-b83a3950eb2a" data-view-component="true">
+          <include-fragment src="/in-product-messaging/code-scanning-ai-findings-preview-banner?page_path=%2F" data-nonce="v2:9f4ecabf-04d8-d266-c46d-c9f8d15265fa" data-view-component="true">
   
   <div data-show-on-forbidden-error hidden>
     <div class="Box">
@@ -419,7 +421,7 @@
 
 
     
-  <notification-shelf-watcher data-base-url="https://github.com/notifications/beta/shelf" data-channel="eyJjIjoibm90aWZpY2F0aW9uLWNoYW5nZWQ6MTQ4NjkyODgzIiwidCI6MTc5MDg1ODUzNX0=--ba033368f28ca28a1af47f68d18fa9d741aa90feb868510745962ede1dc07553" data-view-component="true" class="js-socket-channel"></notification-shelf-watcher>
+  <notification-shelf-watcher data-base-url="https://github.com/notifications/beta/shelf" data-channel="eyJjIjoibm90aWZpY2F0aW9uLWNoYW5nZWQ6MTU1NzEzNDYxIiwidCI6MTc5MTU1NjM5OH0=--62800af1ecc73ad323b8addb17162da2a342653cb042cd94e5c7760a3181d877" data-view-component="true" class="js-socket-channel"></notification-shelf-watcher>
   <div hidden data-initial data-target="notification-shelf-watcher.placeholder"></div>
 
 
@@ -443,41 +445,82 @@
               <div class="dashboard-sidebar">
         <div class="top-0 overflow-y-auto d-flex flex-column js-left-column-scroll-container">
   <div class="tmp-px-3 tmp-pt-3">
-  </div>
-    <loading-context data-view-component="true" class="loading-context position-relative height-full">
-    <div  class="loading-context-spinner" data-target="loading-context.spinner">
-      <loading-spinner data-view-component="true" class="d-flex flex-justify-center flex-items-center flex-column">
-    <span data-view-component="true">
-  <svg style="box-sizing: content-box; color: var(--color-icon-primary);" width="32" height="32" viewBox="0 0 16 16" fill="none" aria-hidden="true" data-view-component="true" class="anim-rotate">
-    <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-opacity="0.25" stroke-width="2" vector-effect="non-scaling-stroke" fill="none"></circle>
-    <path d="M15 8a7.002 7.002 0 00-7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" vector-effect="non-scaling-stroke"></path>
-</svg>    <span class="sr-only">Loading</span>
-</span>
-    <p  class="color-fg-muted my-2 mb-0"></p>
-</loading-spinner>
-    </div>
-    <div  data-target="loading-context.details" hidden>
-            <div class="tmp-px-4">
-        <include-fragment data-targets="loading-context.fragments" src="/dashboard/my_top_repositories?location=left" data-nonce="v2:a4aa5dee-44d3-dc3c-1d33-b83a3950eb2a" data-view-component="true">
+      <div class="tmp-mb-3">
+        <nav aria-label="Site navigation" data-view-component="true">
   
-  <div data-show-on-forbidden-error hidden>
-    <div class="Box">
-  <div class="blankslate-container">
-    <div data-view-component="true" class="blankslate blankslate-spacious color-bg-default rounded-2">
+  <nav-list>
+    <ul data-target="nav-list.topLevelList" data-view-component="true" class="ActionListWrap">
+        
+          
+<li data-item-id="home" data-targets="nav-list.items" data-view-component="true" class="ActionListItem ActionListItem--navActive">
+    
+    
+    <a id="item-30efd62a-9196-4e7b-81b5-29ddf38eb132" href="/" aria-current="page" data-view-component="true" class="ActionListContent ActionListContent--visual16">
+        <span class="ActionListItem-visual ActionListItem-visual--leading">
+          <svg aria-hidden="true" data-component="Octicon" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-home">
+    <path d="M6.906.664a1.749 1.749 0 0 1 2.187 0l5.25 4.2c.415.332.657.835.657 1.367v7.019A1.75 1.75 0 0 1 13.25 15h-3.5a.75.75 0 0 1-.75-.75V9H7v5.25a.75.75 0 0 1-.75.75h-3.5A1.75 1.75 0 0 1 1 13.25V6.23c0-.531.242-1.034.657-1.366l5.25-4.2Zm1.25 1.171a.25.25 0 0 0-.312 0l-5.25 4.2a.25.25 0 0 0-.094.196v7.019c0 .138.112.25.25.25H5.5V8.25a.75.75 0 0 1 .75-.75h3.5a.75.75 0 0 1 .75.75v5.25h2.75a.25.25 0 0 0 .25-.25V6.23a.25.25 0 0 0-.094-.195Z"></path>
+</svg>
+        </span>
       
+        <span data-view-component="true" class="ActionListItem-label">
+          Home
+</span>      
+</a>
+  
+</li>
 
-      <h3 data-view-component="true" class="blankslate-heading">        Uh oh!
-</h3>
-      <p data-view-component="true" class="blankslate-description">        <p class="color-fg-muted my-2 mb-2 ws-normal">There was an error while loading. <a class="Link--inTextBlock" data-turbo="false" href="" aria-label="Please reload this page">Please reload this page</a>.</p>
-</p>
+        
+          
+<li data-item-id="feed" data-targets="nav-list.items" data-view-component="true" class="ActionListItem">
+    
+    
+    <a id="item-346f5bcc-8817-4a60-882b-2544afde252b" href="/feed" data-view-component="true" class="ActionListContent ActionListContent--visual16">
+        <span class="ActionListItem-visual ActionListItem-visual--leading">
+          <svg aria-hidden="true" data-component="Octicon" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-globe">
+    <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM5.78 8.75a9.64 9.64 0 0 0 1.363 4.177c.255.426.542.832.857 1.215.245-.296.551-.705.857-1.215A9.64 9.64 0 0 0 10.22 8.75Zm4.44-1.5a9.64 9.64 0 0 0-1.363-4.177c-.307-.51-.612-.919-.857-1.215a9.927 9.927 0 0 0-.857 1.215A9.64 9.64 0 0 0 5.78 7.25Zm-5.944 1.5H1.543a6.507 6.507 0 0 0 4.666 5.5c-.123-.181-.24-.365-.352-.552-.715-1.192-1.437-2.874-1.581-4.948Zm-2.733-1.5h2.733c.144-2.074.866-3.756 1.58-4.948.12-.197.237-.381.353-.552a6.507 6.507 0 0 0-4.666 5.5Zm10.181 1.5c-.144 2.074-.866 3.756-1.58 4.948-.12.197-.237.381-.353.552a6.507 6.507 0 0 0 4.666-5.5Zm2.733-1.5a6.507 6.507 0 0 0-4.666-5.5c.123.181.24.365.353.552.714 1.192 1.436 2.874 1.58 4.948Z"></path>
+</svg>
+        </span>
+      
+        <span data-view-component="true" class="ActionListItem-label">
+          Feed
+</span>      
+</a>
+  
+</li>
 
-</div>  </div>
-</div>  </div>
-</include-fragment>
+</ul>  </nav-list>
+</nav>
       </div>
+  </div>
+    <hr class="tmp-ml-4 mt-1 tmp-mr-3 mb-0">
+  <div class="px-2">
+    <link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/primer-react-3fd77d7612765769.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/nc-a9c0d8f6eb011d22.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/qmp-c7cfba40cf5a93b0.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/t7l-a52ba56147f77909.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/n4u-61d3102811fc7f42.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/j8s-e404d71a312ee9fd.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/pd-6a8710840033e042.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/ca-685a86d982c2b675.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/kg-065611dc7ce8d0f9.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/dashboard-repositories-8dd233a9a1c0a52d.js" fetchpriority="low" />
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/primer-react-css.e4334163c54cccf5.module.css" />
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/dashboard-repositories.a4f08ee83b149325.module.css" />
 
-    </div>
-</loading-context>
+<react-partial
+  partial-name="dashboard-repositories"
+  data-ssr="false"
+  data-attempted-ssr="false"
+  data-react-profiling="false"
+>
+  
+  <script type="application/json" data-target="react-partial.embeddedData">{"props":{"title":"Repositories"}}</script>
+  <div data-target="react-partial.reactRoot"></div>
+</react-partial>
+
+
+  </div>
+
 
 </div>
 
@@ -489,11 +532,19 @@
         
 
         <div class="d-md-flex">
-          <div class="tmp-pt-4 d-flex feed-content flex-justify-center border-bottom">
+          <div class="tmp-pt-4 d-flex feed-content flex-justify-center flex-column flex-xl-row">
             <div class="overflow-x-hidden d-flex flex-auto flex-column
                             dashboard-route
-                            feed-main">
-              <main class="flex-auto">
+                            feed-main__universe">
+                <div class="feed-main__universe--spinner">
+                  <span data-view-component="true">
+  <svg style="box-sizing: content-box; color: var(--color-icon-primary);" width="32" height="32" viewBox="0 0 16 16" fill="none" aria-hidden="true" data-view-component="true" class="flex-1 anim-rotate">
+    <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-opacity="0.25" stroke-width="2" vector-effect="non-scaling-stroke" fill="none"></circle>
+    <path d="M15 8a7.002 7.002 0 00-7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" vector-effect="non-scaling-stroke"></path>
+</svg>    <span class="sr-only">Loading</span>
+</span> 
+                </div>
+              <main class="flex-1">
                 
 
 
@@ -519,101 +570,228 @@
 
       <div data-justify="space-between" data-direction="horizontal" data-align="center" data-wrap="nowrap" data-padding="none" data-view-component="true" class="tmp-mb-3 Stack">
   
-          <h2>Home</h2>
+          <action-menu data-select-variant="none" data-view-component="true" class="ml-auto">
+  <focus-group direction="vertical" mnemonics retain>
+    <button id="dashboard-preview-menu-button" popovertarget="dashboard-preview-menu-overlay" aria-label="Dashboard preview options" aria-controls="dashboard-preview-menu-list" aria-haspopup="true" type="button" data-view-component="true" class="Button--invisible Button--medium Button">  <span class="Button-content">
+    <span class="Button-label"><span data-view-component="true" class="Label Label--success">Preview</span></span>
+  </span>
+    <span class="Button-visual Button-trailingAction">
+      <svg aria-hidden="true" data-component="Octicon" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-triangle-down">
+    <path d="m4.427 7.427 3.396 3.396a.25.25 0 0 0 .354 0l3.396-3.396A.25.25 0 0 0 11.396 7H4.604a.25.25 0 0 0-.177.427Z"></path>
+</svg>
+    </span>
+</button>
+
+
+<anchored-position data-target="action-menu.overlay" id="dashboard-preview-menu-overlay" anchor="dashboard-preview-menu-button" align="end" side="outside-bottom" anchor-offset="normal" popover="auto" data-view-component="true">
+  <div data-view-component="true" class="Overlay Overlay--size-auto">
+    
+      <div data-view-component="true" class="Overlay-body Overlay-body--paddingNone">          <action-list>
+  <div data-view-component="true">
+    <ul aria-labelledby="dashboard-preview-menu-button" id="dashboard-preview-menu-list" role="menu" data-view-component="true" class="ActionListWrap--inset ActionListWrap">
+        <li data-targets="action-list.items" role="none" data-view-component="true" class="ActionListItem">
+    <!-- '"` --><!-- </textarea></xmp> --></option></form><form role="none" action="/dashboard/experience" accept-charset="UTF-8" method="post"><input type="hidden" name="_method" value="put" autocomplete="off" /><input type="hidden" name="authenticity_token" value="snCqVblD9mPkl8Fke1HHpYOUMFzzmmCSWeg4q1iCTxFVACigI-5em2rXEoB3XjC8pVb2eY73b7jex3JaBnJd-Q" autocomplete="off" />
+        <input name="enable" value="false" type="hidden" data-list-item-input="true" data-view-component="true" />
+    
+    
+    <button tabindex="-1" id="item-b5531a63-0939-4149-8831-235a4b667278" type="submit" role="menuitem" data-view-component="true" class="ActionListContent">
+      
+        <span data-view-component="true" class="ActionListItem-label">
+          Switch to classic dashboard
+</span>      
+</button>
+</form>  
+</li>
+        <li data-targets="action-list.items" role="none" data-view-component="true" class="ActionListItem">
+    
+    
+    <button tabindex="-1" data-show-dialog-id="dashboard-preview-feedback-dialog" id="item-d671ecea-e962-4d0f-b9ee-718c1314b668" role="menuitem" data-view-component="true" class="ActionListContent">
+      
+        <span data-view-component="true" class="ActionListItem-label">
+          Give feedback
+</span>      
+</button>
+  
+</li>
+</ul>    
+</div></action-list>
+
 
 </div>
+      
+</div></anchored-position>  </focus-group>
+</action-menu>
+</div>
+        
+<dialog-helper>
+  <dialog id="dashboard-preview-feedback-dialog" aria-modal="true" aria-labelledby="dashboard-preview-feedback-dialog-title" aria-describedby="dashboard-preview-feedback-dialog-description" data-view-component="true" class="Overlay Overlay-whenNarrow Overlay--size-medium-portrait Overlay--motion-scaleFade Overlay--disableScroll">
+    <div data-view-component="true" class="Overlay-header">
+  <div class="Overlay-headerContentWrap">
+    <div class="Overlay-titleWrap">
+      <h1 class="Overlay-title " id="dashboard-preview-feedback-dialog-title">
+        Give dashboard feedback
+      </h1>
+        
+    </div>
+    <div class="Overlay-actionWrap">
+      <button data-close-dialog-id="dashboard-preview-feedback-dialog" aria-label="Close" aria-label="Close" type="button" data-view-component="true" class="close-button Overlay-closeButton"><svg aria-hidden="true" data-component="Octicon" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-x">
+    <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L9.06 8l3.22 3.22a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L8 9.06l-3.22 3.22a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"></path>
+</svg></button>
+    </div>
+  </div>
+  
+</div>
+      <scrollable-region data-labelled-by="dashboard-preview-feedback-dialog-title">
+        <div data-view-component="true" class="Overlay-body">            <!-- '"` --><!-- </textarea></xmp> --></option></form><form data-turbo="false" action="/dashboard/feedback" accept-charset="UTF-8" method="post"><input type="hidden" name="authenticity_token" value="5aQsSGhjMvLidAzsStLFnkBXjrZjmrmqa4imbz2NDqFzhuG4ZrP8-WhsG0eg_lzL7sGtl2lFOSSMO769RMZvPg" />
+              <input autocomplete="off" value="dashboard_universe_2025_new" type="hidden" name="subject" />
+              <input autocomplete="off" value="github.com" type="hidden" name="hostname" />
+              <input autocomplete="off" value="/" type="hidden" name="path" />
+
+              <fieldset>
+                <legend class="h5 mb-2">How satisfied are you with this dashboard?</legend>
+                <div class="d-flex flex-column gap-2">
+                    <div class="form-checkbox my-0">
+                      <input type="radio" name="rating" id="rating_VERY_NEGATIVE" value="VERY_NEGATIVE" required="required" />
+                      <label for="rating_VERY_NEGATIVE">Very dissatisfied</label>
+                    </div>
+                    <div class="form-checkbox my-0">
+                      <input type="radio" name="rating" id="rating_NEGATIVE" value="NEGATIVE" required="required" />
+                      <label for="rating_NEGATIVE">Dissatisfied</label>
+                    </div>
+                    <div class="form-checkbox my-0">
+                      <input type="radio" name="rating" id="rating_POSITIVE" value="POSITIVE" required="required" />
+                      <label for="rating_POSITIVE">Satisfied</label>
+                    </div>
+                    <div class="form-checkbox my-0">
+                      <input type="radio" name="rating" id="rating_VERY_POSITIVE" value="VERY_POSITIVE" required="required" />
+                      <label for="rating_VERY_POSITIVE">Very satisfied</label>
+                    </div>
+                </div>
+              </fieldset>
+
+              <div class="form-group">
+                <label for="dashboard-feedback-content">What can we improve?</label>
+                <textarea id="dashboard-feedback-content" class="form-control form-control width-full" maxlength="2000" rows="5" name="content">
+</textarea>
+              </div>
+
+              <div class="d-flex flex-justify-end gap-2">
+                <button data-close-dialog-id="dashboard-preview-feedback-dialog" type="button" data-view-component="true" class="Button--secondary Button--medium Button">  <span class="Button-content">
+    <span class="Button-label">Cancel</span>
+  </span>
+</button>
+
+                <button type="submit" data-view-component="true" class="Button--primary Button--medium Button">  <span class="Button-content">
+    <span class="Button-label">Send feedback</span>
+  </span>
+</button>
+
+              </div>
+</form></div>
+      </scrollable-region>
+      
+</dialog></dialog-helper>
 
     <div class="news" data-hpc>
 
 
         <div class="copilotPreview__container" >
-    <link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/primer-react-266c7f3600a53b8a.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/ncx-9a860680a5f230b9.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/j6-363f0ebf4f62f310.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/t7l-bf6f21d7e7a43c35.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/d4-052601b28dcad97b.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/n4u-6317ce1c31aed1db.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/j8-275aa078fdc35661.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/ns-65bc1e8fea42ae55.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/gda-839591e97bdffa24.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/97-a0ba99c8f85e4910.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/sa-6185d140ab8590ab.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/s5-64efbe2785c83394.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/8n-17b6231569214481.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/ol-5f3769a77f9b5938.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/47-1b5c64d51f72e6ea.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/69-974b6f2def47a0b8.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/1xi-5c4e0822a435ab10.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/wb-7be2a2dbb2126c50.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/4es-64a124db5ab9dacf.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/x4-5e288514c3d5451a.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/d3-688663d8642c2476.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/oyx-4a21b3a2cdc1b254.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/ys-46d1874a17b617dc.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/qn-9933a92c0c5e7f9f.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/ja-f27c83adad25b882.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/gzu-b0e631d87d54c83d.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/bi0-a78ba744687848c2.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/b1-a53093be1dda5853.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/0l5-d2057e622f6442d6.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/c2z-c10e51960850b47e.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/f9-038758dcbfe08dab.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/sp-741a59f220bc8fca.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/h6j-d6d964c43b87c95e.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/4x8-50c0ed4ed22e2a1b.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/0k-b7df0a74912a42bf.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/1r-3c35f84775346768.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/811-2363d6e33cf05103.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/vw-e48ccaa442b34856.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/zlf-d05007b52efec8d7.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/mo-07f960a0b69b24e7.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/og-72a377e4a14147a1.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/q6a-3eccfd90e7b6d38e.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/gk-c9b138706b86405e.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/7u-02804b22adccbfb7.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/2d5-0086723cb0da6f11.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/b9-4fd36ab02c30bf52.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/lk-cc543d3fa0071e8d.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/tbp-e7fe1bbf8ecc185a.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/29-649f6445113eb1b7.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/44-a5eef2099f9c25e1.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/mc-ca85f77d24bb7fac.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/k7k-00f350a68bcd0e97.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/ec-cbba6ef3015afe55.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/du-9695d8032ef894d8.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/y7f-7f849b2f410f1e18.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/jcx-3bd16ab720cb5674.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/if-6871c8df2d4e7400.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/01-05aa25f281e5d344.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/ql0-d154b9935a526802.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/6j2-7e7888ad04d856b0.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/9o-43142b7e23a05a09.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/dgq-c65d496bd551148a.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/dl6-ac78d7078323aa1b.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/t73-207626e9a0342004.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/oq-19256155b93e9e9d.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/okb-280b2e0566d3af74.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/u4-4d0d19366ea33b6b.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/q5-9fc83b99d4078cd8.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/ay-ae0c7dee07306d9d.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/q-bb642d53a4968506.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/1i-7eb3b4719528b9f7.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/gc4-2487b0aac2401bb1.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/2k-106130048bcd5d75.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/ji-7640d48a1912c0b7.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/djg-098be7e00d621bdf.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/4vd-bf31f2b81ecea4c0.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/copilot-chat-input-partial-e30c39b4e2bfdabe.js" fetchpriority="low" />
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/primer-react-css.46296dcf75e7a0b0.module.css" />
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/29.d55ed336d79f0913.module.css" />
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/44.577ee944a2e3acc1.module.css" />
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/01.489d51c8f6e18f7e.module.css" />
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/ql0.bdd6be015c087bbc.module.css" />
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/u.d7bdfb98b5635c5f.module.css" />
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/u4.80c16aa364c36f2d.module.css" />
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/q.8c2c7735dbe7c167.module.css" />
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/2k.b471314c8c3e8c10.module.css" />
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/copilot-chat-input-partial.c6173b68136282a8.module.css" />
+    <link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/j6-148a74299e5a01ab.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/d4-97965448445a0b42.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/j8-810978afb3f59a41.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/y5-4018e74158831f41.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/5hl-66769d1d7e466e3a.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/nsj-d4704e6bf857f7bc.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/gd-269bbcd81b0454f2.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/a6a-44f5063342f6a5c7.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/sa-3b7775cb553504fc.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/s5-ef29296709b1115d.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/kj-1f3bedaf9f5945ec.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/du-82a111273a5c7481.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/47z-3cee1cd53bc49499.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/69i-d74e282c2a3bb58d.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/1xi-7e69e86a3f463980.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/2mm-7ff8e9a4ac52cb46.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/ls-cf7050289849efd9.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/ada-7c5d9b2477de14b9.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/5l-ec15c2454d78f36b.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/2p-e3c2c10d84c5473f.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/9b-cc4c432ac8985860.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/61-fae57da844d7d815.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/ejq-74f300c94ad651c1.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/86g-decf023bfbf2ebf8.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/iq-98cbebe4bf48d3cc.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/p2-cc2f0870053b36bd.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/7d-550421e3e341a32b.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/4d-547ee6f4be835961.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/tsb-e0f6288ab985d9d2.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/lf-4cf57c2aca06db03.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/t52-5013ab4bd7dbf487.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/1k-11c538d76a8434de.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/pf9-75249202955dcf7c.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/2j-2f19c1afd2ceaf93.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/hr-37322f1348304174.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/oxc-dae789752fa6dad2.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/2f3-b40658d13d4d961d.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/3kh-dff30c9af8a2bb15.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/d2e-67f4da6ffdd0bf14.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/ji-3282be0029b0e290.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/vl-0ac90557ed9fefbc.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/7x-77570e7a1a70d0f4.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/rvb-8475dc57f61be172.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/me-2913414070f62601.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/p2u-e654a57b1a70c47d.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/r7-a86dbeb237be1924.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/5d-65df91445a99cbd4.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/fk-1da590604afdf329.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/5a-8c1870d698aba217.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/1f-642e16479ae90044.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/wwk-e5a5ef9a7a78d8a8.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/zgr-637d9de7f99b2de9.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/a1-c5c8722f2027fc51.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/r6s-082991d3221cdc14.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/8e-c754912b3216f88e.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/x9-eff02d04855830f1.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/xj-598fb61aaca87d60.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/sr8-3968bb87951374fd.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/x8-2152bb81fad67878.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/8m-024c7479ed0d5f8d.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/69-4eadb869ac50a573.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/pj-d7883b330fe74160.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/jq-f7845934effbe8fc.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/wr-fe3d4951a2feabe3.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/2k-850016e890b1b58f.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/cr-2a86d67122a9d009.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/wzg-40be8a6598d0c295.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/95i-92c59b1a6508c7a8.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/0c-c61855cb984471da.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/tl-0ebd4bd940083034.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/n7-e9b8c647eb36733e.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/jzr-753859bc7ae46db4.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/xr-d58862763fd2dc32.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/h9w-c4ddb119fa005501.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/le-7cc06ec27ee4ebde.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/3q-20d0a253dcf265f3.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/13-d3ba9f88e900f2a1.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/wx-be9559cb2eb9ba18.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/wgw-073ce19ca5e60e73.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/zq-ebcfa901f70724f2.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/jx-c1bdcf9e62af6316.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/copilot-chat-input-partial-82fce84f82feb02b.js" fetchpriority="low" />
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/primer-react-css.e4334163c54cccf5.module.css" />
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/7.f647133e406ebc82.module.css" />
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/fk.807ed9cf491e04d6.module.css" />
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/5a.bb860b63c92e6d57.module.css" />
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/8m.11c4a4be38ee5c33.module.css" />
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/69.f2308e9e3f550dcd.module.css" />
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/pj.434cecfce8c3a85d.module.css" />
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/2.82ba382e74e3aaf9.module.css" />
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/4.f1223928c3f8224d.module.css" />
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/u3.a0f5095898a5329c.module.css" />
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/jzr.71dd62e08142916a.module.css" />
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/le.33aeb222e534bc71.module.css" />
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/wx.9624facebecf8544.module.css" />
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/copilot-chat-input-partial.275161d3fd0dc1ab.module.css" />
 
 <react-partial
   partial-name="copilot-chat-input-partial"
@@ -622,7 +800,7 @@
   data-react-profiling="false"
 >
   
-  <script type="application/json" data-target="react-partial.embeddedData">{"props":{"ssoOrganizations":[],"userOrganizations":[],"showHeader":false,"sparkEnabled":false,"userIsOnboarding":false,"displayName":"dyr1980","currentUserAvatarUrl":"https://avatars.githubusercontent.com/u/148692883?v=4","agentsEnabled":false,"enterpriseSandboxEnabled":true,"dashboardModulesEnabled":false,"apiURL":"https://api.individual.githubcopilot.com","apiVersion":"2025-05-01","currentUserLogin":"dyr1980","customInstructions":null,"customCopilotsEnabled":false,"customCopilotsIndividualAccessEnabled":true,"personalInstructions":null,"reviewLab":false,"realIp":null,"scrollToTop":false,"icebreakers":[{"type":"functional","data":[{"id":"create-bug-issue","message":"Hi Copilot! Could you please start a draft issue for a bug? Once you've created the draft issue, if you need more information, ask me 1-2 key questions. If you also think I should upload any information or images that would help write the bug issue, let me know.","titleHtml":"Create an issue for a bug","icon":"issue-opened","color":"var(--display-green-fgColor)"},{"id":"summarize-pulls","message":"Hi Copilot! Could you help summarize a pull request? I'd like to know its purpose and the key changes made. Please include details about the problem it solves, new features or functionality introduced, any breaking changes, testing done, and documentation updates. Thank you!","titleHtml":"Summarize a pull request","icon":"git-pull-request","color":"var(--display-green-fgColor)"},{"id":"code-feedback","message":"Hi Copilot! Please review my code for best practices, readability, performance, and potential bugs. First, prompt me to provide the link to the relevant GitHub repository or file. Then, offer concrete suggestions for improvement, explain any issues you discover, and provide example corrections where appropriate.","titleHtml":"Get code feedback","icon":"code","color":"var(--display-gray-fgColor)"},{"id":"next-steps-issue","message":"Hi Copilot! Could you suggest the next actionable steps for an issue, based on either the provided issue link or a copy pasted description?","titleHtml":"Suggest next steps for an issue","icon":"issue-opened","color":"var(--display-green-fgColor)"},{"id":"understand-arch-diagram","message":"Hi Copilot! Could you please help me interpret this architecture diagram?","titleHtml":"Interpret an architecture diagram","icon":"eye","color":"var(--display-purple-fgColor)"},{"id":"create-profile-readme","message":"Hi Copilot! Please create a standout profile README for $$USERNAME$$. Ask me for any key details (such as my profession, top skills, favorite projects, or social links) that would help you personalize it.","titleHtml":"Create a profile README for me","icon":"rocket","color":"var(--display-pink-fgColor)"},{"id":"my-open-pulls","message":"Hi Copilot! Can you please find my open pull requests?","titleHtml":"My open pull requests","icon":"git-pull-request","color":"var(--display-green-fgColor)"},{"id":"make-pong","message":"Hi Copilot! Could you generate a simple Pong game utilizing HTML, CSS, and JavaScript? The player should control the left paddle with their mouse, and the right paddle should be controlled automatically by a basic AI. Make sure the game includes a bouncing ball and collision detection for paddles and walls. Please provide the code for all three components: the HTML file, the CSS file, and the JavaScript file directly within the chat window. Thanks!","titleHtml":"Make a Pong game","icon":"code","color":"var(--display-gray-fgColor)"}]},{"type":"instructional","data":[]},{"type":"interactional","data":[{"id":"to-do-app-local-storage","message":"Create a to-do list application with local storage functionality.","titleHtml":"To-do list with local storage","icon":"code","color":"var(--display-gray-fgColor)"},{"id":"digital-clock-time-zones","message":"Create a digital clock that displays the current time in different time zones.","titleHtml":"A digital time zone clock","icon":"code","color":"var(--display-gray-fgColor)"},{"id":"weather-dashboard-app","message":"Develop a weather dashboard that fetches data from a public weather API.","titleHtml":"Develop a weather dashboard","icon":"code","color":"var(--display-gray-fgColor)"},{"id":"create-joke-generator","message":"Create a random joke generator using an external API.","titleHtml":"Create a joke generator","icon":"code","color":"var(--display-gray-fgColor)"}]}],"mcpPermissionGateEnabled":false,"optedInToPreviewFeatures":false,"optedInToUserFeedback":false,"renderBetaLabel":false,"hasCEorCBAccess":false,"licenseType":"unlicensed","plan":null,"quotas":{"limits":{"premiumInteractions":0},"remaining":{"premiumInteractions":0,"chatPercentage":0.0,"premiumInteractionsPercentage":0.0},"resetDate":"2026-11-01","resetDateUtc":"2026-11-01T00:00:00.000Z","overagesEnabled":false,"tokenBasedBillingEnabled":true,"chatQuota":{"percentRemaining":0.0,"total":0,"used":0.0,"hasQuota":false,"unlimited":false},"completionsQuota":{"percentRemaining":0.0,"total":0,"used":0.0,"hasQuota":false,"unlimited":false},"premiumInteractionsQuota":{"percentRemaining":0.0,"total":0,"used":0.0,"hasQuota":false,"unlimited":false,"creditsUsed":0},"overageQuota":{"permitted":false,"percentRemaining":100.0,"budget":0.0,"spend":0.0}},"agentQuotaSnapshot":null,"canShareThread":true,"thirdPartyMcpAllowed":false,"canUpgradePlan":false}}</script>
+  <script type="application/json" data-target="react-partial.embeddedData">{"props":{"ssoOrganizations":[],"userOrganizations":[],"showHeader":true,"sparkEnabled":false,"userIsOnboarding":false,"displayName":"wzxxcz","currentUserAvatarUrl":"https://avatars.githubusercontent.com/u/155713461?v=4","agentsEnabled":false,"enterpriseSandboxEnabled":true,"dashboardModulesEnabled":true,"apiURL":"https://api.individual.githubcopilot.com","apiVersion":"2025-05-01","currentUserLogin":"wzxxcz","customInstructions":null,"customCopilotsEnabled":false,"customCopilotsIndividualAccessEnabled":true,"personalInstructions":null,"reviewLab":false,"realIp":null,"scrollToTop":false,"icebreakers":[{"type":"functional","data":[{"id":"create-bug-issue","message":"Hi Copilot! Could you please start a draft issue for a bug? Once you've created the draft issue, if you need more information, ask me 1-2 key questions. If you also think I should upload any information or images that would help write the bug issue, let me know.","titleHtml":"Create an issue for a bug","icon":"issue-opened","color":"var(--display-green-fgColor)"},{"id":"summarize-pulls","message":"Hi Copilot! Could you help summarize a pull request? I'd like to know its purpose and the key changes made. Please include details about the problem it solves, new features or functionality introduced, any breaking changes, testing done, and documentation updates. Thank you!","titleHtml":"Summarize a pull request","icon":"git-pull-request","color":"var(--display-green-fgColor)"},{"id":"code-feedback","message":"Hi Copilot! Please review my code for best practices, readability, performance, and potential bugs. First, prompt me to provide the link to the relevant GitHub repository or file. Then, offer concrete suggestions for improvement, explain any issues you discover, and provide example corrections where appropriate.","titleHtml":"Get code feedback","icon":"code","color":"var(--display-gray-fgColor)"},{"id":"next-steps-issue","message":"Hi Copilot! Could you suggest the next actionable steps for an issue, based on either the provided issue link or a copy pasted description?","titleHtml":"Suggest next steps for an issue","icon":"issue-opened","color":"var(--display-green-fgColor)"},{"id":"understand-arch-diagram","message":"Hi Copilot! Could you please help me interpret this architecture diagram?","titleHtml":"Interpret an architecture diagram","icon":"eye","color":"var(--display-purple-fgColor)"},{"id":"create-profile-readme","message":"Hi Copilot! Please create a standout profile README for $$USERNAME$$. Ask me for any key details (such as my profession, top skills, favorite projects, or social links) that would help you personalize it.","titleHtml":"Create a profile README for me","icon":"rocket","color":"var(--display-pink-fgColor)"},{"id":"my-open-pulls","message":"Hi Copilot! Can you please find my open pull requests?","titleHtml":"My open pull requests","icon":"git-pull-request","color":"var(--display-green-fgColor)"},{"id":"make-pong","message":"Hi Copilot! Could you generate a simple Pong game utilizing HTML, CSS, and JavaScript? The player should control the left paddle with their mouse, and the right paddle should be controlled automatically by a basic AI. Make sure the game includes a bouncing ball and collision detection for paddles and walls. Please provide the code for all three components: the HTML file, the CSS file, and the JavaScript file directly within the chat window. Thanks!","titleHtml":"Make a Pong game","icon":"code","color":"var(--display-gray-fgColor)"}]},{"type":"instructional","data":[]},{"type":"interactional","data":[{"id":"to-do-app-local-storage","message":"Create a to-do list application with local storage functionality.","titleHtml":"To-do list with local storage","icon":"code","color":"var(--display-gray-fgColor)"},{"id":"digital-clock-time-zones","message":"Create a digital clock that displays the current time in different time zones.","titleHtml":"A digital time zone clock","icon":"code","color":"var(--display-gray-fgColor)"},{"id":"weather-dashboard-app","message":"Develop a weather dashboard that fetches data from a public weather API.","titleHtml":"Develop a weather dashboard","icon":"code","color":"var(--display-gray-fgColor)"},{"id":"create-joke-generator","message":"Create a random joke generator using an external API.","titleHtml":"Create a joke generator","icon":"code","color":"var(--display-gray-fgColor)"}]}],"mcpPermissionGateEnabled":false,"optedInToPreviewFeatures":false,"optedInToUserFeedback":false,"renderBetaLabel":false,"hasCEorCBAccess":false,"licenseType":"unlicensed","plan":null,"quotas":{"limits":{"premiumInteractions":0},"remaining":{"premiumInteractions":0,"chatPercentage":0.0,"premiumInteractionsPercentage":0.0},"resetDate":"2026-11-01","resetDateUtc":"2026-11-01T00:00:00.000Z","overagesEnabled":false,"tokenBasedBillingEnabled":true,"chatQuota":{"percentRemaining":0.0,"total":0,"used":0.0,"hasQuota":false,"unlimited":false},"completionsQuota":{"percentRemaining":0.0,"total":0,"used":0.0,"hasQuota":false,"unlimited":false},"premiumInteractionsQuota":{"percentRemaining":0.0,"total":0,"used":0.0,"hasQuota":false,"unlimited":false,"creditsUsed":0},"overageQuota":{"permitted":false,"percentRemaining":100.0,"budget":0.0,"spend":0.0}},"agentQuotaSnapshot":null,"canShareThread":true,"thirdPartyMcpAllowed":false,"canUpgradePlan":false}}</script>
   <div data-target="react-partial.reactRoot"></div>
 </react-partial>
 
@@ -632,7 +810,7 @@
 
         
 
-    <include-fragment loading="lazy" src="/dashboard/cap_banner" data-nonce="v2:a4aa5dee-44d3-dc3c-1d33-b83a3950eb2a" data-view-component="true" class="tmp-mb-3">
+    <include-fragment loading="lazy" src="/dashboard/cap_banner" data-nonce="v2:9f4ecabf-04d8-d266-c46d-c9f8d15265fa" data-view-component="true" class="tmp-mb-3">
   
       <span data-hide-on-error></span>
       <span data-show-on-error hidden></span>
@@ -654,146 +832,50 @@
   
 
 
-        <div class="d-block d-md-none">
-    <nav class="mt-2 tmp-mb-4 Details js-repos-container"  aria-labelledby="dashboard-repositories-nav-heading">
-      <h2 id="dashboard-repositories-nav-heading" class="f5 tmp-mb-4 d-flex flex-justify-between flex-items-center">Top Repositories</h2>
-      <div class="Box px-2 py-1 color-bg-default">
-        <include-fragment src="/dashboard/my_top_repositories?location=center&amp;mobile=true" data-nonce="v2:a4aa5dee-44d3-dc3c-1d33-b83a3950eb2a" data-view-component="true">
-  
-          <div class="text-center tmp-p-3 tmp-mb-4 mt-2">
-            <span data-view-component="true">
-  <svg style="box-sizing: content-box; color: var(--color-icon-primary);" width="32" height="32" viewBox="0 0 16 16" fill="none" aria-hidden="true" data-view-component="true" class="anim-rotate">
-    <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-opacity="0.25" stroke-width="2" vector-effect="non-scaling-stroke" fill="none"></circle>
-    <path d="M15 8a7.002 7.002 0 00-7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" vector-effect="non-scaling-stroke"></path>
-</svg>    <span class="sr-only">Loading</span>
-</span>
-            <p class="color-fg-muted my-2 mb-0">Loading...</p>
-          </div>
-
-  <div data-show-on-forbidden-error hidden>
-    <div class="Box">
-  <div class="blankslate-container">
-    <div data-view-component="true" class="blankslate blankslate-spacious color-bg-default rounded-2">
       
 
-      <h3 data-view-component="true" class="blankslate-heading">        Uh oh!
-</h3>
-      <p data-view-component="true" class="blankslate-description">        <p class="color-fg-muted my-2 mb-2 ws-normal">There was an error while loading. <a class="Link--inTextBlock" data-turbo="false" href="" aria-label="Please reload this page">Please reload this page</a>.</p>
-</p>
-
-</div>  </div>
-</div>  </div>
-</include-fragment>      </div>
-    </nav>
-  </div>
 
 
+        <link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/kni-ce312ea083965f50.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/wci-75ad720519e88d62.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/8o-ef3ff8a5d64d030d.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/wrk-e690be0b2f24a721.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/jt-a8a83f540445ef75.js" fetchpriority="low" />
+<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/dashboard-lists-b51179e511c3d668.js" fetchpriority="low" />
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/primer-react-css.e4334163c54cccf5.module.css" />
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/7.f647133e406ebc82.module.css" />
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/fk.807ed9cf491e04d6.module.css" />
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/5a.bb860b63c92e6d57.module.css" />
+<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/jt.c7fe78009c99b8ea.module.css" />
 
-
-
-          <feed-container data-active-topic="for-you"  >
-    
-<div class="d-flex flex-items-center flex-justify-between ">
-    <h2 class="f5 mb-1" data-target="feed-container.feedTitle" >Feed</h2>
-
-  <div class="d-flex flex-items-center">
-    <details-toggle>
-    <details id="feed-filter-menu" data-menu-trigger="feed-filter-menu" data-target="feed-container.filterTrigger details-toggle.detailsTarget" data-view-component="true" class="js-feed-filter-menu feed-filter-menu hx_rsm tmp-ml-3 details-overlay details-reset position-relative mr-0 tmp-mr-0">
-        <summary style="padding-left: 0.75rem; padding-right: 0.75rem" role="button" data-target="details-toggle.summaryTarget" data-action="click:details-toggle#toggle" aria-expanded="false" data-view-component="true" class="hx_rsm-trigger btn">    <svg aria-hidden="true" data-component="Octicon" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-filter mr-2 tmp-mr-2">
-    <path d="M.75 3h14.5a.75.75 0 0 1 0 1.5H.75a.75.75 0 0 1 0-1.5ZM3 7.75A.75.75 0 0 1 3.75 7h8.5a.75.75 0 0 1 0 1.5h-8.5A.75.75 0 0 1 3 7.75Zm3 4a.75.75 0 0 1 .75-.75h2.5a.75.75 0 0 1 0 1.5h-2.5a.75.75 0 0 1-.75-.75Z"></path>
-</svg>Filter<span hidden="hidden" data-target="feed-container.filterCounter" title="0" data-view-component="true" class="Counter ml-2 tmp-ml-2">0</span>
-</summary>
-      <details-menu data-view-component="true" class="SelectMenu-modal dropdown-menu-sw hx_rsm-modal feed-filter-menu-body position-absolute">
-          <include-fragment aria-label="Filters are loading" data-target="feed-container.filterFragment" data-nonce="v2:a4aa5dee-44d3-dc3c-1d33-b83a3950eb2a" data-view-component="true">
+<react-partial
+  partial-name="dashboard-lists"
+  data-ssr="false"
+  data-attempted-ssr="false"
+  data-react-profiling="false"
+>
   
-            <div class="text-center tmp-p-3 mt-2">
-              <span data-view-component="true">
-  <svg style="box-sizing: content-box; color: var(--color-icon-primary);" width="32" height="32" viewBox="0 0 16 16" fill="none" aria-hidden="true" data-view-component="true" class="anim-rotate">
-    <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-opacity="0.25" stroke-width="2" vector-effect="non-scaling-stroke" fill="none"></circle>
-    <path d="M15 8a7.002 7.002 0 00-7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" vector-effect="non-scaling-stroke"></path>
-</svg>    <span class="sr-only">Loading</span>
-</span>
+  <script type="application/json" data-target="react-partial.embeddedData">{"props":{"userDisplayLogin":"wzxxcz","currentUserId":155713461,"showProductivityDashboardModules":true,"showCopilotChatActions":true}}</script>
+  <div data-target="react-partial.reactRoot"></div>
+</react-partial>
+
+
+
+    </div>
+  </div>
+</div>
+
+
+              </main>
             </div>
-
-  <div data-show-on-forbidden-error hidden>
-    <div class="Box">
-  <div class="blankslate-container">
-    <div data-view-component="true" class="blankslate blankslate-spacious color-bg-default rounded-2">
-      
-
-      <h3 data-view-component="true" class="blankslate-heading">        Uh oh!
-</h3>
-      <p data-view-component="true" class="blankslate-description">        <p class="color-fg-muted my-2 mb-2 ws-normal">There was an error while loading. <a class="Link--inTextBlock" data-turbo="false" href="" aria-label="Please reload this page">Please reload this page</a>.</p>
-</p>
-
-</div>  </div>
-</div>  </div>
-</include-fragment></details-menu>
-</details></details-toggle>
-      <div class="hide-xl ml-2">
-        <button id="dialog-show-explore-dashboard-responsive" data-show-dialog-id="explore-dashboard-responsive" aria-labelledby="tooltip-3b23bd5c-1d44-417b-9e0c-b06a98e6f2ac" type="button" data-view-component="true" class="Button Button--iconOnly Button--secondary Button--medium">  <svg aria-hidden="true" data-component="Octicon" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-sidebar-expand Button-visual">
-    <path d="m4.177 7.823 2.396-2.396A.25.25 0 0 1 7 5.604v4.792a.25.25 0 0 1-.427.177L4.177 8.177a.25.25 0 0 1 0-.354Z"></path><path d="M0 1.75C0 .784.784 0 1.75 0h12.5C15.216 0 16 .784 16 1.75v12.5A1.75 1.75 0 0 1 14.25 16H1.75A1.75 1.75 0 0 1 0 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25H9.5v-13Zm12.5 13a.25.25 0 0 0 .25-.25V1.75a.25.25 0 0 0-.25-.25H11v13Z"></path>
-</svg>
-</button><tool-tip id="tooltip-3b23bd5c-1d44-417b-9e0c-b06a98e6f2ac" for="dialog-show-explore-dashboard-responsive" popover="manual" data-direction="s" data-type="label" data-view-component="true" class="sr-only position-absolute">Explore</tool-tip>
-
-<dialog-helper>
-  <dialog id="explore-dashboard-responsive" aria-modal="true" aria-labelledby="explore-dashboard-responsive-title" aria-describedby="explore-dashboard-responsive-description" data-view-component="true" class="Overlay Overlay-whenNarrow Overlay--size-medium Overlay--motion-scaleFade Overlay--placement-right Overlay--disableScroll">
-    <div data-view-component="true" class="Overlay-header">
-  <div class="Overlay-headerContentWrap">
-    <div class="Overlay-titleWrap">
-      <h1 class="Overlay-title " id="explore-dashboard-responsive-title">
-        Explore
-      </h1>
-        
-    </div>
-    <div class="Overlay-actionWrap">
-      <button data-close-dialog-id="explore-dashboard-responsive" aria-label="Close" aria-label="Close" type="button" data-view-component="true" class="close-button Overlay-closeButton"><svg aria-hidden="true" data-component="Octicon" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-x">
-    <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L9.06 8l3.22 3.22a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L8 9.06l-3.22 3.22a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"></path>
-</svg></button>
-    </div>
-  </div>
-  
-</div>
-      <scrollable-region data-labelled-by="explore-dashboard-responsive-title">
-        <div data-view-component="true" class="Overlay-body my-2 tmp-my-2">                    
+              <aside class="feed-right-column d-block tmp-mb-5" aria-label="Explore">
+                        
   <div  style="max-width: 356px">
-       
-        <div class="js-notice marketing-banner" >
-
-  <img src="/static/images/modules/dashboard/promos/universe_26-dashboard-septsession.webp" alt="GitHub Universe Banner" class="universe26banner-hero-image">
-
-  <div class="universe26banner" style="background-color: var(--dashboard-bgColor, var(--bgColor-default)); border-radius: var(--borderRadius-medium);">
-    <div class="universe26banner-hero-section">
-      <div class="universe26banner-header">
-        <img src="/static/images/modules/dashboard/promos/universe26-logo-light.svg" alt="GitHub Universe 2026" class="universe26banner-header-logo universe26banner-asset universe26banner-asset--light">
-        <img src="/static/images/modules/dashboard/promos/universe26-logo-dark.svg" alt="GitHub Universe 2026" class="universe26banner-header-logo universe26banner-asset universe26banner-asset--dark">
-
-        <!-- '"` --><!-- </textarea></xmp> --></option></form><form class="universe26banner-dismiss-form" data-analytics-visible="{&quot;category&quot;:&quot;db_septsession_uni26&quot;,&quot;action&quot;:&quot;visible&quot;,&quot;label&quot;:&quot;text: &quot;}" data-analytics-event="{&quot;category&quot;:&quot;db_septsession_uni26&quot;,&quot;action&quot;:&quot;dismiss&quot;,&quot;label&quot;:null,&quot;tag&quot;:&quot;a&quot;,&quot;location&quot;:&quot;dashboard&quot;}" data-turbo="false" action="/settings/dismiss-notice/universe26_dashboard_banner_septsession?nudge=true" accept-charset="UTF-8" method="post"><input type="hidden" name="authenticity_token" value="iJFzHVBfddeBeuYoR_CFlpqrlr7IvuhT7cLg-XH-hEFYtxZgB7105L9i15yMkfWv0Ryky7jxBIF7oecfR1TPMg" />
-          <button id="icon-button-52f28090-c74c-4e2b-84d5-ff7e75d9858f" aria-labelledby="tooltip-b3b06652-8413-4949-8f34-9b486c1073cb" type="submit" data-view-component="true" class="Button Button--iconOnly Button--invisible Button--medium color-fg-on-emphasis">  <svg aria-hidden="true" data-component="Octicon" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-x Button-visual">
-    <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L9.06 8l3.22 3.22a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L8 9.06l-3.22 3.22a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"></path>
-</svg>
-</button><tool-tip id="tooltip-b3b06652-8413-4949-8f34-9b486c1073cb" for="icon-button-52f28090-c74c-4e2b-84d5-ff7e75d9858f" popover="manual" data-direction="s" data-type="label" data-view-component="true" class="sr-only position-absolute">Dismiss</tool-tip>
-
-</form>      </div>
-
-    </div>
-
-    <div class="universe26banner-promotion">
-      <h3 class="universe26banner-promo-description" style="font-size: 14px; font-weight: normal; color: var(--fgColor-muted);">New GitHub Universe sessions just dropped. IRL passes are going fast.</h3>
-    </div>
-
-    <div class="universe26banner-actions">
-      <a class="universe26banner-cta" style="background-color: var(--fgColor-default); color: var(--bgColor-default);" data-analytics-event="{&quot;category&quot;:&quot;db_septsession_uni26&quot;,&quot;action&quot;:&quot;click&quot;,&quot;label&quot;:null}" href="/in-product-messaging/dismiss-and-redirect?destination_key=universe26_dashboard_banner_septsession&amp;dismiss_scope=user&amp;notice=universe26_dashboard_banner_septsession">
-        Register now
-</a>    </div>
-  </div>
-</div>
-
   </div>
 
 
 
-    <include-fragment loading="lazy" src="/dashboard/changelog" data-nonce="v2:a4aa5dee-44d3-dc3c-1d33-b83a3950eb2a" data-view-component="true">
+    <include-fragment loading="lazy" src="/dashboard/changelog" data-nonce="v2:9f4ecabf-04d8-d266-c46d-c9f8d15265fa" data-view-component="true">
   
       <div class="tmp-mb-3 dashboard-changelog color-bg-default border color-border-muted tmp-p-3">
         <span data-view-component="true">
@@ -819,97 +901,11 @@
 </div>  </div>
 </include-fragment>
 
-</div>
-      </scrollable-region>
-      
-</dialog></dialog-helper>
-      </div>
-  </div>
-</div>
+              </aside>
+          </div>
+        </div>
 
-<template hidden class="js-feed-filter-error-toast">
-  
-<div class="
-  position-fixed bottom-0 left-0 tmp-ml-5 tmp-mb-5
-  anim-fade-in fast Toast
-   Toast--warning"
-  role="log"
-  style="z-index: 101;">
-  <span class="Toast-icon">
-      <svg aria-hidden="true" data-component="Octicon" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-alert">
-    <path d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"></path>
-</svg>
-  </span>
-  <span class="Toast-content d-flex">
-    <span>
-      Failed to apply filters. Resetting your feed.
-    </span>
-  </span>
-    <button class="Toast-dismissButton" type="button" aria-label="Close">
-      <svg aria-hidden="true" data-component="Octicon" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-x">
-    <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L9.06 8l3.22 3.22a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L8 9.06l-3.22 3.22a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"></path>
-</svg>
-    </button>
-</div>
-
-</template>
-
-<div hidden="hidden" style="min-height: calc(100vh - 160px); min-height: calc(100svh - 160px);" data-target="feed-container.spinner" data-view-component="true" class="tmp-py-6 d-flex flex-justify-center flex-items-center">
-  <span data-view-component="true">
-  <svg style="box-sizing: content-box; color: var(--color-icon-primary);" width="32" height="32" viewBox="0 0 16 16" fill="none" aria-hidden="true" data-view-component="true" class="anim-rotate">
-    <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-opacity="0.25" stroke-width="2" vector-effect="non-scaling-stroke" fill="none"></circle>
-    <path d="M15 8a7.002 7.002 0 00-7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" vector-effect="non-scaling-stroke"></path>
-</svg>    <span class="sr-only">Loading</span>
-</span>
-</div>
-<div data-target='feed-container.content' style="min-height: calc(100vh - 160px); min-height: calc(100svh - 160px);" >
-  <include-fragment style="display: block; min-height: calc(100vh - 64px); min-height: calc(100svh - 64px);" loading="eager" src="/conduit/for_you_feed?source=dashboard_index" data-nonce="v2:a4aa5dee-44d3-dc3c-1d33-b83a3950eb2a" data-view-component="true">
-  
-  <div class="text-center" data-hide-on-error>
-    <picture><source srcset="https://github.githubassets.com/assets/mona-loading-dark-7701a7b97370.gif" media="(prefers-color-scheme: dark)"><source srcset="https://github.githubassets.com/assets/mona-loading-default-c3c7aad1282f.gif" media="(prefers-color-scheme: light), (prefers-color-scheme: no-preference)"><img src="https://github.githubassets.com/assets/mona-loading-default-c3c7aad1282f.gif" width="48" alt="Loading your activity..." class="tmp-mt-4 hide-reduced-motion"></picture>
-    <picture><source srcset="https://github.githubassets.com/assets/mona-loading-dark-static-8b35171e5d6c.svg" media="(prefers-color-scheme: dark)"><source srcset="https://github.githubassets.com/assets/mona-loading-default-static-8f7c56ad1b9a.svg" media="(prefers-color-scheme: light), (prefers-color-scheme: no-preference)"><img src="https://github.githubassets.com/assets/mona-loading-default-static-8f7c56ad1b9a.svg" width="48" alt="Loading your activity..." class="tmp-mt-4 hide-no-pref-motion"></picture>
-    <p class="color-fg-muted my-2">One moment please...</p>
-  </div>
-  <div class="tmp-mt-3" data-show-on-error hidden>
-    <div class="Box">
-  <div class="blankslate-container">
-    <div data-view-component="true" class="blankslate color-bg-default rounded-2">
-      
-
-      <h3 data-view-component="true" class="blankslate-heading">            Uh oh!
-</h3>
-      <p data-view-component="true" class="blankslate-description">            <p class="color-fg-muted my-2 mb-2">There was an error in loading the activity feed. <a  class="Link--inTextBlock" href="/" aria-label="Reload this page">Reload this page</a>.</p>
-</p>
-
-</div>  </div>
-</div>  </div>
-
-  <div data-show-on-forbidden-error hidden>
-    <div class="Box">
-  <div class="blankslate-container">
-    <div data-view-component="true" class="blankslate blankslate-spacious color-bg-default rounded-2">
-      
-
-      <h3 data-view-component="true" class="blankslate-heading">        Uh oh!
-</h3>
-      <p data-view-component="true" class="blankslate-description">        <p class="color-fg-muted my-2 mb-2 ws-normal">There was an error while loading. <a class="Link--inTextBlock" data-turbo="false" href="" aria-label="Please reload this page">Please reload this page</a>.</p>
-</p>
-
-</div>  </div>
-</div>  </div>
-</include-fragment>
-</div>
-
-
-  </feed-container>
-
-    </div>
-  </div>
-</div>
-
-
-              </main>
-                <footer class="footer f6 color-fg-muted color-border-subtle tmp-pt-7 tmp-pb-6" role="contentinfo"  >
+          <footer class="footer f6 color-fg-muted color-border-subtle tmp-pt-7 tmp-pb-6" role="contentinfo"  >
   <h2 class='sr-only'>Footer</h2>
 
   
@@ -995,76 +991,6 @@
 </footer>
 
 
-            </div>
-              <aside class="feed-right-sidebar tmp-mb-5" aria-label="Explore">
-                        
-  <div  style="max-width: 356px">
-       
-        <div class="js-notice marketing-banner" >
-
-  <img src="/static/images/modules/dashboard/promos/universe_26-dashboard-septsession.webp" alt="GitHub Universe Banner" class="universe26banner-hero-image">
-
-  <div class="universe26banner" style="background-color: var(--dashboard-bgColor, var(--bgColor-default)); border-radius: var(--borderRadius-medium);">
-    <div class="universe26banner-hero-section">
-      <div class="universe26banner-header">
-        <img src="/static/images/modules/dashboard/promos/universe26-logo-light.svg" alt="GitHub Universe 2026" class="universe26banner-header-logo universe26banner-asset universe26banner-asset--light">
-        <img src="/static/images/modules/dashboard/promos/universe26-logo-dark.svg" alt="GitHub Universe 2026" class="universe26banner-header-logo universe26banner-asset universe26banner-asset--dark">
-
-        <!-- '"` --><!-- </textarea></xmp> --></option></form><form class="universe26banner-dismiss-form" data-analytics-visible="{&quot;category&quot;:&quot;db_septsession_uni26&quot;,&quot;action&quot;:&quot;visible&quot;,&quot;label&quot;:&quot;text: &quot;}" data-analytics-event="{&quot;category&quot;:&quot;db_septsession_uni26&quot;,&quot;action&quot;:&quot;dismiss&quot;,&quot;label&quot;:null,&quot;tag&quot;:&quot;a&quot;,&quot;location&quot;:&quot;dashboard&quot;}" data-turbo="false" action="/settings/dismiss-notice/universe26_dashboard_banner_septsession?nudge=true" accept-charset="UTF-8" method="post"><input type="hidden" name="authenticity_token" value="iJFzHVBfddeBeuYoR_CFlpqrlr7IvuhT7cLg-XH-hEFYtxZgB7105L9i15yMkfWv0Ryky7jxBIF7oecfR1TPMg" />
-          <button id="icon-button-52f28090-c74c-4e2b-84d5-ff7e75d9858f" aria-labelledby="tooltip-b3b06652-8413-4949-8f34-9b486c1073cb" type="submit" data-view-component="true" class="Button Button--iconOnly Button--invisible Button--medium color-fg-on-emphasis">  <svg aria-hidden="true" data-component="Octicon" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-x Button-visual">
-    <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L9.06 8l3.22 3.22a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L8 9.06l-3.22 3.22a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"></path>
-</svg>
-</button><tool-tip id="tooltip-b3b06652-8413-4949-8f34-9b486c1073cb" for="icon-button-52f28090-c74c-4e2b-84d5-ff7e75d9858f" popover="manual" data-direction="s" data-type="label" data-view-component="true" class="sr-only position-absolute">Dismiss</tool-tip>
-
-</form>      </div>
-
-    </div>
-
-    <div class="universe26banner-promotion">
-      <h3 class="universe26banner-promo-description" style="font-size: 14px; font-weight: normal; color: var(--fgColor-muted);">New GitHub Universe sessions just dropped. IRL passes are going fast.</h3>
-    </div>
-
-    <div class="universe26banner-actions">
-      <a class="universe26banner-cta" style="background-color: var(--fgColor-default); color: var(--bgColor-default);" data-analytics-event="{&quot;category&quot;:&quot;db_septsession_uni26&quot;,&quot;action&quot;:&quot;click&quot;,&quot;label&quot;:null}" href="/in-product-messaging/dismiss-and-redirect?destination_key=universe26_dashboard_banner_septsession&amp;dismiss_scope=user&amp;notice=universe26_dashboard_banner_septsession">
-        Register now
-</a>    </div>
-  </div>
-</div>
-
-  </div>
-
-
-
-    <include-fragment loading="lazy" src="/dashboard/changelog" data-nonce="v2:a4aa5dee-44d3-dc3c-1d33-b83a3950eb2a" data-view-component="true">
-  
-      <div class="tmp-mb-3 dashboard-changelog color-bg-default border color-border-muted tmp-p-3">
-        <span data-view-component="true">
-  <svg style="box-sizing: content-box; color: var(--color-icon-primary);" width="32" height="32" viewBox="0 0 16 16" fill="none" aria-hidden="true" data-view-component="true" class="flex-1 anim-rotate">
-    <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-opacity="0.25" stroke-width="2" vector-effect="non-scaling-stroke" fill="none"></circle>
-    <path d="M15 8a7.002 7.002 0 00-7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" vector-effect="non-scaling-stroke"></path>
-</svg>    <span class="sr-only">Loading</span>
-</span> 
-      </div>
-
-  <div data-show-on-forbidden-error hidden>
-    <div class="Box">
-  <div class="blankslate-container">
-    <div data-view-component="true" class="blankslate blankslate-spacious color-bg-default rounded-2">
-      
-
-      <h3 data-view-component="true" class="blankslate-heading">        Uh oh!
-</h3>
-      <p data-view-component="true" class="blankslate-description">        <p class="color-fg-muted my-2 mb-2 ws-normal">There was an error while loading. <a class="Link--inTextBlock" data-turbo="false" href="" aria-label="Please reload this page">Please reload this page</a>.</p>
-</p>
-
-</div>  </div>
-</div>  </div>
-</include-fragment>
-
-              </aside>
-          </div>
-        </div>
-
       </div>
     </div>
   </div>
@@ -1140,15 +1066,15 @@
 
 
     <style>
-      .user-mention[href$="/dyr1980"] {
+      .user-mention[href$="/wzxxcz"] {
         color: var(--color-user-mention-fg);
         background-color: var(--bgColor-attention-muted, var(--color-attention-subtle));
         border-radius: 2px;
         margin-left: -2px;
         margin-right: -2px;
       }
-      .user-mention[href$="/dyr1980"]:before,
-      .user-mention[href$="/dyr1980"]:after {
+      .user-mention[href$="/wzxxcz"]:before,
+      .user-mention[href$="/wzxxcz"]:after {
         content: '';
         display: inline-block;
         width: 2px;

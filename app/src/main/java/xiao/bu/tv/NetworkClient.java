@@ -79,6 +79,30 @@ final class NetworkClient {
         return factory().open(url);
     }
 
+    static HttpURLConnection openBounded(URL url, int timeoutMs) throws IOException {
+        return new OkUrlFactory(sharedClient().newBuilder()
+                .callTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+                .retryOnConnectionFailure(false).build()).open(url);
+    }
+
+    static void invalidateDns(String hostname) {
+        Dns dns = sharedClient().dns();
+        if (dns instanceof ProcessDns) ((ProcessDns) dns).invalidate(hostname);
+    }
+
+    /** Bound the whole component request, including redirects and internal connection retries. */
+    static HttpURLConnection openComponent(URL url, boolean nativeBinary) throws IOException {
+        final OkUrlFactory componentFactory = new OkUrlFactory(sharedClient().newBuilder()
+                .callTimeout(nativeBinary ? 30 : 8, TimeUnit.SECONDS)
+                .retryOnConnectionFailure(false).build());
+        String github = GithubProxy.githubSource(url.toString());
+        if (github != null) {
+            if (!GithubProxy.isEnabled()) return componentFactory.open(new URL(github));
+            return new GithubConnection(url, target -> componentFactory.open(target));
+        }
+        return componentFactory.open(url);
+    }
+
     /** Shared OkHttp client for callers that need response headers or streaming bodies. */
     static synchronized OkHttpClient sharedClient() {
         factory();

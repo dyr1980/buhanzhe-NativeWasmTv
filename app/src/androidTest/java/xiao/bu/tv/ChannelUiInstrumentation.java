@@ -51,24 +51,20 @@ public final class ChannelUiInstrumentation extends Instrumentation {
     private void pass(String text) { Bundle result=new Bundle(); result.putString("stream","PASS "+text+"\n"); sendStatus(0,result); }
 
     private void uiScalePolicy() {
-        check(Math.abs(UiScalePolicy.viewportScale(1920, 1080, 1f) - 1f) < .011f,
-                "1080p reference scale changed");
-        check(Math.abs(UiScalePolicy.viewportScale(3840, 2160, 2f) - 1.2f) < .011f,
-                "4K scale exceeded its upper bound");
-        check(Math.abs(UiScalePolicy.viewportScale(1280, 720, 3f) - .67f) < .011f,
-                "High-density 720p controls remain oversized");
-        check(Math.abs(UiScalePolicy.viewportScale(1280, 720, 1f) - .8f) < .011f,
-                "Low-density 720p controls became unreadable");
-        check(Math.abs(UiScalePolicy.resolve(1920, 1080,
-                "small", -1f, 1f) - .80f) < .011f,
-                "80% interface-size preset was not applied");
-        check(Math.abs(UiScalePolicy.resolve(1920, 1080,
-                "slightly_small", -1f, 1f) - .90f) < .011f,
-                "90% interface-size preset was not applied");
-        check(Math.abs(UiScalePolicy.resolve(1280, 720,
-                "extra_extra_large", -1f, 3f) - 1.34f) < .011f,
-                "User interface-size preset was not combined with viewport scale");
-        pass("viewport, density and interface-size scaling bounds");
+        check(Math.abs(UiScalePolicy.viewportScale(1920, 1080, 3f) * 46f - 44f) < .1f,
+                "1080p high-DPI baseline must be 44dp");
+        check(Math.abs(UiScalePolicy.viewportScale(800, 480, 1.5f) * 46f - 44f) < .1f,
+                "480p baseline must be 44dp");
+        check(UiScalePolicy.viewportScale(1280, 720, 4f) * 46f * 4f <= 120.1f,
+                "Small screen must retain six rows");
+        float baseline = UiScalePolicy.resolve(1920, 1080, "auto", -1f, 3f);
+        check(Math.abs(UiScalePolicy.resolve(1920, 1080, "standard", -1f, 3f)-baseline)<.001f,
+                "Standard must match automatic baseline");
+        check(Math.abs(UiScalePolicy.resolve(1920, 1080, "small", -1f, 3f)/baseline-.8f)<.02f,
+                "80% must adjust automatic baseline");
+        check(Math.abs(UiScalePolicy.resolve(1920, 1080, "extra_extra_large", -1f, 3f)/baseline-2f)<.02f,
+                "200% must adjust automatic baseline");
+        pass("44dp baseline, screen height bounds and relative display-size presets");
     }
 
     private void logoCache() throws Exception {

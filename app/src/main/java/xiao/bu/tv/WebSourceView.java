@@ -68,6 +68,8 @@ public final class WebSourceView extends FrameLayout {
         default void onResourcesReset(int requestId, String url) { }
         void onPageReady(int requestId, String url, String title);
         void onPageError(int requestId, String message);
+        default void onPageUnavailable(int requestId, String message) { onPageError(requestId, message); }
+        default void onBrowserRelativeChannel(int direction) { }
         void onStreamDiscovered(int requestId, String streamUrl, String pageUrl,
                 String userAgent, String cookies);
 
@@ -84,6 +86,7 @@ public final class WebSourceView extends FrameLayout {
     private static final java.util.regex.Pattern HLS_QUERY = java.util.regex.Pattern.compile(
             ".*[?&](format|type)=m3u8(?:[&#].*)?$");
     private volatile WebView webView;
+    private final LegacyWebSession legacy;
     private final LinkedHashSet<WebViewShutdown> pendingShutdowns = new LinkedHashSet<>();
     private Runnable stablePageRelease;
     private JSONObject webMediaState = new JSONObject();
@@ -174,6 +177,8 @@ public final class WebSourceView extends FrameLayout {
     @SuppressLint("SetJavaScriptEnabled")
     public WebSourceView(Context context, AttributeSet attrs) {
         super(context, attrs);
+        legacy = Build.VERSION.SDK_INT < 26 && !(context instanceof LegacyWebActivity)
+                ? new LegacyWebSession(this) : null;
         WebAdBlocker.initialize(context);
         setBackgroundColor(0xff000000);
         setClipChildren(true);
@@ -532,6 +537,7 @@ public final class WebSourceView extends FrameLayout {
     }
 
     boolean dispatchRemoteMouseHover(View dispatchRoot, MotionEvent event) {
+        if (legacy != null) { android.os.Bundle data = new android.os.Bundle(); data.putParcelable("motion", event); legacy.send("mouse", data); return legacy.visible; }
         boolean previous = remoteMouseHoverDispatch;
         remoteMouseHoverDispatch = true;
         try { return dispatchRoot.dispatchGenericMotionEvent(event); }
@@ -626,6 +632,7 @@ public final class WebSourceView extends FrameLayout {
     }
 
     void setMultimediaPaused(boolean paused) {
+        if (legacy != null) { legacy.command(paused ? "pause" : "play"); return; }
         setMultimediaPaused(webView, paused);
         if (paused) for (WebView retained : retainedTabWebViews.values()) setMultimediaPaused(retained, true);
     }
@@ -1181,12 +1188,17 @@ public final class WebSourceView extends FrameLayout {
     }
 
     void settleRemoteWebScroll() {
+        if (legacy != null) return;
         removeCallbacks(settleRemoteScroll);
         post(settleRemoteScroll);
         postDelayed(settleRemoteScroll, 120L);
     }
 
     boolean exitBrowserFullscreen() {
+        if (legacy != null) {
+            if (!legacy.visible || !legacy.state.getBoolean("fullscreen")) return false;
+            legacy.command("fullscreenExit"); legacy.state.putBoolean("fullscreen", false); return true;
+        }
         if (!browserFullscreen) return false;
         setBrowserFullscreen(false);
         return true;
@@ -1244,6 +1256,14 @@ public final class WebSourceView extends FrameLayout {
             String requestedUserAgentMode, String requestedBrowserVersionMode,
             float requestedPageScale, boolean requestedAdBlock, boolean requestedWebRtc,
             boolean requestedUserScriptEnabled, String requestedUserScripts) {
+        if (legacy != null) {
+            android.os.Bundle data = new android.os.Bundle();
+            data.putString("viewport", requestedViewportMode); data.putBoolean("images", requestedLoadImages);
+            data.putString("ua", requestedUserAgentMode); data.putString("version", requestedBrowserVersionMode);
+            data.putFloat("pageScale", requestedPageScale); data.putBoolean("ads", requestedAdBlock);
+            data.putBoolean("rtc", requestedWebRtc); data.putBoolean("scripts", requestedUserScriptEnabled);
+            data.putString("userScripts", requestedUserScripts); legacy.configure(data); return;
+        }
         String nextMode = "4k".equals(requestedViewportMode)
                 || "2k".equals(requestedViewportMode)
                 || "1080p".equals(requestedViewportMode)
@@ -1314,6 +1334,35 @@ public final class WebSourceView extends FrameLayout {
         this.listener = listener;
     }
 
+    void legacyUnavailable(int failedRequest, String reason) {
+        setVisibility(View.GONE);
+        if (listener != null) listener.onPageUnavailable(failedRequest, reason);
+    }
+
+    void probeLegacyRenderer(Runnable result) {
+        if (Build.VERSION.SDK_INT < 19 || webView == null || !pageActive) { result.run(); return; }
+        webView.evaluateJavascript("1", ignored -> result.run());
+    }
+
+    boolean isInBrowserFullscreen() { return browserFullscreen || fullscreenView != null; }
+
+    void deliverLegacyEvent(String event, android.os.Bundle data, int id) {
+        if (listener == null) return;
+        switch (event) {
+            case "started": listener.onPageStarted(id, data.getString("url")); break;
+            case "reset": listener.onResourcesReset(id, data.getString("url")); break;
+            case "ready": listener.onPageReady(id, currentPageUrl(), currentPageTitle()); break;
+            case "stream": listener.onStreamDiscovered(id, data.getString("stream"), data.getString("url"), data.getString("ua"), data.getString("cookies")); break;
+            case "home": listener.onBrowserHome(); break;
+            case "channel": listener.onBrowserChannel(data.getInt("group"), data.getInt("channel")); break;
+            case "image": listener.onBrowserDownloadImage(data.getString("url")); break;
+            case "clipboard": listener.onBrowserClipboard(data.getString("text"), data.getString("message")); break;
+            case "script": listener.onBrowserUserScript(data.getString("url")); break;
+            case "policies": listener.onBrowserPoliciesChanged(data.getBoolean("images"), data.getBoolean("ads"), data.getBoolean("rtc")); break;
+            case "relative": listener.onBrowserRelativeChannel(data.getInt("direction")); break;
+        }
+    }
+
     boolean isBrowserChromeTouch(MotionEvent event) {
         if (event == null || !pageActive || tabBar.getVisibility() != View.VISIBLE) return false;
         Rect bounds = new Rect();
@@ -1332,6 +1381,10 @@ public final class WebSourceView extends FrameLayout {
     /** Give the native edge control sole ownership of a pointer sequence. */
 
     @Override public boolean dispatchTouchEvent(MotionEvent event) {
+        if (legacy != null && legacy.visible) {
+            android.os.Bundle data = new android.os.Bundle(); data.putParcelable("motion", event);
+            legacy.send("touch", data); return true;
+        }
         updateFullscreenExitForMouse(event);
         if (event != null && event.getActionMasked() == MotionEvent.ACTION_DOWN
                 && pageActive && !false) {
@@ -1341,15 +1394,26 @@ public final class WebSourceView extends FrameLayout {
     }
 
     private String channelPageScript = "";
+    private volatile String htmlMimeOverrideUrl = "";
+    private volatile String htmlMimeOverrideCookies = "";
 
     void open(int newRequestId, String url) {
         open(newRequestId, url, "");
     }
 
     void open(int newRequestId, String url, String pageScript) {
+        open(newRequestId, url, pageScript, false);
+    }
+
+    void open(int newRequestId, String url, String pageScript, boolean htmlMimeOverride) {
+        if (legacy != null) { legacy.open(newRequestId, url, pageScript, htmlMimeOverride); return; }
+        htmlMimeOverrideUrl = htmlMimeOverride ? url : "";
+        htmlMimeOverrideCookies = htmlMimeOverride ? CookieManager.getInstance().getCookie(url) : "";
         channelPageScript = pageScript == null ? "" : pageScript;
         rendererRetries = 0;
-        if (tabBar.openChannel(url, "") == null) return;
+        WebTabBar.Tab tab = tabBar.openChannel(url, "");
+        if (tab == null) return;
+        releaseTabWebView(tab, false);
         openPage(newRequestId, url);
     }
 
@@ -1420,7 +1484,7 @@ public final class WebSourceView extends FrameLayout {
             tabBar.bringToFront();
             android.widget.Toast.makeText(getContext(), WebViewAvailability.MESSAGE,
                     android.widget.Toast.LENGTH_LONG).show();
-            if (listener != null) listener.onPageError(newRequestId, WebViewAvailability.MESSAGE);
+            if (listener != null) listener.onPageUnavailable(newRequestId, WebViewAvailability.MESSAGE);
             return;
         }
         requestId = newRequestId;
@@ -1521,6 +1585,7 @@ public final class WebSourceView extends FrameLayout {
     }
 
     void openBookmarkedPage(String url, String title, String group, boolean newTab) {
+        if (legacy != null) { android.os.Bundle data = LegacyWebSession.bundle("url", url); data.putString("title", title); data.putString("group", group); data.putBoolean("newTab", newTab); legacy.send("bookmark", data); return; }
         if (!isWebPage(url) || destroyed) return;
         if (isUserScriptInstallUrl(url)) {
             if (listener != null) listener.onBrowserUserScript(url);
@@ -1528,6 +1593,7 @@ public final class WebSourceView extends FrameLayout {
         }
         WebTabBar.Tab tab = newTab ? tabBar.openNew(url, title) : tabBar.openChannel(url, title);
         if (tab == null) return;
+        if (!newTab) releaseTabWebView(tab, false);
         tab.bookmarkTitle = safe(title);
         tab.bookmarkGroup = safe(group);
         tab.bookmarkUrl = url;
@@ -1536,6 +1602,7 @@ public final class WebSourceView extends FrameLayout {
     }
 
     void openLinkInNewTab(String url) {
+        if (legacy != null) { legacy.send("tab", LegacyWebSession.bundle("url", url)); return; }
         if (isUserScriptInstallUrl(url)) {
             if (listener != null) listener.onBrowserUserScript(url);
             return;
@@ -1548,6 +1615,7 @@ public final class WebSourceView extends FrameLayout {
     }
 
     void openLinkInBackgroundTab(String url) {
+        if (legacy != null) { legacy.send("backgroundTab", LegacyWebSession.bundle("url", url)); return; }
         if (destroyed || !pageActive || !isWebPage(url)) return;
         if (isUserScriptInstallUrl(url)) {
             if (listener != null) listener.onBrowserUserScript(url);
@@ -1597,6 +1665,7 @@ public final class WebSourceView extends FrameLayout {
     };
 
     void adjustCurrentPageScale(float factor) {
+        if (legacy != null) { legacy.send("pageScale", LegacyWebSession.bundle("factor", factor)); return; }
         if (webView == null || !pageActive || destroyed
                 || Float.isNaN(factor) || Float.isInfinite(factor)) return;
         float next = Math.max(0.5f, Math.min(3f, currentPageScale * factor));
@@ -1643,22 +1712,16 @@ public final class WebSourceView extends FrameLayout {
         fullscreenCallback = null;
         setLoadingVisible(false);
         if (!visible || destroyed) return;
-        boolean retry = rendererRetries++ < 1 && isWebPage(failedUrl);
-        if (listener != null) listener.onPageError(failedRequest, retry
-                ? "网页渲染进程已退出，正在尝试恢复"
-                : "网页连续崩溃，请切换频道或稍后重新打开");
-        if (!retry) return;
-        // Let all sibling WebViews acknowledge the old renderer before recreating.
-        postDelayed(new Runnable() {
-            @Override public void run() {
-                if (destroyed || generation != resetGeneration || webView != null) return;
-                if (!false && getWindowVisibility() != View.VISIBLE) return;
-                openPage(failedRequest, failedUrl);
-            }
+        // Let sibling WebViews acknowledge the same dead renderer before closing the page.
+        postDelayed(() -> {
+            if (!destroyed && generation == resetGeneration && webView == null && listener != null)
+                listener.onPageUnavailable(failedRequest,
+                        crashed ? "网页渲染进程崩溃" : "网页渲染进程因内存不足退出");
         }, 750L);
     }
 
     void closePage() {
+        if (legacy != null) { legacy.close(); setVisibility(View.GONE); return; }
         releaseRetiredWebViews();
         streamPageSuspended = false;
         tabBar.dismissTransientPanels();
@@ -1713,18 +1776,22 @@ public final class WebSourceView extends FrameLayout {
     };
 
     boolean isPageVisible() {
+        if (legacy != null) return legacy.visible;
         return getVisibility() == View.VISIBLE;
     }
 
     boolean hasRetainedPage() {
+        if (legacy != null) return legacy.active;
         return !destroyed && webView != null && pageActive && requestId >= 0;
     }
 
     boolean hasRetainedPage(int expectedRequestId) {
+        if (legacy != null) return legacy.active && legacy.request == expectedRequestId;
         return hasRetainedPage() && requestId == expectedRequestId;
     }
 
     void hideForStreamPlayback() {
+        if (legacy != null) { legacy.hide(); return; }
         if (!hasRetainedPage()) {
             return;
         }
@@ -1739,6 +1806,7 @@ public final class WebSourceView extends FrameLayout {
     }
 
     void suspendForStreamPlayback(WebViewShutdown.Completion completion) {
+        if (legacy != null) { legacy.suspend(completion); return; }
         if (!hasRetainedPage() || isPageVisible() || streamPageSuspended) {
             completion.onComplete(false);
             return;
@@ -1782,6 +1850,7 @@ public final class WebSourceView extends FrameLayout {
     }
 
     boolean restoreAfterStreamPlayback() {
+        if (legacy != null) return legacy.restore();
         if (!hasRetainedPage()) {
             return false;
         }
@@ -1802,6 +1871,7 @@ public final class WebSourceView extends FrameLayout {
     }
 
     boolean canRestoreAfterStreamPlayback() {
+        if (legacy != null) return legacy.active && !legacy.visible && !legacy.suspended;
         return hasRetainedPage() && !isPageVisible() && !streamPageSuspended;
     }
 
@@ -1840,6 +1910,7 @@ public final class WebSourceView extends FrameLayout {
     }
 
     boolean goBackIfPossible() {
+        if (legacy != null) { if (!legacy.visible) return false; legacy.command("back"); return true; }
         if (webView == null || !isPageVisible() || destroyed || !pageActive) {
             return false;
         }
@@ -1862,6 +1933,7 @@ public final class WebSourceView extends FrameLayout {
     }
 
     boolean goForwardIfPossible() {
+        if (legacy != null) { if (!legacy.visible) return false; legacy.command("forward"); return true; }
         if (webView == null || !isPageVisible() || destroyed || !pageActive) return false;
         WebBackForwardList history = webView.copyBackForwardList();
         if (history == null) return false;
@@ -1905,6 +1977,7 @@ public final class WebSourceView extends FrameLayout {
     }
 
     void setInterfaceScale(float scale) {
+        if (legacy != null) { legacy.scale = scale; legacy.send("scale", LegacyWebSession.bundle("scale", scale)); return; }
         float safeScale = Math.max(0.35f, Math.min(1.60f, scale));
         interfaceScale = safeScale;
         loadingInterfaceScale = safeScale;
@@ -1925,6 +1998,7 @@ public final class WebSourceView extends FrameLayout {
     }
 
     void dispatchRemoteKey(int keyCode, int metaState) {
+        if (legacy != null) { android.os.Bundle data = new android.os.Bundle(); data.putInt("key", keyCode); data.putInt("meta", metaState); legacy.send("key", data); return; }
         if (webView == null || !isPageVisible()) {
             return;
         }
@@ -1937,6 +2011,7 @@ public final class WebSourceView extends FrameLayout {
     }
 
     void inputTextRemote(String text) {
+        if (legacy != null) { legacy.send("text", LegacyWebSession.bundle("text", text)); return; }
         if (webView == null || !isPageVisible() || text == null || text.length() == 0) {
             return;
         }
@@ -1961,6 +2036,11 @@ public final class WebSourceView extends FrameLayout {
     }
 
     void clearBrowserCache() {
+        if (legacy != null) {
+            if (legacy.active) legacy.command("cache");
+            else getContext().startService(new android.content.Intent(getContext(), LegacyWebCacheService.class));
+            cachedBrowserCacheBytes = 0L; browserCacheMeasuredAt = 0L; return;
+        }
         if (destroyed) {
             return;
         }
@@ -2005,6 +2085,7 @@ public final class WebSourceView extends FrameLayout {
     }
 
     boolean cancelRemoteMouseButton(MotionEvent release) {
+        if (legacy != null) { android.os.Bundle data = new android.os.Bundle(); data.putParcelable("motion", release); legacy.send("mouseCancel", data); return legacy.visible; }
         if (webView == null || !pageActive) return false;
         // Chromium ignores ACTION_CANCEL for mouse input. Release outside the
         // document so JS drag handlers receive mouseup without clicking the
@@ -2018,6 +2099,7 @@ public final class WebSourceView extends FrameLayout {
     }
 
     String browserUserAgent() {
+        if (legacy != null) return legacy.value("ua");
         return browserUserAgent == null ? activeUserAgent : browserUserAgent;
     }
 
@@ -2056,6 +2138,7 @@ public final class WebSourceView extends FrameLayout {
 
     void inspectSmartContext(float screenX, float screenY,
             final SmartContextCallback callback) {
+        if (legacy != null) { legacy.inspect(screenX, screenY, callback); return; }
         if (callback == null) return;
         if (webView == null || !pageActive || !isPageVisible() || destroyed) {
             callback.onResult(new JSONObject());
@@ -2119,6 +2202,7 @@ public final class WebSourceView extends FrameLayout {
     }
 
     void showSmartContextAt(float screenX, float screenY) {
+        if (legacy != null) { android.os.Bundle data = LegacyWebSession.bundle("x", screenX); data.putFloat("y", screenY); legacy.send("context", data); return; }
         showSystemMouseContext(screenX, screenY);
     }
 
@@ -2264,6 +2348,7 @@ public final class WebSourceView extends FrameLayout {
     }
 
     boolean markImageAsAd(String url) {
+        if (legacy != null) { legacy.send("ad", LegacyWebSession.bundle("url", url)); return legacy.active; }
         if (!WebAdBlocker.markAsAd(getContext(), url)) return false;
         if (webView != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
             String script = "(function(u){var a=document.images;for(var i=0;i<a.length;i++)"
@@ -2274,8 +2359,8 @@ public final class WebSourceView extends FrameLayout {
         return true;
     }
 
-    String activeUserAgent() { return activeUserAgent; }
-    String activePageUrl() { return pageUrl; }
+    String activeUserAgent() { return legacy != null ? legacy.value("ua") : activeUserAgent; }
+    String activePageUrl() { return legacy != null ? legacy.value("url") : pageUrl; }
 
     private static String safe(String value) { return value == null ? "" : value; }
 
@@ -2291,11 +2376,20 @@ public final class WebSourceView extends FrameLayout {
     }
 
     void resumePage() {
+        if (legacy != null) {
+            // Re-enter the browser when the launcher/Recents returns to the player's task.
+            postDelayed(() -> {
+                if (getContext() instanceof MainActivity && ((MainActivity)getContext()).hasWindowFocus()
+                        && ((MainActivity)getContext()).canPresentLegacyWeb()) legacy.present();
+            }, 300L);
+            return; // The isolated Activity owns its actual foreground lifecycle.
+        }
         hostResumed = true;
         updatePageLifecycle();
     }
 
     String currentPageUrl() {
+        if (legacy != null) return legacy.active ? legacy.value("url") : "";
         if (!hasRetainedPage()) return "";
         String current = webView == null ? null : webView.getUrl();
         if (current == null || !(current.startsWith("https://") || current.startsWith("http://"))) current = pageUrl;
@@ -2303,6 +2397,7 @@ public final class WebSourceView extends FrameLayout {
     }
 
     void pausePage() {
+        if (legacy != null) return;
         // Remember this even without a page: background channel changes must
         // inherit the session lifecycle, not unconditionally resume a new page.
         hostResumed = false;
@@ -2310,6 +2405,7 @@ public final class WebSourceView extends FrameLayout {
     }
 
     void destroyPage() {
+        if (legacy != null) { legacy.close(); destroyed = true; return; }
         if (destroyed) return;
         destroyed = true;
         releaseRetiredWebViews();
@@ -2335,8 +2431,8 @@ public final class WebSourceView extends FrameLayout {
 
     // Called on the UI thread. Retained documents keep their resource identity;
     // reloads and new documents must never inherit another document's resources.
-    String currentResourcePageKey() { return resourcePageKey; }
-    String currentPageTitle() { return controllerPageTitle.length() > 0 ? controllerPageTitle : safe(pageUrl); }
+    String currentResourcePageKey() { return legacy != null ? legacy.value("pageKey") : resourcePageKey; }
+    String currentPageTitle() { return legacy != null ? legacy.value("title") : controllerPageTitle.length() > 0 ? controllerPageTitle : safe(pageUrl); }
 
     private WebTabBar.Tab currentBookmarkChannel() {
         WebTabBar.Tab tab = tabBar.active();
@@ -2347,6 +2443,7 @@ public final class WebSourceView extends FrameLayout {
     }
 
     void trimMemory() {
+        if (legacy != null) { legacy.command("trim"); return; }
         // Keep active/retained documents and history intact. No renderer teardown
         // or SQLite/file work in the system's main-thread memory callback.
         tabBar.trimMemory();
@@ -2354,16 +2451,19 @@ public final class WebSourceView extends FrameLayout {
     }
 
     String currentChannelTitle() {
+        if (legacy != null) return legacy.value("channelTitle");
         WebTabBar.Tab tab = currentBookmarkChannel();
         return tab == null ? currentPageTitle() : tab.bookmarkTitle;
     }
 
     String currentChannelUrl() {
+        if (legacy != null) return legacy.value("channelUrl");
         WebTabBar.Tab tab = currentBookmarkChannel();
         return tab == null ? activePageUrl() : tab.bookmarkUrl;
     }
 
     String currentChannelGroup() {
+        if (legacy != null) return legacy.value("group");
         WebTabBar.Tab tab = currentBookmarkChannel();
         return tab == null ? "网页" : tab.bookmarkGroup.length() > 0 ? tab.bookmarkGroup : "网页收藏";
     }
@@ -2374,6 +2474,7 @@ public final class WebSourceView extends FrameLayout {
     }
 
     JSONObject currentWebMediaState() {
+        if (legacy != null) return legacy.media();
         if (!canReadWebMedia()) return new JSONObject();
         long now = android.os.SystemClock.elapsedRealtime();
         if (now - webMediaSampleAt < (webMediaPending ? 2500L : 500L)) return webMediaState;
@@ -2394,6 +2495,7 @@ public final class WebSourceView extends FrameLayout {
     interface MediaControlResult { void complete(String error); }
 
     void controlWebMedia(String action, String pageKey, String mediaToken, MediaControlResult result) {
+        if (legacy != null) { legacy.mediaControl(action, pageKey, mediaToken, result); return; }
         if (!canReadWebMedia() || !currentResourcePageKey().equals(pageKey)
                 || mediaToken.length() == 0 || !mediaToken.equals(webMediaState.optString("token"))) {
             result.complete("网页媒体已变化，请刷新后重试");
@@ -2449,6 +2551,9 @@ public final class WebSourceView extends FrameLayout {
                 || !pageActive || requestId < 0) {
             return;
         }
+        // A channel document can itself have a .m3u8/.mp4 suffix. It has already
+        // been classified as a webpage; never auto-play that document as media.
+        if (sameDocument(url, client.mainDocumentUrl)) return;
         final String streamUrl = cachedMediaPlaylist(url);
         if (streamUrl == null) {
             return;
@@ -2791,6 +2896,7 @@ public final class WebSourceView extends FrameLayout {
             if (requestAdBlockEnabled && !sameDocument(url, mainDocumentUrl)
                     && WebAdBlocker.shouldBlock(url)) return blockedResponse();
             if (this != sourceClient || view != webView || !pageActive) return null;
+            if (sameDocument(url, htmlMimeOverrideUrl)) return interceptConfirmedHtml(view, url);
             observeResource(view, this, url);
             String cookies = claimHttpsFallback(url);
             if (cookies != null) {
@@ -2819,8 +2925,21 @@ public final class WebSourceView extends FrameLayout {
             if (this != sourceClient || view != webView || !pageActive) {
                 return null;
             }
-            observeResource(view, this, url);
+            if (request.isForMainFrame() && "GET".equals(request.getMethod())
+                    && sameDocument(url, htmlMimeOverrideUrl)) return interceptConfirmedHtml(view, url);
+            if (!request.isForMainFrame()) observeResource(view, this, url);
             return null;
+        }
+
+        private WebResourceResponse interceptConfirmedHtml(WebView view, String url) {
+            return LegacyWebHttp.intercept(url, activeUserAgent, htmlMimeOverrideCookies,
+                    (cookieUrl, value) -> view.post(() -> CookieManager.getInstance().setCookie(cookieUrl, value)),
+                    target -> view.post(() -> {
+                        if (this != sourceClient || view != webView || !pageActive) return;
+                        htmlMimeOverrideUrl = target;
+                        htmlMimeOverrideCookies = CookieManager.getInstance().getCookie(target);
+                        view.loadUrl(target);
+                    }), true);
         }
 
         @Override
@@ -2863,9 +2982,19 @@ public final class WebSourceView extends FrameLayout {
             pageLoadTerminalGeneration = pageLoadGeneration;
             setLoadingVisible(false);
             if (listener != null) {
-                listener.onPageError(requestId,
+                listener.onPageUnavailable(requestId,
                         description == null ? "网页加载失败" : description);
             }
+        }
+
+        @Override public void onReceivedHttpError(WebView view, WebResourceRequest request,
+                WebResourceResponse response) {
+            if (Build.VERSION.SDK_INT < 23 || this != sourceClient || view != webView
+                    || !pageActive || !request.isForMainFrame()) return;
+            pageLoadTerminalGeneration = pageLoadGeneration;
+            setLoadingVisible(false);
+            if (listener != null) listener.onPageUnavailable(requestId,
+                    "HTTP " + response.getStatusCode());
         }
 
         @Override

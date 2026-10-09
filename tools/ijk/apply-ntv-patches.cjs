@@ -24,6 +24,10 @@ overlay('module-ntv.sh', 'config/module.sh');
 overlay('ntv_dolby_audio.inc', 'ijkmedia/ijkplayer/ntv_dolby_audio.inc');
 overlay('ntv_dolby_vision.h', 'ijkmedia/ijkplayer/ntv_dolby_vision.h');
 overlay('ntv_subtitle_text.h', 'ijkmedia/ijkplayer/ntv_subtitle_text.h');
+overlay('ntv_stream_timing.h', 'ijkmedia/ijkplayer/ntv_stream_timing.h');
+overlay('ntv_codec_performance.h', 'ijkmedia/ijkplayer/ntv_codec_performance.h');
+overlay('ntv_stream_probe.h', 'ijkmedia/ijkplayer/ntv_stream_probe.h');
+function applyBase() {
 const def = 'ijkmedia/ijkplayer/ff_ffplay_def.h';
 edit(def, '    struct AudioParams audio_tgt;', '    void *ntv_audio_output;\n    struct AudioParams audio_tgt;');
 edit(def, '    int mediacodec_all_videos;', '    int ntv_passthrough;\n    volatile int ntv_pcm_volume;\n    int mediacodec_all_videos;');
@@ -300,4 +304,144 @@ for (const arch of ['arm64', 'armv7a']) {
                   }
               }`);
 }
-console.log('Applied nTv Dolby overlays to ' + root);
+}
+const def = 'ijkmedia/ijkplayer/ff_ffplay_def.h';
+const player = 'ijkmedia/ijkplayer/ff_ffplay.c';
+if (!fs.readFileSync(path.join(root, def), 'utf8').includes('NtvStreamTiming ntv_timing;')) applyBase();
+
+// Ordinary hardware playback: tolerate scheduling jitter without the old
+// alternate-frame early-drop policy. Truly stale decoded pictures are released
+// immediately so codec buffers can catch up; audio remains the master clock.
+edit(def, '    int ntv_live_video;', '    int ntv_frame_sync;\n    NtvStreamTiming ntv_timing;\n    AVCodecParserContext *ntv_source_parser;\n    AVCodecContext *ntv_source_context;\n    int ntv_source_parser_serial;\n    int ntv_live_video;');
+edit(def, '#include "config.h"', '#include "config.h"\n#include "ntv_stream_timing.h"');
+edit(def, '    ffp->ntv_live_video = 0;', '    ffp->ntv_frame_sync = 0;\n    if (ffp->ntv_source_parser) av_parser_close(ffp->ntv_source_parser);\n    ffp->ntv_source_parser = NULL;\n    avcodec_free_context(&ffp->ntv_source_context);\n    ffp->ntv_source_parser_serial = 0;\n    memset(&ffp->ntv_timing, 0, sizeof(ffp->ntv_timing));\n    ffp->ntv_live_video = 0;');
+edit('ijkmedia/ijkplayer/ff_ffplay_options.h', '    { "ntv-live-video",', `    { "ntv-frame-sync", "hardware decoded-picture jitter tolerance with audio sync",
+        OPTION_OFFSET(ntv_frame_sync), OPTION_INT(0, 0, 1) },
+    { "ntv-live-video",`);
+edit('ijkmedia/ijkplayer/ff_ffplay_options.h',
+    'OPTION_INT(MAX_QUEUE_SIZE, 0, MAX_QUEUE_SIZE)',
+    'OPTION_INT(MAX_QUEUE_SIZE, 0, 128 * 1024 * 1024)');
+const codec = 'ijkmedia/ijkplayer/android/pipeline/ffpipenode_android_mediacodec_vdec.c';
+edit(codec, 'diff - is->frame_last_filter_delay < 0 &&',
+    'diff - is->frame_last_filter_delay < (ffp->ntv_frame_sync ? -0.080 : 0) &&', 2);
+edit(codec, 'if (is->continuous_frame_drops_early > ffp->framedrop)',
+    'if (is->continuous_frame_drops_early > (ffp->ntv_frame_sync ? 5 : ffp->framedrop))', 2);
+edit(player,
+    '&& time > is->frame_timer + duration) {',
+    `&& time > is->frame_timer + duration
+                        && (!ffp->ntv_frame_sync || ffp->stat.vdec_type != FFP_PROPV_DECODER_MEDIACODEC
+                            || (!isnan(vp->pts) && !isnan(get_master_clock(is))
+                                && vp->pts < get_master_clock(is) - 0.080))) {`);
+// Decoder production wakes an empty video queue; scheduled frames retain their
+// deadline. Avoid the fixed 10 ms polling penalty on 50/60 fps output.
+edit(player, `            } else {
+                av_usleep((int)(int64_t)(remaining_time * 1000000.0));
+            }
+        }
+        remaining_time = REFRESH_RATE;`, `            } else if (ffp->ntv_frame_sync && !is->paused) {
+                SDL_LockMutex(is->pictq.mutex);
+                if (is->pictq.size <= is->pictq.rindex_shown && !is->force_refresh)
+                    SDL_CondWaitTimeout(is->pictq.cond, is->pictq.mutex, 10);
+                else {
+                    SDL_UnlockMutex(is->pictq.mutex);
+                    av_usleep((int)(int64_t)(remaining_time * 1000000.0));
+                    SDL_LockMutex(is->pictq.mutex);
+                }
+                SDL_UnlockMutex(is->pictq.mutex);
+            } else {
+                av_usleep((int)(int64_t)(remaining_time * 1000000.0));
+            }
+        }
+        remaining_time = REFRESH_RATE;`);
+edit(player, '        SDL_VoutDisplayYUVOverlay(ffp->vout, vp->bmp);', `        int ntv_display_result = SDL_VoutDisplayYUVOverlay(ffp->vout, vp->bmp);
+        if (ntv_display_result >= 0)
+            ntv_output_frame(&ffp->ntv_timing, av_gettime_relative() / 1000, vp->pts, vp->serial);`);
+edit(player, '#include "ff_ffplay.h"', '#include "ff_ffplay.h"\n#include "ntv_stream_probe.h"');
+edit(player, '            packet_queue_put(&is->videoq, pkt);', `            ntv_measure_source(ffp, is->video_st, pkt, is->videoq.serial);
+            packet_queue_put(&is->videoq, pkt);`);
+edit(player, `            if (ffp && ffp->ntv_live_video && ffp->is && !ffp->is->paused
+                    && (uint32_t)((uint32_t)(av_gettime_relative() / 1000)
+                            - ffp->ntv_last_video_output_ms) > 1000)
+                return 0;
+            return ffp ? ffp->stat.vfps : default_value;`, `            return ffp && ffp->is && !ffp->is->paused
+                    ? ntv_output_fps(&ffp->ntv_timing, av_gettime_relative() / 1000) : 0;
+        case 11001: /* nTv: compressed access-unit timestamp cadence */
+            return ffp ? ffp->ntv_timing.source_fps : default_value;`);
+edit(player, '        case FFP_PROP_INT64_SELECTED_VIDEO_STREAM:', `        case 22001: /* nTv: successful submissions of distinct video frames */
+            return ffp ? ffp->ntv_timing.output_total : default_value;
+        case FFP_PROP_INT64_SELECTED_VIDEO_STREAM:`);
+// FFmpeg 3.4 misidentifies registered AVS3 audio as MP3. It has no AVS3
+// decoder: exclude this stream before best-stream selection, including initial
+// user-track overrides. AAC and other supported audio retain normal selection.
+edit(player, `    if (!ffp->video_disable)
+        st_index[AVMEDIA_TYPE_VIDEO] =`, `    for (int n = 0; n < ic->nb_streams; ++n) {
+        AVCodecParameters *par = ic->streams[n]->codecpar;
+        if (par->codec_type == AVMEDIA_TYPE_AUDIO && par->codec_tag == MKTAG('a','v','3','a')) {
+            av_log(ffp, AV_LOG_INFO, "nTv: skip unsupported AVS3 audio stream %d, prefer decodable alternative\\n", n);
+            par->codec_id = AV_CODEC_ID_NONE;
+            if (st_index[AVMEDIA_TYPE_AUDIO] == n) st_index[AVMEDIA_TYPE_AUDIO] = -1;
+        }
+    }
+    if (!ffp->video_disable)
+        st_index[AVMEDIA_TYPE_VIDEO] =`);
+edit('ijkmedia/ijkplayer/ijkmeta.c',
+    'const char *codec_name = avcodec_get_name(codecpar->codec_id);',
+    `const char *codec_name = codecpar->codec_tag == MKTAG('a','v','3','a')
+                ? "avs3 (unsupported)" : avcodec_get_name(codecpar->codec_id);`);
+edit(player, '    if (!ffp->audio_disable)\n        st_index[AVMEDIA_TYPE_AUDIO] =',
+    '    AVCodec *ntv_audio_decoder = NULL;\n    if (!ffp->audio_disable)\n        st_index[AVMEDIA_TYPE_AUDIO] =');
+edit(player, `                                st_index[AVMEDIA_TYPE_VIDEO],
+                                NULL, 0);`, `                                st_index[AVMEDIA_TYPE_VIDEO],
+                                &ntv_audio_decoder, 0);`);
+edit(codec, '#include "../../ntv_dolby_vision.h"',
+    '#include "../../ntv_dolby_vision.h"\n#include "../../ntv_codec_performance.h"');
+edit(codec, '    SDL_AMediaFormat         *input_aformat;', `    bool ntv_disable_performance;
+    float ntv_performance_rate;
+    SDL_AMediaFormat         *input_aformat;`);
+const formatCreate = '    opaque->input_aformat = SDL_AMediaFormatJava_createVideoFormat(env, opaque->mcc.mime_type, opaque->codecpar->width, opaque->codecpar->height);';
+// Canonicalise the whole format prefix: later DV edits used to break the
+// smaller idempotency marker and duplicate this block on subsequent runs.
+{
+    const file = path.join(root,codec);
+    const text = fs.readFileSync(file,'utf8').replace(/\r\n/g,'\n');
+    const prefix = '    SDL_AMediaFormat_deleteP(&opaque->output_aformat);';
+    const start = text.indexOf(prefix);
+    const end = text.indexOf('    if (opaque->codecpar->extradata',start);
+    if (start < 0 || end < 0 || text.indexOf(formatCreate,start) > end)
+        throw new Error('Unexpected codec format prefix');
+    fs.writeFileSync(file,text.slice(0,start)+`${prefix}
+    SDL_AMediaFormat_deleteP(&opaque->input_aformat);
+${formatCreate}
+    if (!opaque->input_aformat) return -1;
+    opaque->ntv_performance_rate = 0;
+    if (!strcmp(opaque->mcc.mime_type,"video/dolby-vision")) {
+        SDL_AMediaFormat_setInt32(opaque->input_aformat,"profile",opaque->mcc.profile);
+        SDL_AMediaFormat_setInt32(opaque->input_aformat,"level",opaque->mcc.level);
+    }
+`+text.slice(end));
+}
+const configureCall = '    amc_ret = SDL_AMediaCodec_configure_surface(env, opaque->acodec, opaque->input_aformat, opaque->jsurface, NULL, 0);';
+edit(codec, '\n' + configureCall, `
+    AVRational ntv_rate = av_guess_frame_rate(opaque->ffp->is->ic, opaque->ffp->is->video_st, NULL);
+    opaque->ntv_performance_rate = opaque->ffp->ntv_frame_sync && !opaque->ntv_disable_performance
+            ? ntv_codec_hint(env, opaque->input_aformat, opaque->mcc.codec_name,
+                    opaque->mcc.mime_type, opaque->codecpar->width, opaque->codecpar->height,
+                    av_q2d(ntv_rate)) : 0;
+${configureCall}
+    if (amc_ret != SDL_AMEDIA_OK && opaque->ntv_performance_rate > 0) {
+        ALOGW("nTv: codec rejected performance hint; retry original configuration");
+        opaque->ntv_disable_performance = true;
+        SDL_VoutAndroid_setAMediaCodec(opaque->weak_vout, NULL);
+        SDL_AMediaCodec_decreaseReferenceP(&opaque->acodec);
+        opaque->acodec = create_codec_l(env, node);
+        if (opaque->acodec && recreate_format_l(env, node) == 0)
+            amc_ret = SDL_AMediaCodec_configure_surface(env, opaque->acodec, opaque->input_aformat, opaque->jsurface, NULL, 0);
+    }`, 2);
+edit('ijkmedia/ijkplayer/android/ijkplayer_jni.c', 'extern void ntv_dolby_jni_init(JNIEnv *env);',
+    'extern void ntv_dolby_jni_init(JNIEnv *env);\nextern void ntv_codec_jni_init(JNIEnv *env);');
+edit('ijkmedia/ijkplayer/android/ijkplayer_jni.c', '    ntv_dolby_jni_init(env);',
+    '    ntv_dolby_jni_init(env);\n    ntv_codec_jni_init(env);');
+require('./apply-hdr-patches.cjs')(root);
+require('./apply-video-info-patches.cjs')(root);
+require('./apply-vod-buffer-patches.cjs')(root);
+console.log('Applied nTv native playback overlays to ' + root);

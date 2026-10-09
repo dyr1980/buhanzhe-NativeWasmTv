@@ -12,13 +12,14 @@ function renderPlaylistGroupSettings() {
   for (var i = 0; i < playlistGroups.length; i++) {
     var group = playlistGroups[i],
       item = document.createElement("div");
-    item.className = "group-item";
+    item.className = "group-item" + (group.sourceId && !group.parent ? " group-child" : "");
     var copy = document.createElement("div");
     copy.className = "group-copy";
     var name = document.createElement("b");
     name.textContent = group.name || "未命名分组";
     var count = document.createElement("span");
-    count.textContent = String(group.channelCount || 0) + " 个频道";
+    count.textContent = String(group.channelCount || 0) + " 个频道"
+      + (group.parent ? " · 开启后合为一组" : "");
     copy.appendChild(name);
     copy.appendChild(count);
     var enabled = document.createElement("input");
@@ -42,7 +43,7 @@ function savePlaylistGroupState(input) {
   input.disabled = true;
   api(
     "/api/settings",
-    { playlistGroupStates: [{ name: group.name, enabled: enabled }] },
+    { playlistGroupStates: [{ id: group.id, name: group.name, enabled: enabled }] },
     function (error, result) {
       input.disabled = false;
       if (error) {
@@ -51,6 +52,7 @@ function savePlaylistGroupState(input) {
         return;
       }
       group.enabled = enabled;
+      refresh();
       toast(result.message || "频道分组设置已保存");
     }
   );

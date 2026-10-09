@@ -6,6 +6,9 @@ import android.webkit.WebResourceResponse;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.PushbackInputStream;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.Charset;
@@ -20,13 +23,21 @@ final class LegacyWebHttp {
     static boolean enabled() { return Build.VERSION.SDK_INT < 21; }
 
     static WebResourceResponse intercept(String url, String userAgent, String cookies, Cookies sink, Redirect redirect) {
-        if (!enabled() || url == null || !url.startsWith("https://")) return null;
+        return intercept(url, userAgent, cookies, sink, redirect, false);
+    }
+
+    /** Correct a main document MIME only after the channel resolver identified HTML. */
+    static WebResourceResponse intercept(String url, String userAgent, String cookies,
+            Cookies sink, Redirect redirect, boolean forceHtml) {
+        if (url == null || (!forceHtml && (!enabled() || !url.startsWith("https://")))) return null;
         HttpURLConnection connection = null;
         try {
             URL target = new URL(url);
             for (int hops = 0; hops < 8; hops++) {
-                if (!"https".equals(target.getProtocol())) return null;
-                connection = NetworkClient.open(target); // Existing OkHttp/TLS compatibility.
+                if (!"https".equals(target.getProtocol())
+                        && (!forceHtml || !"http".equals(target.getProtocol()))) return null;
+                connection = forceHtml ? NetworkClient.openBounded(target, 12000)
+                        : NetworkClient.open(target); // Existing OkHttp/TLS compatibility.
                 connection.setRequestMethod("GET");
                 connection.setInstanceFollowRedirects(false);
                 connection.setConnectTimeout(10000);
@@ -49,20 +60,56 @@ final class LegacyWebHttp {
                 // downloads and unknown request methods to WebView's own network stack.
                 if (code != 200) return null;
                 MediaType type = MediaType.parse(connection.getContentType() == null ? "" : connection.getContentType());
-                if (type == null || !"text".equals(type.type()) || !"html".equals(type.subtype())) return null;
+                if (!forceHtml && (type == null || !"text".equals(type.type()) || !"html".equals(type.subtype()))) return null;
+                InputStream body = connection.getInputStream();
+                if (forceHtml) {
+                    // Recheck the second GET; a dynamic URL may have changed since probing.
+                    PushbackInputStream checked = new PushbackInputStream(body, 1024);
+                    byte[] prefix = new byte[1024]; int length = 0;
+                    while (length < prefix.length) {
+                        int read = checked.read(prefix, length, prefix.length - length);
+                        if (read < 0) break;
+                        length += read;
+                        if (HttpStreamResolver.isHtmlPrefix(Arrays.copyOf(prefix, length))) break;
+                    }
+                    if (!HttpStreamResolver.isHtmlPrefix(Arrays.copyOf(prefix, length))) {
+                        checked.close(); return null;
+                    }
+                    checked.unread(prefix, 0, length); body = checked;
+                }
                 if (!target.toString().equals(url)) {
                     redirect.navigate(target.toString());
                     return new WebResourceResponse("text/html", "UTF-8", new java.io.ByteArrayInputStream(new byte[0]));
                 }
                 final HttpURLConnection owned = connection;
-                InputStream stream = new FilterInputStream(connection.getInputStream()) {
+                InputStream stream = new FilterInputStream(body) {
                     @Override public void close() throws IOException {
                         try { super.close(); } finally { owned.disconnect(); }
                     }
                 };
                 Log.i("LegacyWebHttp", "HTTPS GET 200 " + target.getHost());
                 WebResourceResponse response = new WebResourceResponse("text/html",
-                        type.charset(Charset.forName("UTF-8")).name(), stream);
+                        (type == null ? Charset.forName("UTF-8")
+                                : type.charset(Charset.forName("UTF-8"))).name(), stream);
+                if (forceHtml && Build.VERSION.SDK_INT >= 21) {
+                    Map<String, String> headers = new HashMap<>();
+                    for (Map.Entry<String, List<String>> entry : connection.getHeaderFields().entrySet()) {
+                        String key = entry.getKey();
+                        if (key == null || entry.getValue() == null
+                                || "Content-Type".equalsIgnoreCase(key)
+                                || "Content-Encoding".equalsIgnoreCase(key)
+                                || "Content-Length".equalsIgnoreCase(key)
+                                || "Transfer-Encoding".equalsIgnoreCase(key)) continue;
+                        StringBuilder joined = new StringBuilder();
+                        for (String value : entry.getValue()) {
+                            if (joined.length() > 0) joined.append(", ");
+                            joined.append(value);
+                        }
+                        headers.put(key, joined.toString());
+                    }
+                    response.setStatusCodeAndReasonPhrase(200, "OK");
+                    response.setResponseHeaders(headers);
+                }
                 connection = null;
                 return response;
             }

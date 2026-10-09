@@ -1,7 +1,10 @@
 const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
 const source=fs.readFileSync('app/src/main/java/xiao/bu/tv/WebSourceView.java','utf8');
-const method=source.slice(source.indexOf('void setMultimediaPaused'),source.indexOf('private void ensureWebView'));
+const begin=source.indexOf('private void setMultimediaPaused(WebView target');
+assert.ok(begin>=0,'Extract the WebView script, excluding legacy IPC pause/play commands');
+const method=source.slice(begin,source.indexOf('private void ensureWebView',begin));
 const scripts=[...method.matchAll(/(?:\?|:)\s*("(?:[^"\\]|\\.)*");?/g)].map(m=>JSON.parse(m[1]));
+assert.equal(scripts.length,2);
 let tick;const make=(muted,paused)=>({muted,paused,pause(){this.paused=true;},play(){this.paused=false;return {catch(){}};}});
 const playing=make(false,false),paused=make(true,true),nested=make(false,false);
 const child={querySelectorAll:s=>s==='iframe'?[]:[nested]};

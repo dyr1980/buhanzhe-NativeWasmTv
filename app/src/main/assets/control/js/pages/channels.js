@@ -292,6 +292,11 @@ function renderPlaylistSources() {
   updateConfigStats();
 }
 function updateMergedConfigStatsFromGroups() {
+  if (state && state.settings.playlistGroupStats) {
+    var stats = state.settings.playlistGroupStats;
+    updateConfigStats(stats.groupCount, stats.channelCount);
+    return;
+  }
   if (!state || !state.settings.mobileMergedPlaylist) return;
   var total = 0;
   for (var i = 0; i < playlistGroups.length; i++)
@@ -582,10 +587,16 @@ function githubProxySourceUrl(value) {
 }
 
 function requestPlaylistText(source, done) {
-  var routes = githubSourceRoutes(source.location), index = 0, settled = false;
+  var routes = githubSourceRoutes(source.location), index = 0, settled = false,
+    activeRequest = null,
+    deadlineTimer = setTimeout(function () {
+      finish(new Error("频道源读取超时，已跳过此来源，请稍后重试"));
+    }, 30000);
   function finish(error, text) {
     if (settled) return;
     settled = true;
+    clearTimeout(deadlineTimer);
+    if (activeRequest && activeRequest.readyState !== 4) activeRequest.abort();
     done(error, text || "");
   }
   function nextRemote(lastError) {
@@ -620,6 +631,7 @@ function requestPlaylistText(source, done) {
       nextRemote(error);
     }
     try {
+      activeRequest = request;
       request.open("GET", route.url, true);
       request.timeout = 8000;
       request.onreadystatechange = function () {
@@ -641,7 +653,9 @@ function requestPlaylistText(source, done) {
   }
   cached.open("GET", "/api/playlist/source?location="
     + encodeURIComponent(source.location), true);
-  cached.timeout = 60000;
+  // Native validation has a six-second budget, including mirror retries.
+  // Leave transport slack without blocking phone fallback for a full minute.
+  cached.timeout = 8000;
   cached.onreadystatechange = function () {
     if (cached.readyState !== 4 || cached.status === 0) return;
     if (cached.status >= 200 && cached.status < 300) {
@@ -652,7 +666,8 @@ function requestPlaylistText(source, done) {
   cached.onerror = function () { cachedFailed(new Error("无法读取频道源")); };
   cached.ontimeout = function () { cachedFailed(new Error("读取频道源超时，请检查连接")); };
   cached.onabort = function () { cachedFailed(new Error("频道源读取已取消")); };
-  cached.send();
+  activeRequest = cached;
+  try { cached.send(); } catch (error) { cachedFailed(error); }
 }
 
 function playlistAttribute(line, name) {
@@ -897,7 +912,9 @@ function mergeAndPushPlaylistSources() {
     failures = [],
     warningCount = 0,
     firstWarning = "",
-    index = 0;
+    index = 0,
+    activeReads = 0,
+    completedReads = 0;
   function finish(error) {
     if (error) {
       mergeBusy = false;
@@ -906,6 +923,12 @@ function mergeAndPushPlaylistSources() {
       toast(error.message || String(error), true);
       renderPlaylistSources();
       return;
+    }
+    var sourcePlaylists = [];
+    for (var sourceIndex = 0; sourceIndex < results.length; sourceIndex++) {
+      var parsedSource = results[sourceIndex];
+      sourcePlaylists.push({ id: parsedSource.sourceId,
+        playlist: buildMergedM3u(mergePhoneEntries([parsedSource])).text });
     }
     var merged = mergePhoneEntries(results);
     if (!merged.channels.length) {
@@ -920,6 +943,7 @@ function mergeAndPushPlaylistSources() {
       "/api/playlist/merge",
       {
         sources: cleaned,
+        sourcePlaylists: sourcePlaylists,
         playlist: built.text,
         mergedSourceCount: results.length
       },
@@ -958,18 +982,27 @@ function mergeAndPushPlaylistSources() {
     );
   }
   function next() {
-    if (index >= enabled.length) {
+    if (completedReads >= enabled.length) {
+      results = results.filter(function (parsed) { return !!parsed; });
       finish(null);
       return;
     }
-    var source = enabled[index++];
+    setMergeUi("手机正在整理", "已完成 " + completedReads + " / "
+      + enabled.length + " · 剩余 " + (enabled.length - completedReads) + " 个来源", "working");
+    while (activeReads < 2 && index < enabled.length) readSource(index++);
+  }
+  function readSource(sourceIndex) {
+    var source = enabled[sourceIndex];
+    activeReads++;
     setSourceState(source, "手机正在读取…", "loading");
     setMergeUi(
       "手机正在整理",
-      "读取 " + index + " / " + enabled.length + "：" + source.name,
+      "已完成 " + completedReads + " / " + enabled.length + " · 正在读取：" + source.name,
       "working"
     );
     requestPlaylistText(source, function (error, text) {
+      activeReads--;
+      completedReads++;
       if (error) {
         failures.push(source.name);
         setSourceState(source, error.message, "bad");
@@ -978,9 +1011,10 @@ function mergeAndPushPlaylistSources() {
       }
       try {
         var parsed = parsePlaylistOnPhone(text, source);
+        parsed.sourceId = source.id;
         warningCount += parsed.warningCount;
         if (!firstWarning) firstWarning = parsed.firstWarning;
-        if (parsed.entries.length) results.push(parsed);
+        if (parsed.entries.length) results[sourceIndex] = parsed;
         else failures.push(source.name);
         setSourceState(source, "已解析 " + parsed.entries.length + " 个频道"
           + (parsed.warningCount ? " · 跳过 " + parsed.warningCount + " 条格式错误" : ""),

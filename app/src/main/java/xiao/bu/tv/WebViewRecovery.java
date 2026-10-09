@@ -87,6 +87,9 @@ final class WebViewRecovery {
         @Override public void onReceivedError(WebView v, WebResourceRequest r, WebResourceError e) {
             if (!gone) delegate.onReceivedError(v, r, e);
         }
+        @Override public void onReceivedHttpError(WebView v, WebResourceRequest r, WebResourceResponse response) {
+            if (!gone) delegate.onReceivedHttpError(v, r, response);
+        }
         @Override public void onReceivedSslError(WebView v, SslErrorHandler h, SslError e) {
             if (gone) h.cancel(); else delegate.onReceivedSslError(v, h, e);
         }

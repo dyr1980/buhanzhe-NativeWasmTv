@@ -75,6 +75,19 @@ public final class ReceivedApkCleanup extends BroadcastReceiver {
                 if (!name.matches("received-[0-9]+\\.apk")) continue;
                 File file = new File(directory, name);
                 if (!file.getCanonicalFile().getParentFile().equals(directory.getCanonicalFile())) continue;
+                // Pending uploads from older versions lived in external files
+                // (or cache on Android 7+). Keep cleaning those after upgrading.
+                if (!file.exists()) {
+                    File base = null;
+                    try { base = context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS); }
+                    catch (RuntimeException ignored) { }
+                    File legacy = base == null ? null : new File(new File(base, "updates"), name);
+                    if (legacy != null && legacy.isFile()) file = legacy;
+                    else {
+                        File cached = new File(new File(context.getCacheDir(), "updates"), name);
+                        if (cached.isFile()) file = cached;
+                    }
+                }
                 JSONObject record = new JSONObject(String.valueOf(entry.getValue()));
                 String packageName = record.getString("package");
                 if (target != null && !target.equals(packageName)) continue;
@@ -85,6 +98,7 @@ public final class ReceivedApkCleanup extends BroadcastReceiver {
                     if (version(installed) < record.getLong("version")
                             || installed.lastUpdateTime <= record.getLong("previousUpdate")) continue;
                     if (!file.delete()) continue;
+                    new File(new File(context.getCacheDir(), "apk-installer"), name).delete();
                 }
                 edit.remove(name);
                 changed = true;

@@ -52,7 +52,10 @@ jobs:
 
       - name: 编译三种架构 Release APK
         run: |
-          ./gradlew assembleArm32Release assembleArm64Release assembleX86Release --no-daemon
+          VERSION_CODE=$(date +%s)
+          echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
+          ./gradlew assembleArm32Release assembleArm64Release assembleX86Release \
+            -PversionCodeOverride=$VERSION_CODE --no-daemon
 
       - name: 读取版本号
         run: |
@@ -71,6 +74,7 @@ jobs:
       - name: 生成更新清单
         run: |
           ./gradlew generateVersionFile --no-daemon \
+            -PversionCodeOverride=${{ env.VERSION_CODE }} \
             -PupdateApk32=dist/XCZ.apk \
             -PupdateApk64=dist/XCZ64.apk \
             -PupdateApkX86=dist/XCZX86.apk \

@@ -264,7 +264,8 @@ final class AutoUpdater {
                 && isArm32Build() && supports64Bit();
         String urlField = architectureUpgrade ? "apk64Url" : BuildConfig.UPDATE_APK_URL_FIELD;
         String shaField = architectureUpgrade ? "sha25664" : BuildConfig.UPDATE_SHA256_FIELD;
-        String apkAsset = architectureUpgrade ? "nTv64.apk" : BuildConfig.UPDATE_APK_ASSET;
+        // 修改点 1：将 nTv64.apk 改为 XCZ64.apk
+        String apkAsset = architectureUpgrade ? "XCZ64.apk" : BuildConfig.UPDATE_APK_ASSET;
         String apkUrl = object.optString(urlField, "").trim();
         String sha256 = object.optString(shaField, "")
                 .trim().toLowerCase(Locale.US);
@@ -564,7 +565,8 @@ final class AutoUpdater {
         connection.setInstanceFollowRedirects(true);
         connection.setUseCaches(false);
         connection.setRequestProperty("Accept-Encoding", "identity");
-        connection.setRequestProperty("User-Agent", "nTv/" + BuildConfig.VERSION_NAME
+        // 修改点 2：将 nTv/ 改为 XCZ/
+        connection.setRequestProperty("User-Agent", "XCZ/" + BuildConfig.VERSION_NAME
                 + " Android/" + Build.VERSION.RELEASE);
         return connection;
     }

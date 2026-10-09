@@ -99,6 +99,15 @@
             </select>
           </div>
           <div class="field">
+            <label for="hdrMode">HDR 模式</label>
+            <select id="hdrMode" onchange="saveHdrMode()">
+              <option value="hardware">HDR 硬解（默认）</option>
+              <option value="mapping">HDR 映射</option>
+              <option value="hardware_sdr">硬解软显</option>
+              <option value="bt709">HDR BT.709</option>
+            </select>
+          </div>
+          <div class="field">
             <label for="surfaceMode">Surface 输出模式</label>
             <select id="surfaceMode" onchange="saveDecoder()">
               <option value="normal">普通模式</option>
@@ -123,6 +132,7 @@
         <p class="hint">
           播放器固定使用定制 IJK，支持 RTSP 与 MP2 音频。RTSP 默认走 TCP；局域网低延迟场景可切换 UDP。
         </p>
+        <p class="hint">HDR 硬解：支持对应 HDR 格式的屏幕保留原始输出，普通屏幕或无法确认 HDR 支持时自动映射为 SDR。HDR 映射：将 HDR10 / HLG 转为 SDR。硬解软显：硬解时强制由 GPU 映射为 SDR，适合 HDR 直出黑屏、发灰的设备；手动软解或硬解不可用时兼容软解。HDR BT.709：强制按 SDR 色彩解释，用于色彩标记异常的源。切换后重新播放当前频道。</p>
       </section>
     </main>
     <div id="message" class="message"></div>

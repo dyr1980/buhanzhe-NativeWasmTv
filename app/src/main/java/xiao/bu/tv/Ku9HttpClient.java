@@ -53,13 +53,18 @@ final class Ku9HttpClient {
 
     static String requestJson(String url, String method, String headersJson, String body,
             boolean followRedirects, int maxBytes) {
+        return requestJson(url, method, headersJson, body, followRedirects, maxBytes, 0);
+    }
+
+    static String requestJson(String url, String method, String headersJson, String body,
+            boolean followRedirects, int maxBytes, int timeoutMs) {
         JSONObject result = new JSONObject();
         HttpURLConnection connection = null;
         boolean consumed = false;
         try {
             String requestMethod = TextUtils.isEmpty(method) ? "GET"
                     : method.toUpperCase(Locale.US);
-            connection = open(url, requestMethod, parseHeaders(headersJson), followRedirects);
+            connection = open(url, requestMethod, parseHeaders(headersJson), followRedirects, timeoutMs);
             if (!"GET".equals(requestMethod) && !"HEAD".equals(requestMethod) && body != null) {
                 connection.setDoOutput(true);
                 connection.getOutputStream().write(body.getBytes("UTF-8"));
@@ -139,7 +144,14 @@ final class Ku9HttpClient {
 
     private static HttpURLConnection open(String url, String method, JSONObject headers,
             boolean followRedirects) throws IOException {
-        HttpURLConnection connection = NetworkClient.open(URI.create(url.trim()).toURL());
+        return open(url, method, headers, followRedirects, 0);
+    }
+
+    private static HttpURLConnection open(String url, String method, JSONObject headers,
+            boolean followRedirects, int timeoutMs) throws IOException {
+        java.net.URL target = URI.create(url.trim()).toURL();
+        HttpURLConnection connection = timeoutMs > 0
+                ? NetworkClient.openBounded(target, timeoutMs) : NetworkClient.open(target);
         connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
         connection.setReadTimeout(READ_TIMEOUT_MS);
         connection.setInstanceFollowRedirects(followRedirects);

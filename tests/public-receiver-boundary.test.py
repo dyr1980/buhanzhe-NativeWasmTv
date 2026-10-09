@@ -49,5 +49,6 @@ for token in ["receiveCastCursor", "showRemotePosition", "receiverStreamSessionI
     assert token in main, token
 assert not re.search(r"JSONObject playingSelection\s*=\s*null", main)
 utility_files = list((root / "third_party/android-transcoder").rglob("*.java"))
-assert [p.name for p in utility_files] == ["TextureRender.java"], utility_files
+# The optional texture helper can disappear once the receiver uses SurfaceView.
+assert all(p.name == "TextureRender.java" for p in utility_files), utility_files
 print("PASS public sender exclusion and receiver protocol/cursor boundaries")

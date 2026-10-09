@@ -3,6 +3,7 @@ package xiao.bu.tv;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InterruptedIOException;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -17,6 +18,10 @@ final class HttpStreamResolver {
     private static final int MAX_TRANSIENT_ATTEMPTS = 10;
     private static final int RETRY_DELAY_MS = 80;
     private static final int MAX_TEXT_BYTES = 64 * 1024;
+    private static final int MAX_RESOLVE_MS = 12000;
+    private static final int PROBE_BYTES = 1024;
+    private static final Pattern HTML_START = Pattern.compile(
+            "(?is)^(?:\\s|\\ufeff|<!--.*?-->|<\\?xml.*?\\?>)*<(?:!doctype\\s+html\\b|html\\b|head\\b|body\\b|script\\b|meta\\b|video\\b|iframe\\b)");
     private static final String USER_AGENT = "Mozilla/5.0 (Linux; Android 9; TV) "
             + "AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36";
     private static final Pattern ABSOLUTE_MEDIA_URL = Pattern.compile(
@@ -28,10 +33,22 @@ final class HttpStreamResolver {
     static final class Result {
         final String url;
         final boolean directMedia;
+        final boolean webPage;
+        final boolean htmlMimeOverride;
 
         Result(String url, boolean directMedia) {
+            this(url, directMedia, false);
+        }
+
+        Result(String url, boolean directMedia, boolean webPage) {
+            this(url, directMedia, webPage, false);
+        }
+
+        Result(String url, boolean directMedia, boolean webPage, boolean htmlMimeOverride) {
             this.url = url;
             this.directMedia = directMedia;
+            this.webPage = webPage;
+            this.htmlMimeOverride = htmlMimeOverride;
         }
     }
 
@@ -65,18 +82,20 @@ final class HttpStreamResolver {
         if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
             return false;
         }
-        return !isKnownMediaUrl(lower);
+        // A media-looking URL can redirect to HTML (or return it directly).
+        return true;
     }
 
     static Result resolve(String value) throws IOException {
+        long deadline = System.nanoTime() + MAX_RESOLVE_MS * 1000000L;
         IOException lastError = null;
         for (int attempt = 1; attempt <= MAX_TRANSIENT_ATTEMPTS; attempt++) {
             try {
-                return resolveInternal(value);
+                return resolveInternal(value, deadline);
             } catch (HttpStatusException error) {
                 String fallback = legacyFallback(value, error.statusCode);
                 if (fallback != null) {
-                    return resolveInternal(fallback);
+                    return resolveInternal(fallback, deadline);
                 }
                 if (!isRetryableStatus(error.statusCode)) {
                     throw error;
@@ -87,7 +106,7 @@ final class HttpStreamResolver {
             }
             if (attempt < MAX_TRANSIENT_ATTEMPTS) {
                 try {
-                    Thread.sleep((long) RETRY_DELAY_MS * attempt);
+                    Thread.sleep(Math.min((long) RETRY_DELAY_MS * attempt, remainingMs(deadline)));
                 } catch (InterruptedException interrupted) {
                     Thread.currentThread().interrupt();
                     throw new IOException("源地址解析已取消", interrupted);
@@ -97,13 +116,33 @@ final class HttpStreamResolver {
         throw lastError == null ? new IOException("源地址解析失败") : lastError;
     }
 
-    private static Result resolveInternal(String value) throws IOException {
+    private static int remainingMs(long deadline) throws IOException {
+        checkCancelled();
+        long remaining = (deadline - System.nanoTime()) / 1000000L;
+        if (remaining <= 0) throw new java.net.SocketTimeoutException("源地址内容识别超时");
+        return (int) Math.min(MAX_RESOLVE_MS, remaining);
+    }
+
+    private static boolean isHtmlType(String contentType) {
+        return contentType.contains("text/html") || contentType.contains("application/xhtml+xml");
+    }
+
+    static boolean isHtmlPrefix(byte[] bytes) throws IOException {
+        return HTML_START.matcher(decodeText(bytes)).find();
+    }
+
+    private static void checkCancelled() throws InterruptedIOException {
+        if (Thread.currentThread().isInterrupted()) throw new InterruptedIOException("源地址解析已取消");
+    }
+
+    private static Result resolveInternal(String value, long deadline) throws IOException {
         String current = value;
         for (int redirect = 0; redirect <= MAX_REDIRECTS; redirect++) {
             URI currentUri = httpUri(current);
-            HttpURLConnection connection = NetworkClient.open(currentUri.toURL());
-            connection.setConnectTimeout(7000);
-            connection.setReadTimeout(7000);
+            int remaining = remainingMs(deadline);
+            HttpURLConnection connection = NetworkClient.openBounded(currentUri.toURL(), remaining);
+            connection.setConnectTimeout(Math.min(7000, remaining));
+            connection.setReadTimeout(Math.min(7000, remaining));
             connection.setInstanceFollowRedirects(false);
             connection.setRequestProperty("User-Agent", USER_AGENT);
             connection.setRequestProperty("Accept",
@@ -134,36 +173,45 @@ final class HttpStreamResolver {
                 }
 
                 String contentType = normalizeContentType(connection.getContentType());
-                if (isHlsUrl(current) || contentType.contains("mpegurl")) {
-                    return new Result(current, false);
-                }
-                if (isDirectMediaUrl(current) || isDirectMediaType(contentType)) {
-                    return new Result(current, true);
-                }
-                if (!isTextType(contentType)) {
-                    throw new IOException("源地址没有返回可识别的视频内容");
-                }
-
-                byte[] probe = readAtMost(connection.getInputStream(), MAX_TEXT_BYTES);
+                InputStream input = connection.getInputStream();
+                byte[] probe = readPrefix(input);
                 if (startsWithFlv(probe)) {
                     return new Result(current, true);
                 }
                 if (startsWithTransportStream(probe)) {
                     return new Result(current, true);
                 }
-                String body = new String(probe, "UTF-8").trim();
+                if (startsWithMp4(probe) || startsWithOtherMedia(probe)) return new Result(current, true);
+                String body = decodeText(probe);
                 if (startsWithPlaylist(body)) {
                     return new Result(current, false);
                 }
+                // A real page keeps its navigation/player/scripts. Do not choose
+                // an arbitrary .m3u8 link from its examples, menus or source code.
+                if (HTML_START.matcher(body).find()) return new Result(current, false, true,
+                        !isHtmlType(contentType));
+                boolean apiText = body.startsWith("{") || body.startsWith("[")
+                        || body.startsWith("http://") || body.startsWith("https://");
+                if (!apiText && (contentType.equals("text/html") || contentType.equals("application/xhtml+xml")))
+                    return new Result(current, false, true);
+                if (!apiText && contentType.contains("mpegurl")) return new Result(current, false);
+                if (!apiText && isDirectMediaType(contentType)) return new Result(current, true);
+                // Preserve support for binary media with generic/missing MIME.
+                if (isKnownMediaUrl(current.toLowerCase(Locale.US)) && !looksLikeText(probe))
+                    return new Result(current, !isHlsUrl(current));
+                if (!apiText && !isTextType(contentType))
+                    throw new IOException("源地址没有返回可识别的视频内容");
+                if (probe.length >= PROBE_BYTES) {
+                    ByteArrayOutputStream text = new ByteArrayOutputStream();
+                    text.write(probe);
+                    text.write(readAtMost(input, MAX_TEXT_BYTES - probe.length));
+                    body = decodeText(text.toByteArray());
+                }
+                if (HTML_START.matcher(body).find()) return new Result(current, false, true,
+                        !isHtmlType(contentType));
                 String mediaUrl = findMediaUrl(body);
                 if (mediaUrl != null) {
                     httpUri(mediaUrl);
-                    if (isHlsUrl(mediaUrl)) {
-                        return new Result(mediaUrl, false);
-                    }
-                    if (isDirectMediaUrl(mediaUrl)) {
-                        return new Result(mediaUrl, true);
-                    }
                     current = mediaUrl;
                     continue;
                 }
@@ -344,6 +392,56 @@ final class HttpStreamResolver {
                 && body[0] == 'F' && body[1] == 'L' && body[2] == 'V';
     }
 
+    private static boolean startsWithMp4(byte[] body) {
+        if (body.length < 8) return false;
+        String box = new String(body, 4, 4, java.nio.charset.Charset.forName("US-ASCII"));
+        return "ftyp".equals(box) || "styp".equals(box) || "moov".equals(box)
+                || "moof".equals(box) || "mdat".equals(box);
+    }
+
+    private static boolean startsWithOtherMedia(byte[] b) {
+        if (b.length < 4) return false;
+        return b[0]=='I' && b[1]=='D' && b[2]=='3' && b[3] < 5
+                || b[0]=='O' && b[1]=='g' && b[2]=='g' && b[3]=='S'
+                || b[0]=='R' && b[1]=='I' && b[2]=='F' && b[3]=='F'
+                || (b[0]&255)==0x1a && (b[1]&255)==0x45 && (b[2]&255)==0xdf && (b[3]&255)==0xa3
+                || (b[0]&255)==255 && (b[1]&0xe0)==0xe0 && (b[1]&255)!=254;
+    }
+
+    private static boolean looksLikeText(byte[] bytes) {
+        if (bytes.length == 0) return true;
+        for (byte value : bytes) {
+            int b = value & 255;
+            if (b == 0 || b < 32 && b != 9 && b != 10 && b != 13) return false;
+        }
+        return true;
+    }
+
+    private static String decodeText(byte[] bytes) throws IOException {
+        boolean utf16 = bytes.length >= 2 && ((bytes[0]&255)==255 && (bytes[1]&255)==254
+                || (bytes[0]&255)==254 && (bytes[1]&255)==255);
+        String value = new String(bytes, utf16 ? "UTF-16" : "UTF-8").trim();
+        return value.startsWith("\ufeff") ? value.substring(1).trim() : value;
+    }
+
+    /** Stop as soon as the prefix identifies media or HTML; never wait for EOF
+     * on continuous HTTP media or download the whole page just to open it. */
+    private static byte[] readPrefix(InputStream input) throws IOException {
+        ByteArrayOutputStream output = new ByteArrayOutputStream(PROBE_BYTES);
+        byte[] buffer = new byte[PROBE_BYTES];
+        while (output.size() < PROBE_BYTES) {
+            checkCancelled();
+            int count = input.read(buffer, 0, PROBE_BYTES - output.size());
+            if (count < 0) break;
+            output.write(buffer, 0, count);
+            byte[] bytes = output.toByteArray();
+            String prefix = decodeText(bytes);
+            if (startsWithPlaylist(prefix) || startsWithFlv(bytes) || startsWithMp4(bytes) || startsWithOtherMedia(bytes)
+                    || startsWithTransportStream(bytes) || HTML_START.matcher(prefix).find()) break;
+        }
+        return output.toByteArray();
+    }
+
     /** Detects raw MPEG-TS returned as application/octet-stream and without a suffix. */
     private static boolean startsWithTransportStream(byte[] body) {
         if (body == null) {
@@ -371,6 +469,7 @@ final class HttpStreamResolver {
         int total = 0;
         try {
             while (total < maximum) {
+                checkCancelled();
                 int count = input.read(buffer, 0, Math.min(buffer.length, maximum - total));
                 if (count < 0) {
                     break;

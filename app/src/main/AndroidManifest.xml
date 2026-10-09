@@ -62,6 +62,18 @@
         </activity>
 
         <activity
+            android:name=".LegacyWebActivity"
+            android:process=":web_browser"
+            android:taskAffinity="${applicationId}.web"
+            android:launchMode="singleTask"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:configChanges="keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|density|uiMode"
+            android:screenOrientation="@integer/main_activity_screen_orientation" />
+        <service android:name=".LegacyWebGuardService" android:exported="false" />
+        <service android:name=".LegacyWebCacheService" android:process=":web_browser" android:exported="false" />
+
+        <activity
             android:name=".ManagementActivity"
             android:configChanges="keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|density|uiMode"
             android:exported="false"

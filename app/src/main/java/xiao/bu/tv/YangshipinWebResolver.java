@@ -89,7 +89,7 @@ final class YangshipinWebResolver {
         }
     };
 
-    private Pending pendingRequest;
+    private volatile Pending pendingRequest;
     private final Map<String, CachedUrl> apiCache = new HashMap<String, CachedUrl>();
     private long serverClockOffsetMs = Long.MIN_VALUE;
 
@@ -279,7 +279,7 @@ final class YangshipinWebResolver {
                             + " API for " + channel.name);
                     webView.onResume();
                     webView.loadUrl("https://www.yangshipin.cn/");
-                    webView.postDelayed(timeout, 15000L);
+                    webView.postDelayed(timeout, TIMEOUT_MS);
                 } catch (Exception error) {
                     Log.e(TAG, "Unable to build Yangshipin API request", error);
                     fail(pendingRequest, error instanceof WebViewAvailability.UnavailableException
@@ -423,11 +423,27 @@ final class YangshipinWebResolver {
                 headers.put("Referer", "https://www.yangshipin.cn/");
                 String cookie = CookieManager.getInstance().getCookie(url);
                 if (cookie != null) headers.put("Cookie", cookie);
-                String result = Ku9HttpClient.requestJson(url, method, headers.toString(), body, false, 1024 * 1024);
+                Pending work = pendingRequest;
+                if (work == null) return "{\"code\":0,\"error\":\"request cancelled\"}";
+                int remaining = (int) Math.min(8000L, work.deadlineAt - android.os.SystemClock.elapsedRealtime());
+                if (remaining <= 0) return "{\"code\":0,\"error\":\"request timed out\"}";
+                String result = Ku9HttpClient.requestJson(url, method, headers.toString(), body,
+                        false, 1024 * 1024, remaining);
+                if (pendingRequest != work) return "{\"code\":0,\"error\":\"request cancelled\"}";
                 JSONObject response = new JSONObject(result);
+                if (response.optInt("code") == 0 && pendingRequest == work && !work.nativeRetryUsed) {
+                    work.nativeRetryUsed = true;
+                    NetworkClient.invalidateDns(host);
+                    remaining = (int) Math.min(8000L, work.deadlineAt - android.os.SystemClock.elapsedRealtime());
+                    if (remaining > 0) {
+                        result = Ku9HttpClient.requestJson(url, method, headers.toString(), body,
+                                false, 1024 * 1024, remaining);
+                        response = new JSONObject(result);
+                    }
+                }
                 Log.i(TAG, "Legacy native API path=" + path + " code=" + response.optInt("code")
                         + " error=" + response.optString("error"));
-                return result;
+                return pendingRequest == work ? result : "{\"code\":0,\"error\":\"request cancelled\"}";
             } catch (Exception error) {
                 Log.w(TAG, "Legacy native API request failed", error);
                 return "{\"code\":0}";
@@ -865,6 +881,8 @@ final class YangshipinWebResolver {
         final Channel channel;
         final String definition;
         final Callback callback;
+        final long deadlineAt = android.os.SystemClock.elapsedRealtime() + TIMEOUT_MS;
+        boolean nativeRetryUsed;
         String resolvedUrl;
         String cmgTag;
         String cmgInitialUpdateTag;

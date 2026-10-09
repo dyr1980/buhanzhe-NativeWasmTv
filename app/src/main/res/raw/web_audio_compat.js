@@ -6,17 +6,17 @@
     // Some players initialize volume:0. Correct only their initial
     // playback; subsequent user volume/mute changes must remain untouched.
     var interacted = false;
-    function interaction() { interacted = true; }
+    var interaction = function () { interacted = true; };
     document.addEventListener("touchstart", interaction, true);
     document.addEventListener("mousedown", interaction, true);
     document.addEventListener("keydown", interaction, true);
-    function initialVolume(video) {
+    var initialVolume = function (video) {
       if (!video || (video.tagName !== "VIDEO" && video.tagName !== "AUDIO")
           || video.__ntvInitialAudio || window.__ntvMediaPause) return;
       video.__ntvInitialAudio = true;
       if (!interacted && !window.__ntvMediaPause && !video.muted && video.volume === 0)
         video.volume = 0.6;
-    }
+    };
     document.addEventListener("playing", function (event) { initialVolume(event.target); }, true);
     var videos = document.querySelectorAll("video,audio");
     for (var i = 0; i < videos.length; i++) {

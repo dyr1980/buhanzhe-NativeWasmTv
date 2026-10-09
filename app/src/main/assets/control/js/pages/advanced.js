@@ -46,6 +46,16 @@ function saveDecoder() {
     }
   );
 }
+function saveHdrMode() {
+  var select = document.getElementById("hdrMode");
+  select.disabled = true;
+  api("/api/settings", { hdrMode: select.value }, function (error) {
+    select.disabled = false;
+    if (error) { toast(error.message, true); refresh(); return; }
+    toast("HDR 模式已保存，正在重新播放");
+    refresh();
+  });
+}
 function renderHardwareDecoders() {
   var select = document.getElementById("hardwareDecoder"),
     selected = state.settings.hardwareDecoder || "auto",
@@ -83,6 +93,7 @@ function renderPageState() {
   document.getElementById("reverse").checked = s.reverseKeys === true;
   document.getElementById("autoStart").checked = s.autoStart === true;
   document.getElementById("decoder").value = s.decodeMode || "auto";
+  document.getElementById("hdrMode").value = s.hdrMode || "hardware";
   document.getElementById("surfaceMode").value = s.surfaceMode || "normal";
   document.getElementById("rtspTransport").value = s.rtspTransport || "tcp";
   document.getElementById("spsCompatibility").value = String(s.h264SpsCompatibility !== false);

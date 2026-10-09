@@ -408,6 +408,56 @@ test('native cache and all browser accelerators fail exactly once', () => {
   assert.equal(fallbacks.length,1);assert.equal(calls,1);
 });
 
+test('source reads bound native waiting and abort a stuck route without late completion', () => {
+  const b=browser('channels'), c=b.context;
+  c.state={settings:{githubProxyEnabled:false}};
+  let calls=0, receivedError;
+  c.requestPlaylistText({location:'https://example.com/list.txt'}, (error)=>{calls++;receivedError=error;});
+  const cached=b.requests[b.requests.length-1];
+  assert.equal(cached.timeout,8000);
+  cached.ontimeout();
+  const phone=b.requests[b.requests.length-1];
+  assert.equal(phone.url,'https://example.com/list.txt');
+  b.runTimers(30000);
+  assert.equal(calls,1);assert.ok(receivedError);assert.equal(phone.aborted,true);
+  phone.readyState=4;phone.status=200;phone.responseText='迟到频道,http://example.com/live';
+  phone.onreadystatechange();cached.onerror();
+  assert.equal(calls,1);
+});
+
+test('two source reads run concurrently and preserve configured order after reverse completion', () => {
+  const b=browser('channels'), c=b.context, pending=new Map(), started=[];
+  c.playlistSources=['a','b','c'].map(id=>({id,name:id,location:'https://example.com/'+id,enabled:true}));
+  c.requestPlaylistText=(source,done)=>{started.push(source.id);pending.set(source.id,done);};
+  c.mergeAndPushPlaylistSources();
+  assert.deepEqual(started,['a','b']);
+  pending.get('b')(null,'合集,#genre#\n共享,http://example.com/b');
+  assert.deepEqual(started,['a','b','c']);
+  pending.get('c')(null,'合集,#genre#\n后续,http://example.com/c');
+  assert.equal(b.requests.filter(r=>r.url==='/api/playlist/merge').length,0);
+  pending.get('a')(null,'合集,#genre#\n共享,http://example.com/a');
+  const merges=b.requests.filter(r=>r.url==='/api/playlist/merge');
+  assert.equal(merges.length,1);
+  const payload=JSON.parse(merges[0].body);
+  assert.deepEqual(payload.sourcePlaylists.map(s=>s.id),['a','b','c']);
+  assert.ok(payload.playlist.indexOf('http://example.com/a')<payload.playlist.indexOf('http://example.com/b'));
+  assert.ok(payload.playlist.indexOf('http://example.com/b')<payload.playlist.indexOf('http://example.com/c'));
+});
+
+test('a failed source does not block later reads or repeat the final merge', () => {
+  const b=browser('channels'),c=b.context,pending=new Map();
+  c.playlistSources=['a','b','c'].map(id=>({id,name:id,location:'https://example.com/'+id,enabled:true}));
+  c.requestPlaylistText=(source,done)=>pending.set(source.id,done);
+  c.mergeAndPushPlaylistSources();
+  pending.get('a')(null,'频道甲,http://example.com/a');
+  assert.ok(pending.has('c'));
+  pending.get('c')(null,'频道丙,http://example.com/c');
+  pending.get('b')(new Error('slow source timeout'));
+  const merges=b.requests.filter(r=>r.url==='/api/playlist/merge');
+  assert.equal(merges.length,1);
+  assert.deepEqual(JSON.parse(merges[0].body).sourcePlaylists.map(s=>s.id),['a','c']);
+});
+
 test('invalid source addresses show a toast before any request', () => {
   const b = browser('channels'), c = b.context;
   const bad = 'https://example.com/channels.txt#genre#,';

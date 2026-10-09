@@ -20,6 +20,10 @@ final class ProcessDns implements Dns {
 
     ProcessDns(Dns delegate) { this.delegate = delegate; }
 
+    void invalidate(String hostname) {
+        if (hostname != null) entries.remove(hostname.toLowerCase(Locale.US));
+    }
+
     @Override public List<InetAddress> lookup(final String hostname) throws UnknownHostException {
         if (hostname == null || hostname.length() == 0) throw new UnknownHostException("Empty hostname");
         String key = hostname.toLowerCase(Locale.US);
