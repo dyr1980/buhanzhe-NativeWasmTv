@@ -43,7 +43,18 @@ public final class HttpContentRoutingInstrumentation extends Instrumentation {
                         String type=path.equals("/wrong.m3u8")?"application/vnd.apple.mpegurl":"text/html";
                         if(path.equals("/wrong.mp4"))type="video/mp4";
                         if(path.equals("/playlist.html")){body="#EXTM3U\n#EXT-X-ENDLIST\n";type="text/html";}
+                        if(path.equals("/aikan.php?id=unavailable"))body="获取播放地址失败";
+                        if(path.equals("/aikan.php?id=wrapper"))body="url = 'http://127.0.0.1:"+server.getLocalPort()+"/playlist.html'";
+                        if(path.equals("/fragment.php"))body="<div class='player'>HTTP routing fragment</div>";
+                        if(path.equals("/aikan.php?id=hls"))body="#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:9\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:8.1,\n/segment.ts\n#EXT-X-ENDLIST\n";
                         byte[] data=body.getBytes("UTF-8");
+                        if(path.startsWith("/segment.ts") && args.containsKey("mediaFixture")) {
+                            try(InputStream media=new FileInputStream(args.getString("mediaFixture"))) {
+                                ByteArrayOutputStream bytes=new ByteArrayOutputStream();byte[] buffer=new byte[8192];int n;
+                                while((n=media.read(buffer))>0)bytes.write(buffer,0,n);
+                                data=bytes.toByteArray();type="video/mp2t";
+                            }
+                        }
                         OutputStream out=socket.getOutputStream();
                         if(path.equals("/dribble")){
                             out.write("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: 1024\r\nConnection: close\r\n\r\n".getBytes("US-ASCII"));
@@ -95,7 +106,7 @@ public final class HttpContentRoutingInstrumentation extends Instrumentation {
         SharedPreferences prefs=getTargetContext().getSharedPreferences(MainActivity.PREFERENCES,0);
         Map<String,?> saved=prefs.getAll();ChannelCatalog.Group[] groups=ChannelCatalog.GROUPS;
         try{
-            if(!"true".equals(args.getString("classifierOnly"))){
+            if(!"true".equals(args.getString("classifierOnly")) || "true".equals(args.getString("scriptErrorsOnly"))){
                 activity=(MainActivity)startActivitySync(new Intent(getTargetContext(),MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
                 SystemClock.sleep(2000);groups=ChannelCatalog.GROUPS;
             }
@@ -106,7 +117,45 @@ public final class HttpContentRoutingInstrumentation extends Instrumentation {
                 if(r.webPage==path.equals("/playlist.html"))throw new AssertionError("Classifier: "+path);
                 evidence.put(new JSONObject().put("fixture",path).put("webPage",r.webPage).put("url",r.url));
             }
+            HttpStreamResolver.Result wrapper=HttpStreamResolver.resolve(base+"/aikan.php?id=wrapper");
+            if(wrapper.webPage || !wrapper.url.equals(base+"/playlist.html"))throw new AssertionError("PHP wrapper became HTML");
+            if(!HttpStreamResolver.resolve(base+"/fragment.php").webPage)throw new AssertionError("Lost real HTML fragment");
+            try{HttpStreamResolver.resolve(base+"/aikan.php?id=unavailable");throw new AssertionError("PHP failure became HTML");}
+            catch(IOException expected){if(!expected.getMessage().contains("获取播放地址失败"))throw expected;}
+            evidence.put(new JSONObject().put("phpWrapperNative",true).put("phpFailureRetried",true).put("htmlFragment",true));
             if(activity!=null){switchChannel(base+"/page");waitPage(base+"/page");waitTitle("HTTP routing fixture");}
+            if("true".equals(args.getString("scriptErrorsOnly"))){
+                switchChannel(base+"/aikan.php?id=unavailable");
+                long until=SystemClock.elapsedRealtime()+17000;
+                while(field("httpResolveThread").get(activity)!=null){
+                    if(SystemClock.elapsedRealtime()>until)throw new AssertionError("PHP error resolver did not finish");
+                    SystemClock.sleep(100);
+                }
+                boolean[] page={true};String[] status={""};runOnMainSync(()->{try{
+                    page[0]=((WebSourceView)field("webSourceView").get(activity)).isPageVisible();
+                    status[0]=((android.widget.TextView)field("statusText").get(activity)).getText().toString();
+                }catch(Exception e){throw new RuntimeException(e);}});
+                if(page[0] || field("player").get(activity)!=null)throw new AssertionError("Failed PHP routed to browser/player");
+                if(!status[0].contains("解析失败"))throw new AssertionError("PHP failure UI: "+status[0]);
+                evidence.put(new JSONObject().put("phpFailureWebVisible",false).put("phpFailureStatus",status[0]));
+                if(args.containsKey("mediaFixture")) {
+                    switchChannel(base+"/aikan.php?id=hls");until=SystemClock.elapsedRealtime()+20000;
+                    while(!field("videoRenderingStarted").getBoolean(activity)) {
+                        if(SystemClock.elapsedRealtime()>until)throw new AssertionError("PHP HLS did not render");
+                        SystemClock.sleep(100);
+                    }
+                    tv.danmaku.ijk.media.player.IjkMediaPlayer nativePlayer=
+                            (tv.danmaku.ijk.media.player.IjkMediaPlayer)field("player").get(activity);
+                    long position=nativePlayer.getCurrentPosition();until=SystemClock.elapsedRealtime()+5000;
+                    while(nativePlayer.getCurrentPosition()-position<1500 || !(IjkStreamMetrics.outputFrameRate(nativePlayer)>0)) {
+                        if(SystemClock.elapsedRealtime()>until)throw new AssertionError("PHP HLS video did not advance");
+                        SystemClock.sleep(100);
+                    }
+                    if(((WebSourceView)field("webSourceView").get(activity)).isPageVisible())throw new AssertionError("PHP HLS opened browser");
+                    evidence.put(new JSONObject().put("phpPlaylistNativeRendered",true)
+                            .put("phpPlaylistOutputFps",IjkStreamMetrics.outputFrameRate(nativePlayer)));
+                }
+            }
             long deadlineBegin=SystemClock.elapsedRealtime();
             try{HttpStreamResolver.resolve(base+"/dribble");throw new AssertionError("Dribbling source did not time out");}
             catch(IOException expected){
@@ -161,7 +210,8 @@ public final class HttpContentRoutingInstrumentation extends Instrumentation {
                     }
                 }
                 evidence.put(new JSONObject().put("sourcePages",pages).put("sourceMedia",media).put("sourceUnavailable",unavailable));
-                if(pages!=8)throw new AssertionError("Expected eight Apple webpages, got "+pages);
+                int expectedPages=Integer.parseInt(args.getString("expectedPages","8"));
+                if(pages!=expectedPages)throw new AssertionError("Expected "+expectedPages+" source pages, got "+pages);
             }
             code=-1;
         }catch(Throwable error){StringWriter trace=new StringWriter();error.printStackTrace(new PrintWriter(trace));result.putString("failure",trace.toString());}

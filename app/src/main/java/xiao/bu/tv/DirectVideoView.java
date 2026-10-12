@@ -1,10 +1,7 @@
 package xiao.bu.tv;
 
 import android.content.Context;
-import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.PixelFormat;
-import android.graphics.PorterDuff;
 import android.util.AttributeSet;
 import android.view.Surface;
 import android.view.SurfaceHolder;
@@ -83,29 +80,6 @@ public final class DirectVideoView extends FrameLayout implements SurfaceHolder.
     void resetSurfaceBufferSizePreservingAspect() {
         if (surfaceView != null) surfaceView.getHolder().setSizeFromLayout();
         requestLayout();
-    }
-
-    boolean clearLastFrame() {
-        if (surfaceView == null || !isSurfaceReady()) return false;
-        SurfaceHolder holder = activeHolder;
-        boolean cleared = false;
-        for (int pass = 0; pass < 2; pass++) {
-            Canvas canvas = null;
-            try {
-                canvas = holder.lockCanvas();
-                if (canvas == null) break;
-                canvas.drawColor(Color.BLACK, PorterDuff.Mode.SRC);
-                cleared = true;
-            } catch (RuntimeException error) {
-                return cleared;
-            } finally {
-                if (canvas != null) {
-                    try { holder.unlockCanvasAndPost(canvas); }
-                    catch (RuntimeException ignored) { }
-                }
-            }
-        }
-        return cleared;
     }
 
     @Override protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {

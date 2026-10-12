@@ -9,6 +9,11 @@ final class IjkStreamMetrics {
     private static final Method GET_LONG = findGetter("_getPropertyLong", int.class, long.class);
     private static final Method SET_LONG = findGetter("_setPropertyLong", int.class, long.class);
     private static final Method GET_CODEC = findGetter("_getVideoCodecInfo");
+    private static final int SOURCE_FPS = 11001;
+    private static final int OUTPUT_FRAMES = 22001;
+    private static final int RECEIVER_DELAY = 22002;
+    private static final int VIDEO_DESCRIPTION = 22010;
+    private static final int DEINTERLACE = 22012;
 
     private static Method findGetter(String name, Class<?>... parameters) {
         try {
@@ -28,10 +33,8 @@ final class IjkStreamMetrics {
     }
 
     static VideoStreamDescription videoDescription(IjkMediaPlayer player) {
-        if (player != null && GET_LONG != null) try {
-            return new VideoStreamDescription(((Number) GET_LONG.invoke(player, 22010, 0L)).longValue());
-        } catch (Exception ignored) {}
-        return VideoStreamDescription.UNKNOWN;
+        long value = longProperty(player, VIDEO_DESCRIPTION, 0L);
+        return value == 0L ? VideoStreamDescription.UNKNOWN : new VideoStreamDescription(value);
     }
 
     static String videoDecoderName(IjkMediaPlayer player) {
@@ -46,13 +49,23 @@ final class IjkStreamMetrics {
         return "未知";
     }
 
+    static String deinterlaceStatus(IjkMediaPlayer player, VideoStreamDescription source) {
+        if ("progressive".equals(source.scanType)) return "not_needed";
+        if (!"interlaced".equals(source.scanType) || player == null) return "unknown";
+        if (player.getVideoDecoder() == IjkMediaPlayer.FFP_PROPV_DECODER_MEDIACODEC)
+            return "system_unverified";
+        return longProperty(player, DEINTERLACE, 0L) == 1L ? "bwdif_field" : "unknown";
+    }
+
+    static String deinterlaceLabel(String status) {
+        if ("bwdif_field".equals(status)) return "BWDIF逐场";
+        if ("system_unverified".equals(status)) return "系统处理（待验证）";
+        if ("not_needed".equals(status)) return "无需";
+        return "未知";
+    }
+
     static float sourceFrameRate(IjkMediaPlayer player) {
-        if (player == null || GET_FLOAT == null) return 0f;
-        try {
-            return ((Number) GET_FLOAT.invoke(player, 11001, 0f)).floatValue();
-        } catch (Exception ignored) {
-            return 0f;
-        }
+        return floatProperty(player, SOURCE_FPS, 0f);
     }
 
     static float outputFrameRate(IjkMediaPlayer player) {
@@ -64,12 +77,32 @@ final class IjkStreamMetrics {
         return player.getVideoOutputFramesPerSecond();
     }
 
+    /** Packet arrival to display submission, smoothed; -1 for absent/stale samples. */
+    static long receiverDelayMs(IjkMediaPlayer player) {
+        return longProperty(player, RECEIVER_DELAY, -1L);
+    }
+
+    static long outputFrameCount(IjkMediaPlayer player) {
+        return longProperty(player, OUTPUT_FRAMES, -1L);
+    }
+
     static boolean extendedMetricsAvailable(IjkMediaPlayer player) {
-        if (player == null || GET_FLOAT == null) return false;
+        return floatProperty(player, SOURCE_FPS, -1f) >= 0f;
+    }
+
+    private static long longProperty(IjkMediaPlayer player, int id, long fallback) {
+        if (player != null && GET_LONG != null) try {
+            return ((Number) GET_LONG.invoke(player, id, fallback)).longValue();
+        } catch (Exception ignored) { }
+        return fallback;
+    }
+
+    private static float floatProperty(IjkMediaPlayer player, int id, float fallback) {
+        if (player == null || GET_FLOAT == null) return fallback;
         try {
-            return ((Number) GET_FLOAT.invoke(player, 11001, -1f)).floatValue() >= 0f;
+            return ((Number) GET_FLOAT.invoke(player, id, fallback)).floatValue();
         } catch (Exception ignored) {
-            return false;
+            return fallback;
         }
     }
 

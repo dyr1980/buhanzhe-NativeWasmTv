@@ -34,7 +34,7 @@ public final class PlaylistRefreshInstrumentation extends Instrumentation {
             String request=reader.readLine(),line;boolean conditional=false;
             while((line=reader.readLine())!=null && !line.isEmpty())
                 if(line.equalsIgnoreCase("If-None-Match: \"v"+version+"\""))conditional=true;
-            boolean md5=request.contains("/md5");
+            boolean md5=request.contains("/md5") || request.contains("/bad-md5");
             OutputStream output=client.getOutputStream();byte[] bytes=body();
             if(slow && md5)SystemClock.sleep(8000);
             if(conditional && !slow) {
@@ -42,9 +42,11 @@ public final class PlaylistRefreshInstrumentation extends Instrumentation {
                 output.write("HTTP/1.1 304 Not Modified\r\nConnection: close\r\n\r\n".getBytes("US-ASCII"));
                 return;
             }
+            boolean opaque=request.contains("/opaque");
+            boolean badMd5=request.contains("/bad-md5");
             String validator=md5 ? "Content-MD5: "+android.util.Base64.encodeToString(
-                    java.security.MessageDigest.getInstance("MD5").digest(bytes),android.util.Base64.NO_WRAP)
-                    : "ETag: \"v"+version+"\"";
+                    java.security.MessageDigest.getInstance("MD5").digest(badMd5 ? new byte[]{0} : bytes),android.util.Base64.NO_WRAP)
+                    : opaque ? "ETag: \"d94ef5027c44800b94eb6f405a984b15\"" : "ETag: \"v"+version+"\"";
             output.write(("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: "+bytes.length
                     +"\r\n"+validator+"\r\nConnection: close\r\n\r\n").getBytes("US-ASCII"));
             if(request.startsWith("HEAD "))return;
@@ -106,6 +108,23 @@ public final class PlaylistRefreshInstrumentation extends Instrumentation {
             if(notModified.get()!=1)throw new AssertionError("conditional GET missing");
             report.append("unchangedMs=").append(SystemClock.elapsedRealtime()-begin).append('\n');
             version=2;equal(body(),manager.readForMobile(url),"updated source not fetched");
+            equal(body(),manager.readForMobile(url.replace("/list.txt","/opaque.txt")),"opaque hex ETag treated as MD5");
+            boolean rejected=false;
+            try {manager.readForMobile(url.replace("/list.txt","/bad-md5.txt"));}
+            catch(IOException error){rejected=error.getMessage().contains("MD5");}
+            if(!rejected)throw new AssertionError("explicit invalid MD5 accepted");
+            report.append("opaqueHexEtagAccepted=true explicitBadMd5Rejected=true\n");
+            if(args.containsKey("sourceUrl")) {
+                byte[] online=manager.readForMobile(args.getString("sourceUrl"));
+                java.lang.reflect.Method parse=PlaylistManager.class.getDeclaredMethod("parse",byte[].class,String.class);
+                parse.setAccessible(true);
+                ChannelCatalog.Group[] groups=(ChannelCatalog.Group[])parse.invoke(null,online,args.getString("sourceUrl"));
+                int channels=0;for(ChannelCatalog.Group group:groups)channels+=group.channels.length;
+                if(channels!=Integer.parseInt(args.getString("expectedChannels","210")))
+                    throw new AssertionError("online playlist channel count: "+channels);
+                equal(online,manager.readForMobile(args.getString("sourceUrl")),"real source repeat/cache download");
+                report.append("onlinePlaylistChannels=").append(channels).append(" bytes=").append(online.length).append('\n');
+            }
             slow=true;boolean bounded=!"false".equals(args.getString("expectBounded"));
             begin=SystemClock.elapsedRealtime();boolean timedOut=false;
             try {manager.readForMobile(url);}catch(IOException error){timedOut=true;}

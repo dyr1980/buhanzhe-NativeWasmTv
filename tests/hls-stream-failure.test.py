@@ -6,12 +6,30 @@ src=(root/'app/src/main/java/xiao/bu/tv/HlsProxyServer.java').read_text(encoding
 def method(start,end):return src[src.index(start):src.index(end,src.index(start))]
 handle=method('    private void handle(Socket socket)', '    private static boolean isPlayerDisconnect(')
 stream=method('    private void streamUpstream(', '    private static long contentLength(')
-java=r'''import java.io.*;import java.net.*;import java.util.regex.*;import java.nio.charset.*;import java.util.concurrent.atomic.*;
+java=r'''import java.io.*;import java.net.*;import java.util.*;import java.util.regex.*;import java.nio.charset.*;import java.util.concurrent.atomic.*;
 public class HlsStreamFailureCheck {
  static class Build {static class VERSION {static final int SDK_INT=19;}}
  static class android {static class os {static class Build {static class VERSION {static final int SDK_INT=19;}}}}
  boolean sourceVideoProbeEnabled;byte[] screenshotSegment;long lastMediaSegmentServedAt;
  boolean isTransportStream(String u,String t){return false;}void sampleSourceVideo(byte[] b){}
+ void sampleSourceVideo(File file){throw new AssertionError("Not a hot-switch fixture");}
+ final Set<Socket> clientSockets=new HashSet<>();
+ final Map<String,Double> segmentDurations=new HashMap<>();
+ void startupCost(String stage,long duration){}
+ void logSegmentCost(String url,long download,long decrypt,boolean encrypted){}
+ void recordUpstreamBytes(int bytes){upstreamDownloadedBytes.addAndGet(bytes);}
+ boolean serveSwitchFile(String url,String range,OutputStream output){return false;}
+ // Switch timelines have separate real-segment tests; this fixture fault-injects /proxy.
+ HlsSwitchSession switchSession;
+ static class HlsSwitchSession {
+  static class Entry {long epoch;}
+  String playlist(){throw new AssertionError("Not a hot-switch request");}
+  Entry reserve(long sequence){throw new AssertionError("Not a hot-switch request");}
+  File file(Entry entry){throw new AssertionError("Not a hot-switch request");}
+  long epoch(){return 0;}
+  void copy(Entry entry,File file,OutputStream output){throw new AssertionError("Not a hot-switch request");}
+  void delivered(Entry entry){}void release(File file){}
+ }
  static final Charset UTF_8=StandardCharsets.UTF_8;
  static final int UPSTREAM_MAX_ATTEMPTS=3,UPSTREAM_CONNECT_TIMEOUT_MS=3500,UPSTREAM_READ_TIMEOUT_MS=5500,UPSTREAM_RETRY_DELAY_MS=250;
  static final String TAG="test";boolean running=true,failHeaders,forbidden,failWritingHeaders,resumable,fullBody,badRange,badEntity,ignoredRange,resumeFails,noEntity;int opens;String resumeHeader,ifRange;

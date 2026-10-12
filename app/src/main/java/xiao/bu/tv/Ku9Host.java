@@ -48,8 +48,8 @@ abstract class Ku9Host implements NativeQuickJs.Host {
             case 7: return getCache(args[0]);
             case 8: setCache(args[0], args[1], Double.parseDouble(args[2])); return null;
             case 9: return digest(args[0], args[1]);
-            case 10: return encodeBase64(args[0]);
-            case 11: return decodeBase64(args[0]);
+            case 10: return args.length>1&&"binary".equals(args[1])?encodeBinaryBase64(args[0]):encodeBase64(args[0]);
+            case 11: return args.length>1&&"binary".equals(args[1])?new String(Base64.decode(args[0],Base64.DEFAULT),"ISO-8859-1"):decodeBase64(args[0]);
             case 12: return String.valueOf(toTimestamp(args[0], args[1], args[2]));
             case 13: return toDate(Double.parseDouble(args[0]), args[1], args[2]);
             case 14: return formatDateTime(args[0], args[1], args[2],
@@ -150,6 +150,15 @@ abstract class Ku9Host implements NativeQuickJs.Host {
         } catch (Exception error) {
             return "";
         }
+    }
+
+    private static String encodeBinaryBase64(String value) {
+        byte[] bytes=new byte[value.length()];
+        for(int n=0;n<bytes.length;n++) {
+            char ch=value.charAt(n);if(ch>255)throw new IllegalArgumentException("Invalid binary string");
+            bytes[n]=(byte)ch;
+        }
+        return Base64.encodeToString(bytes,Base64.NO_WRAP);
     }
 
     @JavascriptInterface

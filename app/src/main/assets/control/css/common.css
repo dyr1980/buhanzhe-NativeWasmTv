@@ -2638,3 +2638,13 @@ a.primary {
 .system-update-row > b { flex: 0 1 auto; max-width: 52%; flex-direction: column; align-items: flex-end; }
 .system-update-row > b > #sysApp { flex-shrink: 1; white-space: normal; }
 .system-update-row .app-update-action { margin-left: 0; }
+
+/* Compact radio UI settings; keep the normal view to one row. */
+.radio-ui-section { padding: 12px 16px; }
+.radio-ui-row { display: flex; align-items: center; gap: 10px; }
+.radio-ui-row strong { white-space: nowrap; }
+.radio-ui-row .hint { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.radio-ui-row button, .radio-ui-actions button { padding: 8px 12px; min-height: 36px; white-space: nowrap; }
+#radioUiOptions { margin-top: 10px; }
+#radioUiUrl { width: 100%; padding: 9px 12px; }
+.radio-ui-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }

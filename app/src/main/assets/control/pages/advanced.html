@@ -89,7 +89,7 @@
             <select id="decoder" onchange="saveDecoder()">
               <option value="auto">自动（无画面转软解）</option>
               <option value="hardware">仅硬解</option>
-              <option value="software">兼容软解</option>
+              <option value="software">软解（BWDIF 去隔行）</option>
             </select>
           </div>
           <div class="field">
@@ -101,9 +101,10 @@
           <div class="field">
             <label for="hdrMode">HDR 模式</label>
             <select id="hdrMode" onchange="saveHdrMode()">
-              <option value="hardware">HDR 硬解（默认）</option>
+              <option value="hardware">智能硬解（默认）</option>
               <option value="mapping">HDR 映射</option>
               <option value="hardware_sdr">硬解软显</option>
+              <option value="passthrough">HDR 直出</option>
               <option value="bt709">HDR BT.709</option>
             </select>
           </div>
@@ -132,7 +133,25 @@
         <p class="hint">
           播放器固定使用定制 IJK，支持 RTSP 与 MP2 音频。RTSP 默认走 TCP；局域网低延迟场景可切换 UDP。
         </p>
-        <p class="hint">HDR 硬解：支持对应 HDR 格式的屏幕保留原始输出，普通屏幕或无法确认 HDR 支持时自动映射为 SDR。HDR 映射：将 HDR10 / HLG 转为 SDR。硬解软显：硬解时强制由 GPU 映射为 SDR，适合 HDR 直出黑屏、发灰的设备；手动软解或硬解不可用时兼容软解。HDR BT.709：强制按 SDR 色彩解释，用于色彩标记异常的源。切换后重新播放当前频道。</p>
+        <p class="hint">隔行视频追求画质可选软解：自动使用 BWDIF 逐场去隔行，1080i50 输出目标为 50fps；逐行视频直接播放。处理速度取决于 CPU 性能。硬解由系统处理去隔行，应用无法统一保证其算法与输出场率。</p>
+        <p class="hint">智能硬解（默认）：根据视频传递函数与当前屏幕 HDR 能力自动选择输出；Android 8.0 及以上且屏幕支持对应格式时 HDR 直出，否则映射为 SDR。硬解软显：保留硬解，由 GPU 将 HDR10 / HLG 映射为 SDR。HDR 直出：手动保留原始 HDR 输出，需要 Android 8.0 及以上、屏幕支持对应 HDR 格式和完整的 HDR 输出链路，否则自动映射。HDR 映射：将 HDR 转为 SDR，Android 12 及以上优先请求解码器映射。手动软解或硬解不可用时兼容软解。HDR BT.709：强制按 SDR 色彩解释，用于色彩标记异常的源。普通 SDR 保持原有输出。切换后重新播放当前频道。</p>
+      </section>
+      <section class="radio-ui-section">
+        <div class="radio-ui-row">
+          <strong>电台界面</strong>
+          <span id="radioUiStatus" class="hint">读取中…</span>
+          <button type="button" id="radioUiToggle" aria-expanded="false" aria-controls="radioUiOptions" onclick="toggleRadioUiOptions()">设置</button>
+        </div>
+        <div id="radioUiOptions" style="display:none">
+          <input id="radioUiUrl" type="url" aria-label="界面下载地址" placeholder="留空使用默认地址" />
+          <div class="radio-ui-actions">
+            <button type="button" onclick="saveRadioUiUrl(false)">保存</button>
+            <button type="button" onclick="saveRadioUiUrl(true)">下载更新</button>
+            <button type="button" onclick="resetRadioUiUrl()">默认</button>
+            <button type="button" onclick="document.getElementById('radioUiJar').click()">导入 JAR</button>
+          </div>
+          <input id="radioUiJar" type="file" accept=".jar" style="display:none" onchange="installRadioUi()" />
+        </div>
       </section>
     </main>
     <div id="message" class="message"></div>

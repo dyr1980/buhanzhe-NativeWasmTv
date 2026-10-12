@@ -75,6 +75,7 @@ public final class WebSourceView extends FrameLayout {
 
         void onBrowserHome();
         void onBrowserChannel(int groupIndex, int channelIndex);
+        default void onBrowserChannelList() {}
         void onBrowserDownloadImage(String url);
         void onBrowserClipboard(String text, String message);
         void onBrowserUserScript(String url);
@@ -149,7 +150,7 @@ public final class WebSourceView extends FrameLayout {
     private String browserVersionMode = "native";
     private volatile String activeUserAgent = WINDOWS_USER_AGENT;
     private boolean loadImages = true;
-    private boolean adBlockEnabled = true;
+    private boolean adBlockEnabled = false;
     private boolean webRtcEnabled;
     private boolean userScriptEnabled;
     private String userScripts = "[]";
@@ -572,7 +573,7 @@ public final class WebSourceView extends FrameLayout {
     }
 
     private void updateFullscreenExitForMouse(MotionEvent event) {
-        if (!browserFullscreen || event == null
+        if (minimalBrowserMode || !browserFullscreen || event == null
                 || (event.getSource() & android.view.InputDevice.SOURCE_MOUSE)
                         != android.view.InputDevice.SOURCE_MOUSE) return;
         int action = event.getActionMasked();
@@ -1142,7 +1143,7 @@ public final class WebSourceView extends FrameLayout {
     void applyConfiguration(String requestedViewportMode, boolean requestedLoadImages,
             String requestedUserAgentMode, float requestedPageScale) {
         applyConfiguration(requestedViewportMode, requestedLoadImages,
-                requestedUserAgentMode, "native", requestedPageScale, true, false, false, "[]");
+                requestedUserAgentMode, "native", requestedPageScale, false, false, false, "[]");
     }
 
     void applyConfiguration(String requestedViewportMode, boolean requestedLoadImages,
@@ -1150,7 +1151,7 @@ public final class WebSourceView extends FrameLayout {
             float requestedPageScale) {
         applyConfiguration(requestedViewportMode, requestedLoadImages,
                 requestedUserAgentMode, requestedBrowserVersionMode, requestedPageScale,
-                true, false, false, "[]");
+                false, false, false, "[]");
     }
 
     private void updateToolbarHeight(int heightDp) {
@@ -1165,7 +1166,23 @@ public final class WebSourceView extends FrameLayout {
         if (pageActive) scheduleDesktopViewport(120L);
     }
 
+    private boolean minimalBrowserMode;
+
+    void applyMinimalMode(boolean enabled) {
+        boolean changed = minimalBrowserMode != enabled;
+        minimalBrowserMode = enabled;
+        if (legacy != null) {
+            legacy.configuration.putBoolean("minimalMode", enabled);
+            android.os.Bundle data = new android.os.Bundle();
+            data.putBoolean("enabled", enabled);
+            legacy.send("minimalMode", data);
+            return;
+        }
+        if (changed && pageActive) setBrowserFullscreen(enabled);
+    }
+
     private void setBrowserFullscreen(boolean enabled) {
+        if (minimalBrowserMode && !enabled) return;
         if (browserFullscreen == enabled) return;
         browserFullscreen = enabled;
         tabBarHeight = enabled ? 0 : tabBar.heightPx();
@@ -1195,6 +1212,7 @@ public final class WebSourceView extends FrameLayout {
     }
 
     boolean exitBrowserFullscreen() {
+        if (minimalBrowserMode) return false;
         if (legacy != null) {
             if (!legacy.visible || !legacy.state.getBoolean("fullscreen")) return false;
             legacy.command("fullscreenExit"); legacy.state.putBoolean("fullscreen", false); return true;
@@ -1258,6 +1276,7 @@ public final class WebSourceView extends FrameLayout {
             boolean requestedUserScriptEnabled, String requestedUserScripts) {
         if (legacy != null) {
             android.os.Bundle data = new android.os.Bundle();
+            data.putBoolean("minimalMode", minimalBrowserMode);
             data.putString("viewport", requestedViewportMode); data.putBoolean("images", requestedLoadImages);
             data.putString("ua", requestedUserAgentMode); data.putString("version", requestedBrowserVersionMode);
             data.putFloat("pageScale", requestedPageScale); data.putBoolean("ads", requestedAdBlock);
@@ -1354,6 +1373,7 @@ public final class WebSourceView extends FrameLayout {
             case "ready": listener.onPageReady(id, currentPageUrl(), currentPageTitle()); break;
             case "stream": listener.onStreamDiscovered(id, data.getString("stream"), data.getString("url"), data.getString("ua"), data.getString("cookies")); break;
             case "home": listener.onBrowserHome(); break;
+            case "channel-list": listener.onBrowserChannelList(); break;
             case "channel": listener.onBrowserChannel(data.getInt("group"), data.getInt("channel")); break;
             case "image": listener.onBrowserDownloadImage(data.getString("url")); break;
             case "clipboard": listener.onBrowserClipboard(data.getString("text"), data.getString("message")); break;
@@ -1380,7 +1400,49 @@ public final class WebSourceView extends FrameLayout {
 
     /** Give the native edge control sole ownership of a pointer sequence. */
 
+    private float minimalTapX, minimalTapY;
+    private boolean minimalTapPending;
+
+    boolean handleMinimalChannelListKey(KeyEvent event) {
+        int key = event.getKeyCode();
+        if (!minimalBrowserMode || !pageActive || (key != KeyEvent.KEYCODE_DPAD_CENTER
+                && key != KeyEvent.KEYCODE_ENTER && key != KeyEvent.KEYCODE_NUMPAD_ENTER)) return false;
+        if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0
+                && listener != null) listener.onBrowserChannelList();
+        return true;
+    }
+
+    @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        return handleMinimalChannelListKey(event) || super.dispatchKeyEvent(event);
+    }
+
     @Override public boolean dispatchTouchEvent(MotionEvent event) {
+        if (minimalBrowserMode && pageActive && event != null) {
+            int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_DOWN) {
+                minimalTapX = event.getX(); minimalTapY = event.getY();
+                minimalTapPending = minimalTapX < getWidth() * 0.5f;
+            } else if (action == MotionEvent.ACTION_MOVE) {
+                int slop = android.view.ViewConfiguration.get(getContext()).getScaledTouchSlop();
+                if (Math.abs(event.getX() - minimalTapX) > slop
+                        || Math.abs(event.getY() - minimalTapY) > slop) minimalTapPending = false;
+            } else if (action == MotionEvent.ACTION_POINTER_DOWN || action == MotionEvent.ACTION_CANCEL) {
+                minimalTapPending = false;
+            } else if (action == MotionEvent.ACTION_UP) {
+                int slop = android.view.ViewConfiguration.get(getContext()).getScaledTouchSlop();
+                boolean open = minimalTapPending
+                        && Math.abs(event.getX() - minimalTapX) <= slop
+                        && Math.abs(event.getY() - minimalTapY) <= slop;
+                minimalTapPending = false;
+                if (open && listener != null) {
+                    MotionEvent cancel = MotionEvent.obtain(event);
+                    cancel.setAction(MotionEvent.ACTION_CANCEL);
+                    super.dispatchTouchEvent(cancel); cancel.recycle();
+                    listener.onBrowserChannelList();
+                    return true;
+                }
+            }
+        } else minimalTapPending = false;
         if (legacy != null && legacy.visible) {
             android.os.Bundle data = new android.os.Bundle(); data.putParcelable("motion", event);
             legacy.send("touch", data); return true;
@@ -1491,7 +1553,9 @@ public final class WebSourceView extends FrameLayout {
         String retainedUrl = reuseRetainedTab && webView != null ? webView.getUrl() : null;
         pageUrl = isWebPage(retainedUrl) ? retainedUrl : url;
         discoveredStreamUrls.clear();
+        boolean enteringPage = !pageActive;
         pageActive = true;
+        if (enteringPage) setBrowserFullscreen(minimalBrowserMode);
         clearInitialHistory = !restoreTab && !reuseRetainedTab;
         compatibilityInjectionCount = 0;
         profileInjectionCount = 0;

@@ -14,8 +14,12 @@ final class HdrDisplayPolicy {
         return false;
     }
 
-    static boolean passthrough(int mode, int transfer, int[] hdrTypes) {
-        return mode == 1 && supportsTransfer(transfer, hdrTypes);
+    static boolean passthrough(int mode, int transfer, int[] hdrTypes, int sdk) {
+        // IJK uses non-tunneled MediaCodec. Android 7 advertises the display's
+        // HDR capabilities but only guarantees the tunneled HDR path. Sending
+        // HLG directly can leave the TV in SDR mode and produce washed-out video.
+        // Preserve hardware decoding, with our SDR bridge on these devices.
+        return sdk >= 26 && mode == 1 && supportsTransfer(transfer, hdrTypes);
     }
 
     static boolean decoderToneMapping(int mode, int sdk) {

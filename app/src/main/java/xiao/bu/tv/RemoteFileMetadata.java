@@ -190,12 +190,9 @@ final class RemoteFileMetadata {
         if (normalized.length() > 0) return normalized;
         normalized = namedBase64Md5(connection.getHeaderField("X-Goog-Hash"), "md5=");
         if (normalized.length() > 0) return normalized;
-        String etag = safe(connection.getHeaderField("ETag")).trim();
-        if (etag.startsWith("W/")) etag = etag.substring(2).trim();
-        if (etag.startsWith("\"") && etag.endsWith("\"") && etag.length() > 1) {
-            etag = etag.substring(1, etag.length() - 1);
-        }
-        return isHexMd5(etag) ? etag.toLowerCase(Locale.US) : "";
+        // An ETag is an opaque cache validator, even when it looks like an MD5.
+        // NAS servers may hash a template or revision rather than these bytes.
+        return "";
     }
 
     private static String namedBase64Md5(String value, String marker) {

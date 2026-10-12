@@ -223,3 +223,25 @@ function renderPageState() {
   renderApkTransfer();
 }
 startPage();
+
+var appLogRequestId = 0;
+function openAppLogs() {
+  document.getElementById("appLogsPanel").style.display = "block";
+  refreshAppLogs();
+}
+function refreshAppLogs() {
+  var id = ++appLogRequestId;
+  api("/api/logs?filter=" + encodeURIComponent(document.getElementById("appLogFilter").value), null, function (error, data) {
+    if (id !== appLogRequestId) return;
+    document.getElementById("appLogText").value = error ? error.message : data.text || "";
+    document.getElementById("appLogNote").textContent = error ? "读取失败，请重试" : data.note + (data.text ? "" : " 当前筛选没有日志。");
+  });
+}
+function copyAppLogs() {
+  var box = document.getElementById("appLogText");
+  box.focus(); box.select(); box.setSelectionRange(0, box.value.length);
+  try {
+    if (document.execCommand("copy")) { toast("日志已复制"); return; }
+  } catch (ignored) {}
+  toast("已选中日志，可长按复制");
+}

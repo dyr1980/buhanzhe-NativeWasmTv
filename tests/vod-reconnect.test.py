@@ -11,7 +11,7 @@ public class VodReconnectCheck {
  static final String TAG="test";
  static class Log {static void i(String t,String s){}static void w(String t,String s,RuntimeException e){}}
  static class Build {static class VERSION {static final int SDK_INT=19;}}
- static class Channel {}
+ static class Channel {boolean radio;}
  interface IMediaPlayer {long getDuration();long getCurrentPosition();}
  static class IjkMediaPlayer implements IMediaPlayer {
   long duration,position,seek=-1; boolean paused;
@@ -22,7 +22,9 @@ public class VodReconnectCheck {
  IjkMediaPlayer player;
  String directHttpMediaUrl; boolean fail, deferred;
  int androidMp3FallbackRequestId=-1,playRequestId=1;
- boolean systemHls,systemMp3;int systemStarts;
+ boolean systemHls,systemMp3,systemDv,systemAtmos;int systemStarts;
+ boolean useSystemDolbyVisionPlayer(){return systemDv;}
+ boolean useSystemAtmosPlayer(String url){return systemAtmos;}
  boolean useAndroidHlsPlayer(int sdk,String url){return systemHls;}
  boolean useAndroidMp3Player(int sdk,String url){return systemMp3;}
  void startAndroidMediaPlayer(Channel c,String url,boolean software,boolean hls)throws IOException {
@@ -68,6 +70,14 @@ public class VodReconnectCheck {
   c.androidMp3FallbackRequestId=c.playRequestId;
   c.restartPlayerPreservingPosition(new Channel(),"mp3",false);
   check(c.systemStarts==2,"Failed system MP3 route falls back to IJK");
+  c.systemMp3=false;c.systemDv=true;c.restartPlayerPreservingPosition(new Channel(),"dv",false);
+  check(c.systemStarts==3,"Dolby Vision recovery keeps its system backend");
+  c.systemDv=false;c.systemAtmos=true;c.restartPlayerPreservingPosition(new Channel(),"atmos",false);
+  check(c.systemStarts==4,"Atmos recovery keeps its system backend");
+  c.systemAtmos=false;c.systemMp3=true;c.androidMp3FallbackRequestId=-1;
+  Channel radio=new Channel();radio.radio=true;
+  c.restartPlayerPreservingPosition(radio,"radio",false);
+  check(c.systemStarts==4,"Radio reconnect must not switch to system MP3");
   System.out.println("PASS VOD initial seek, live, end clamp, invalid clock, old instance, deferred/failed restart");
  }
 }'''.replace('METHOD',method)

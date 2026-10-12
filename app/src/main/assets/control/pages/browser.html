@@ -26,6 +26,13 @@
         <div class="browser-settings-list">
           <div class="browser-setting-row">
             <div class="browser-setting-copy">
+              <b>极简模式</b><span>强制隐藏顶部网页标签和地址栏，默认关闭</span>
+            </div>
+            <input id="webViewMinimalMode" class="source-toggle" type="checkbox"
+              aria-label="浏览器极简模式" onchange="saveWebViewSettings()" />
+          </div>
+          <div class="browser-setting-row">
+            <div class="browser-setting-copy">
               <b>网页分辨率</b><span>分辨率越高，可显示的网页内容越多</span>
             </div>
             <select id="webViewResolution" aria-label="网页分辨率" onchange="saveWebViewSettings()">
@@ -113,7 +120,7 @@
         <div class="browser-settings-list">
           <div class="browser-setting-row">
             <div class="browser-setting-copy">
-              <b>广告拦截</b>
+              <b>广告拦截</b><span>默认关闭，按需开启</span>
             </div>
             <input id="webViewAdBlock" class="source-toggle" aria-label="广告拦截"
               type="checkbox" onchange="saveWebViewSettings()" />

@@ -443,5 +443,83 @@ edit('ijkmedia/ijkplayer/android/ijkplayer_jni.c', '    ntv_dolby_jni_init(env);
     '    ntv_dolby_jni_init(env);\n    ntv_codec_jni_init(env);');
 require('./apply-hdr-patches.cjs')(root);
 require('./apply-video-info-patches.cjs')(root);
+require('./apply-deinterlace-patches.cjs')(root);
 require('./apply-vod-buffer-patches.cjs')(root);
+require('./apply-codec-input-patches.cjs')(root);
+// Interactive RTSP audio stays video master, but a slow audio-device clock
+// must not turn a small initial delay into seconds of receiver backlog.
+edit(player, 'static int synchronize_audio(VideoState *is, int nb_samples)\n{',
+    'static int synchronize_audio(FFPlayer *ffp, VideoState *is, int nb_samples)\n{');
+edit(player, '    if (get_master_sync_type(is) != AV_SYNC_AUDIO_MASTER) {',
+    `    /* Gently calibrate live PCM against the first audio output's monotonic
+     * clock. Normal media keeps its sync policy; no speed/SoundTouch path. */
+    int cast_clock = ffp->ntv_live_video && is->realtime;
+    if (cast_clock || get_master_sync_type(is) != AV_SYNC_AUDIO_MASTER) {`);
+edit(player, '        diff = get_clock(&is->audclk) - get_master_clock(is);',
+    '        diff = get_clock(&is->audclk) - (cast_clock ? get_clock(&is->extclk) : get_master_clock(is));');
+edit(player, '                if (fabs(avg_diff) >= is->audio_diff_threshold) {',
+    `                double threshold = cast_clock ? FFMIN(is->audio_diff_threshold, 0.040) : is->audio_diff_threshold;
+                if (fabs(avg_diff) >= threshold) {`);
+edit(player, `                    min_nb_samples = ((nb_samples * (100 - SAMPLE_CORRECTION_PERCENT_MAX) / 100));
+                    max_nb_samples = ((nb_samples * (100 + SAMPLE_CORRECTION_PERCENT_MAX) / 100));`,
+    `                    int correction = cast_clock ? 1 : SAMPLE_CORRECTION_PERCENT_MAX;
+                    min_nb_samples = nb_samples * (100 - correction) / 100;
+                    max_nb_samples = nb_samples * (100 + correction) / 100;`);
+edit(player, '    wanted_nb_samples = synchronize_audio(is, af->frame->nb_samples);',
+    '    wanted_nb_samples = synchronize_audio(ffp, is, af->frame->nb_samples);');
+// Match a displayed frame to its demuxed packet, including codec and A/V waits.
+// Use the existing video queue mutex; no threads, logging, or per-frame allocations.
+edit(def, '    int ntv_trace_latency;', `    double ntv_latency_pts[256];
+    int64_t ntv_latency_read_us[256];
+    int ntv_latency_serial[256], ntv_latency_cursor;
+    int64_t ntv_latency_output_us;
+    double ntv_latency_ms;
+    int ntv_trace_latency;`);
+edit(def, '    ffp->ntv_last_video_output_ms = 0;', `    memset(ffp->ntv_latency_read_us, 0, sizeof(ffp->ntv_latency_read_us));
+    ffp->ntv_latency_cursor = 0;
+    ffp->ntv_latency_output_us = 0;
+    ffp->ntv_latency_ms = 0;
+    ffp->ntv_last_video_output_ms = 0;`);
+edit(player, '            packet_queue_put(&is->videoq, pkt);', `            if (ffp->ntv_live_video && pkt->pts != AV_NOPTS_VALUE) {
+                SDL_LockMutex(is->videoq.mutex);
+                int slot = ffp->ntv_latency_cursor;
+                ffp->ntv_latency_cursor = (slot + 1) & 255;
+                ffp->ntv_latency_pts[slot] = pkt->pts * av_q2d(is->video_st->time_base);
+                ffp->ntv_latency_read_us[slot] = av_gettime_relative();
+                ffp->ntv_latency_serial[slot] = is->videoq.serial;
+                SDL_UnlockMutex(is->videoq.mutex);
+            }
+            packet_queue_put(&is->videoq, pkt);`);
+edit(player, '        ffp->ntv_last_video_output_ms = (uint32_t)(av_gettime_relative() / 1000);', `        if (ntv_display_result >= 0 && ffp->ntv_live_video && !isnan(vp->pts)) {
+            int64_t now = av_gettime_relative();
+            SDL_LockMutex(is->videoq.mutex);
+            for (int i = 0; i < 256; i++) {
+                int64_t read = ffp->ntv_latency_read_us[i];
+                if (read > 0 && ffp->ntv_latency_serial[i] == vp->serial
+                        && fabs(ffp->ntv_latency_pts[i] - vp->pts) < 0.0005) {
+                    if (now >= read && now - read < 5000000) {
+                        double ms = (now - read) / 1000.0;
+                        ffp->ntv_latency_ms = now - ffp->ntv_latency_output_us > 2000000
+                                ? ms : ffp->ntv_latency_ms * 0.8 + ms * 0.2;
+                        ffp->ntv_latency_output_us = now;
+                    }
+                    ffp->ntv_latency_read_us[i] = 0;
+                    break;
+                }
+            }
+            SDL_UnlockMutex(is->videoq.mutex);
+        }
+        ffp->ntv_last_video_output_ms = (uint32_t)(av_gettime_relative() / 1000);`);
+edit(player, 'int64_t ffp_get_property_int64(FFPlayer *ffp, int id, int64_t default_value)\n{\n    switch (id) {', `int64_t ffp_get_property_int64(FFPlayer *ffp, int id, int64_t default_value)
+{
+    switch (id) {
+        case 22002: { /* demux packet to display submission; not panel scanout */
+            if (!ffp || !ffp->is || !ffp->ntv_live_video) return default_value;
+            SDL_LockMutex(ffp->is->videoq.mutex);
+            int64_t age = av_gettime_relative() - ffp->ntv_latency_output_us;
+            int64_t value = ffp->ntv_latency_output_us > 0 && age >= 0 && age < 2000000
+                    ? (int64_t)(ffp->ntv_latency_ms + 0.5) : default_value;
+            SDL_UnlockMutex(ffp->is->videoq.mutex);
+            return value;
+        }`);
 console.log('Applied nTv native playback overlays to ' + root);

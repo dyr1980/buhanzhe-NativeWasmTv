@@ -126,7 +126,9 @@ final class Ku9ScriptResolver {
     private String buildJavascript(Pending request) {
         JSONObject item = new JSONObject();
         try {
-            item.put("url", request.sourceUrl);
+            // IPTV source labels are display text, not query parameter values.
+            int label = request.sourceUrl.indexOf('$');
+            item.put("url", label < 0 ? request.sourceUrl : request.sourceUrl.substring(0, label));
             item.put("name", request.channelName == null ? "" : request.channelName);
         } catch (JSONException ignored) {
         }

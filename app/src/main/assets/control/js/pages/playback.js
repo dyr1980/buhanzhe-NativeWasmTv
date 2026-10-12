@@ -1,3 +1,24 @@
+function saveEpgEnabled() {
+  var input = document.getElementById("epgEnabled");
+  api("/api/settings", {epgEnabled: input.checked}, function(error) {
+    if(error){input.checked=!input.checked;toast(error.message,true);return;}
+    toast(input.checked ? "已开启节目单" : "已关闭节目单");
+  });
+}
+function saveColorDebugInfo() {
+  var input = document.getElementById("showColorDebugInfo");
+  api("/api/settings", {showColorDebugInfo: input.checked}, function(error) {
+    if(error){input.checked=!input.checked;toast(error.message,true);return;}
+    toast("色彩和解码器信息显示已保存");
+  });
+}
+function saveLoadTiming() {
+  var input = document.getElementById("showLoadTiming");
+  api("/api/settings", {showLoadTiming: input.checked}, function(error) {
+    if(error){input.checked=!input.checked;toast(error.message,true);return;}
+    toast("加载耗时显示已保存");
+  });
+}
 var legacySelectTarget = null,
   legacySelectScrollY = 0;
 function selectedOptionText(select) {
@@ -205,7 +226,8 @@ function saveLiveDelay() {
 }
 function renderPageState() {
   var s = state.settings;
-  var checked = ["showDebugInfo", "showNetworkSpeed", "showDateTime"];
+  document.getElementById("epgEnabled").checked = s.epgEnabled !== false;
+  var checked = ["showColorDebugInfo", "showLoadTiming", "showDebugInfo", "showNetworkSpeed", "showDateTime"];
   for (var i = 0; i < checked.length; i++)
     document.getElementById(checked[i]).checked = s[checked[i]] === true;
   document.getElementById("videoScale").value = s.videoScaleMode || "fit";
@@ -221,7 +243,8 @@ function renderPageState() {
   document.getElementById("uiScaleHint").textContent = parts.join(" · ");
   document.getElementById("clockLocation").value = s.clockLocation || "right";
   document.getElementById("dateTimeFormat").value = s.dateTimeFormat || "date_time_week";
-  document.getElementById("liveDelay").value = s.liveDelayMode || "stable";
+  var liveMode = s.liveDelayMode || "stable";
+  document.getElementById("liveDelay").value = /^(auto|stable|balanced|low)$/.test(liveMode) ? liveMode : "auto";
   syncLegacySelectButtons();
 }
 setupLegacyDateTimeSelects();

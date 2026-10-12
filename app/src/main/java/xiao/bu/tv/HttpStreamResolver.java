@@ -22,6 +22,8 @@ final class HttpStreamResolver {
     private static final int PROBE_BYTES = 1024;
     private static final Pattern HTML_START = Pattern.compile(
             "(?is)^(?:\\s|\\ufeff|<!--.*?-->|<\\?xml.*?\\?>)*<(?:!doctype\\s+html\\b|html\\b|head\\b|body\\b|script\\b|meta\\b|video\\b|iframe\\b)");
+    private static final Pattern HTML_FRAGMENT_START = Pattern.compile(
+            "(?is)^(?:\\s|\\ufeff|<!--.*?-->)*</?[a-z][a-z0-9:-]*(?:\\s[^<>]*)?/?>");
     private static final String USER_AGENT = "Mozilla/5.0 (Linux; Android 9; TV) "
             + "AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36";
     private static final Pattern ABSOLUTE_MEDIA_URL = Pattern.compile(
@@ -192,8 +194,12 @@ final class HttpStreamResolver {
                         !isHtmlType(contentType));
                 boolean apiText = body.startsWith("{") || body.startsWith("[")
                         || body.startsWith("http://") || body.startsWith("https://");
-                if (!apiText && (contentType.equals("text/html") || contentType.equals("application/xhtml+xml")))
+                // PHP gateways often inherit text/html for plain URLs, API
+                // responses or upstream errors. MIME alone does not prove HTML.
+                if (!apiText && isHtmlType(contentType) && HTML_FRAGMENT_START.matcher(body).find())
                     return new Result(current, false, true);
+                if (!apiText && probe.length < PROBE_BYTES && isTransientFailureBody(body))
+                    throw new RetryableSourceException(body.length() == 0 ? "源地址返回空内容" : body);
                 if (!apiText && contentType.contains("mpegurl")) return new Result(current, false);
                 if (!apiText && isDirectMediaType(contentType)) return new Result(current, true);
                 // Preserve support for binary media with generic/missing MIME.
@@ -219,7 +225,7 @@ final class HttpStreamResolver {
                     throw new RetryableSourceException(body.length() == 0
                             ? "源地址返回空内容" : body);
                 }
-                throw new IOException("源地址返回网页，未找到视频地址");
+                throw new IOException("源地址未返回可识别的视频地址");
             } finally {
                 connection.disconnect();
             }
@@ -314,6 +320,7 @@ final class HttpStreamResolver {
 
     private static boolean isKnownMediaUrl(String value) {
         return isHlsUrl(value) || isDirectMediaUrl(value)
+                || value.startsWith("rtp://") || value.startsWith("udp://")
                 || value.startsWith("rtmp://") || value.startsWith("rtsp://");
     }
 

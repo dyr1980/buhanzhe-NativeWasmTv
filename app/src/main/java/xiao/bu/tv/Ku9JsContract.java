@@ -155,19 +155,14 @@ final class Ku9JsContract {
     // Ku9 scripts commonly use these browser globals even when all I/O uses ku9.*.
     // Preserve WebView implementations; QuickJS only receives the missing functions.
     static final String BROWSER_GLOBALS =
-            "(function(){var alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';"
+            "(function(){"
             + "if(typeof window.atob!=='function')window.atob=function(value){"
             + "var s=String(value).replace(/[\\t\\n\\f\\r ]/g,'');"
             + "if(s.length%4===0)s=s.replace(/==?$/,'');"
             + "if(s.length%4===1||/[^A-Za-z0-9+/]/.test(s))throw new Error('Invalid base64');"
-            + "var out='',bits=0,buffer=0;for(var i=0;i<s.length;i++){"
-            + "buffer=(buffer<<6)|alphabet.indexOf(s.charAt(i));bits+=6;"
-            + "if(bits>=8){bits-=8;out+=String.fromCharCode((buffer>>bits)&255);}}return out;};"
+            + "return __ku9Host.decodeBase64(s,'binary');};"
             + "if(typeof window.btoa!=='function')window.btoa=function(value){"
-            + "var s=String(value),out='',bits=0,buffer=0;for(var i=0;i<s.length;i++){"
-            + "var c=s.charCodeAt(i);if(c>255)throw new Error('Invalid binary string');"
-            + "buffer=(buffer<<8)|c;bits+=8;while(bits>=6){bits-=6;out+=alphabet.charAt((buffer>>bits)&63);}}"
-            + "if(bits)out+=alphabet.charAt((buffer<<(6-bits))&63);while(out.length%4)out+='=';return out;};"
+            + "return __ku9Host.encodeBase64(String(value),'binary');};"
             + "if(!window.console)window.console={};"
             + "var names=['log','info','warn','error','debug'];"
             + "for(var n=0;n<names.length;n++)if(typeof window.console[names[n]]!=='function')"
@@ -216,7 +211,7 @@ final class Ku9JsContract {
 
     static boolean isDirectDataSource(String value) {
         String lower = value == null ? "" : value.toLowerCase(java.util.Locale.US);
-        if (lower.startsWith("file://") || lower.startsWith("rtsp://") || lower.startsWith("rtmp://")) return true;
+        if (lower.startsWith("file://") || lower.startsWith("rtp://") || lower.startsWith("udp://") || lower.startsWith("rtsp://") || lower.startsWith("rtmp://")) return true;
         int query = lower.indexOf('?'), fragment = lower.indexOf('#');
         int end = lower.length();
         if (query >= 0) end = Math.min(end, query);

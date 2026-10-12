@@ -12,6 +12,7 @@
         android:maxSdkVersion="19" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <!-- targetSdk 25 uses the legacy Wi-Fi Direct permission contract. Discovery
          therefore needs fine location on Android 6+, even on Android 13+. -->

@@ -155,7 +155,8 @@ public final class LegacyWebActivity extends Activity implements WebSourceView.L
         switch (action) {
             case "configuration": source.applyConfiguration(data.getString("viewport", "720p"), data.getBoolean("images", true),
                     data.getString("ua", "windows"), data.getString("version", "native"), data.getFloat("pageScale", 1f),
-                    data.getBoolean("ads", true), data.getBoolean("rtc"), data.getBoolean("scripts"), data.getString("userScripts", "[]")); break;
+                    data.getBoolean("ads", false), data.getBoolean("rtc"), data.getBoolean("scripts"), data.getString("userScripts", "[]"));
+                source.applyMinimalMode(data.getBoolean("minimalMode", false)); break;
             case "scale": source.setInterfaceScale(data.getFloat("scale", 1f)); cursor.setCastVisualScale(data.getFloat("scale", 1f)); break;
             case "open": request = data.getInt("request"); monitoring = true;
                 rendererBeat = SystemClock.elapsedRealtime(); source.open(request, data.getString("url"),
@@ -164,6 +165,7 @@ public final class LegacyWebActivity extends Activity implements WebSourceView.L
             case "restore": source.restoreAfterStreamPlayback(); monitoring = true; rendererBeat = SystemClock.elapsedRealtime(); break;
             case "back": onBackPressed(); break;
             case "forward": source.goForwardIfPossible(); break;
+            case "minimalMode": source.applyMinimalMode(data.getBoolean("enabled", false)); break;
             case "fullscreenExit": source.exitBrowserFullscreen(); break;
             case "pause": source.setMultimediaPaused(true); break;
             case "play": source.setMultimediaPaused(false); break;
@@ -223,6 +225,7 @@ public final class LegacyWebActivity extends Activity implements WebSourceView.L
         android.widget.Toast.makeText(this, "再按一次返回关闭网页", android.widget.Toast.LENGTH_SHORT).show();
     }
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        if (source != null && source.handleMinimalChannelListKey(event)) return true;
         int key = event.getKeyCode();
         if (key == KeyEvent.KEYCODE_MEDIA_NEXT || key == KeyEvent.KEYCODE_MEDIA_PREVIOUS
                 || key == KeyEvent.KEYCODE_CHANNEL_UP || key == KeyEvent.KEYCODE_CHANNEL_DOWN) {
@@ -245,6 +248,7 @@ public final class LegacyWebActivity extends Activity implements WebSourceView.L
     @Override public void onStreamDiscovered(int id, String stream, String page, String ua, String cookies) {
         Bundle data = LegacyWebSession.bundle("stream", stream); data.putString("url", page); data.putString("ua", ua); data.putString("cookies", cookies); event("stream", data);
     }
+    @Override public void onBrowserChannelList() { showPlayer(); event("channel-list", new Bundle()); }
     @Override public void onBrowserHome() { showPlayer(); event("home", new Bundle()); }
     @Override public void onBrowserChannel(int group, int channel) { showPlayer(); Bundle b = new Bundle(); b.putInt("group", group); b.putInt("channel", channel); event("channel", b); }
     @Override public void onBrowserDownloadImage(String url) { event("image", LegacyWebSession.bundle("url", url)); }

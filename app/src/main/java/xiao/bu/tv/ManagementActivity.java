@@ -73,6 +73,8 @@ public final class ManagementActivity extends Activity {
     private boolean pendingRendererRecovery;
     private int rendererRetries;
     private volatile boolean systemDark;
+    private Boolean pageDark;
+    private View managementPanel;
     private boolean sidebarDevice;
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -147,11 +149,12 @@ public final class ManagementActivity extends Activity {
             back.setText("返回");
             back.setOnClickListener(view -> finish());
             panel.addView(back);
+            managementPanel = panel;
             setContentView(panel);
             return;
         }
         webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
-        webView.setBackgroundColor(systemDark ? Color.rgb(17, 20, 25) : Color.rgb(247, 247, 248));
+        webView.setBackgroundColor(systemDark ? Color.rgb(17, 17, 19) : Color.rgb(247, 247, 248));
         // Several Android TV/tablet WebView implementations render a black frame when
         // a hardware-decoded Surface is paused underneath. The local control page is
         // lightweight, so software composition is more reliable here.
@@ -247,6 +250,11 @@ public final class ManagementActivity extends Activity {
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         panel.addView(webView, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT, Gravity.RIGHT));
+        if (!sidebarDevice) {
+            panel.setBackgroundColor(systemDark ? Color.rgb(17, 17, 19) : Color.rgb(247, 247, 248));
+            panel.setFitsSystemWindows(true);
+        }
+        managementPanel = panel;
         setContentView(panel);
         webView.loadUrl(urlToLoad);
     }
@@ -302,6 +310,7 @@ public final class ManagementActivity extends Activity {
             recoverManagementPage();
         });
         panel.addView(retry);
+        managementPanel = panel;
         setContentView(panel);
     }
 
@@ -320,6 +329,29 @@ public final class ManagementActivity extends Activity {
     }
 
     private void applySystemUiVisibility() {
+        if (!sidebarDevice && Build.VERSION.SDK_INT >= 21) {
+            // Keep phone status icons visible on the management page, with its
+            // background extending behind them. The root reserves system insets.
+            readSystemTheme();
+            boolean dark = pageDark != null ? pageDark.booleanValue() : systemDark;
+            int background = dark ? Color.rgb(17, 17, 19) : Color.rgb(247, 247, 248);
+            if (managementPanel != null) managementPanel.setBackgroundColor(background);
+            if (webView != null) webView.setBackgroundColor(background);
+            getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN
+                    | android.view.WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN
+                    | android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS);
+            getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+            getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(background));
+            getWindow().setStatusBarColor(Build.VERSION.SDK_INT >= 23 || dark
+                    ? Color.TRANSPARENT : Color.rgb(48, 48, 48));
+            getWindow().setNavigationBarColor(Build.VERSION.SDK_INT >= 26 || dark
+                    ? background : Color.rgb(48, 48, 48));
+            int flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN;
+            if (Build.VERSION.SDK_INT >= 23 && !dark) flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            if (Build.VERSION.SDK_INT >= 26 && !dark) flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+            getWindow().getDecorView().setSystemUiVisibility(flags);
+            return;
+        }
         if (MultiWindowCompat.isInMultiWindowMode(this)) {
             getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN);
             getWindow().addFlags(
@@ -639,6 +671,16 @@ public final class ManagementActivity extends Activity {
         public boolean isSystemDark() {
             return systemDark;
         }
+        @JavascriptInterface
+        public void setPageDark(final boolean dark) {
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    if (webView == null || isFinishing() || !isLocalControlPage(webView.getUrl())) return;
+                    pageDark = Boolean.valueOf(dark);
+                    applySystemUiVisibility();
+                }
+            });
+        }
         private final SensorManager sensorManager = (SensorManager)
                 getSystemService(SENSOR_SERVICE);
         private final Sensor gyroscope = sensorManager == null ? null
@@ -953,9 +995,12 @@ public final class ManagementActivity extends Activity {
             setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
             return;
         }
-        setRequestedOrientation(sidebarDevice
-                ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                : ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        // A translucent side panel must inherit the player's orientation. A
+        // sensor-landscape request can flip 180 degrees while the fixed-landscape
+        // player stays underneath, then flip back as soon as this panel closes.
+        int orientation = sidebarDevice ? ActivityInfo.SCREEN_ORIENTATION_BEHIND
+                : ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
+        if (getRequestedOrientation() != orientation) setRequestedOrientation(orientation);
     }
 
     private void cancelLocalPointer() {

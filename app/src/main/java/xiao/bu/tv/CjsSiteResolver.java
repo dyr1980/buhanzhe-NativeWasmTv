@@ -277,7 +277,7 @@ final class CjsSiteResolver {
     }
 
     private static boolean isOnlineMedia(String url) {
-        return isOnline(url) || (url != null && (url.startsWith("rtsp://") || url.startsWith("rtmp://")));
+        return isOnline(url) || (url != null && (url.startsWith("rtp://") || url.startsWith("udp://") || url.startsWith("rtsp://") || url.startsWith("rtmp://")));
     }
 
     private static boolean isOnline(String url) {

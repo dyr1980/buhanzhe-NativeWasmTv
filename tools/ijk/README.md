@@ -1,5 +1,55 @@
 # nTv IJK / Dolby changes
 
+## Codec input validation (Bugly 2002)
+
+`apply-codec-input-patches.cjs` rejects non-positive input writes in both IJK
+MediaCodec feeding paths. Previously the JNI writer's `-1` failure passed an
+`if (!copy_size)` check and was converted to an unsigned buffer length before
+being submitted to Android. The JNI writer now also checks direct buffer address
+and capacity before copying; queue arguments must fit Android's signed JNI ints.
+Positive partial writes retain the existing packet continuation behaviour.
+
+The supplied CodecLooper stack ends at ACodec's input-buffer assertions, but
+does not include the assertion message or exact system build. Older AOSP checks
+input buffer ownership here as well as message fields. This confirms a system
+codec abort, not which assertion failed. These changes repair a verified unsafe
+submission path; they do not establish that every occurrence of issue 2002 is
+caused by it. Hardware decoding remains enabled. ARM32/API14 and ARM64/API21
+native compilation and release packaging passed; the original failing device
+and its exact abort have not been reproduced. The x86 upstream IJK dependency
+does not yet include this overlay.
+
+Reference: [AOSP ACodec input processing](https://android.googlesource.com/platform/frameworks/av/+/jb-release/media/libstagefright/ACodec.cpp).
+
+## HLS channel handoff
+
+The Activity keeps the outgoing video visible and playing while a separate proxy
+loads the target manifest and an actual media segment. The channel card stays at
+`缓冲中` until target output advances; `onPrepared`, a manifest response and
+`BUFFERING_END` alone are insufficient. A failed preload preserves the old
+channel. Request generations cancel stale work during rapid channel changes.
+
+Ordinary live MPEG-TS HLS can share one player and localhost playlist when its
+single program, stream/PCR PIDs, AVC SPS/PPS or HEVC VPS/SPS/PPS, rendering SEI and
+AAC configuration match exactly and its first picture is an IDR. The proxy
+maintains a monotonic sequence/timestamp timeline and signals discontinuity at
+the channel boundary. Already requested segments are immutable. Encoded video
+and audio stay intact; there is no transcoding or new native dependency.
+
+Changed parameters, alternate tracks, encryption, fMP4, VOD and unsupported
+formats use normal decoder reopening. The page stays open. A queued handoff
+estimated to exceed four seconds also reopens from the warmed fragment instead
+of dropping compressed reference frames. Actual output still has a timeout
+fallback. Stateful proprietary decryptors retain their existing ordered path.
+
+Warmup files use a bounded disk cache (three completed fragments / 32 MiB
+normally, one fragment limited to 64 MiB), file leases and cancellation cleanup.
+Only small buffers and bounded TS headers enter memory. Playlist history has a
+900-entry limit. `python tests/hls-hot-switch.test.py` generates its own fixtures
+and checks compatibility, boundary clocks, queue preservation and pixel equality.
+`LegacyChannelSwitchInstrumentation` with `checkHotSwitch=true` exercises live
+handoff, withheld fragments, failure and cancellation on the actual Activity.
+
 ## Playback policy
 
 - H.264, HEVC and MPEG-2 prefer MediaCodec. The user's explicit software decoder setting remains authoritative. Failed ordinary hardware video decoding retains IJK's FFmpeg fallback.
@@ -14,6 +64,58 @@ Audio capability APIs can describe a disconnected or inactive output on older An
 
 ## Rebuilding native libraries
 
+HEVC source colour/depth is also read directly from bounded SPS headers in Annex B
+and hvcC extradata. Valid Alternative Transfer SEI overrides the compatible VUI;
+reserved/unspecified values cannot erase a valid SPS transfer. Both Annex B and
+hvcC length-prefixed samples are supported, including four-byte start codes.
+This supplies Main10 and HLG/PQ signalling to both MediaCodec
+configuration and the source HUD when the container's parameters are incomplete.
+Only headers are parsed; this does not add software pixel decoding to hardware playback.
+
+AVC/H.264 also reads bounded SPS/VUI headers directly, from Annex B, avcC and
+length-prefixed samples. This supplements FFmpeg 3.4's picture parser, which
+does not export its SPS colour values to the private parser context. Metadata
+is published during stream preparation on both API19 and API25; explicit SPS
+values also reach MediaCodec configuration. An absent initial SPS can use the
+same bounded packet queue as HEVC; consumed packets are replayed in order.
+Later in-band AVC SPS updates are tracked per parser serial.
+
+An ordinary 8-bit AVC/MPEG-2 stream with all three colour tags unspecified can
+show a conservative SDR interpretation: BT.709 for HD, BT.601/SMPTE170M for SD.
+The snapshot carries an independent `colorInferred` flag, and HUD/card labels
+say “推定”. This is a display interpretation, not recovered source signalling;
+it does not modify codec/container fields or select HDR processing. Partially
+tagged, wide-gamut, HEVC and higher-depth streams do not use this inference.
+The screenshot's 求索记录 SPS has `video_signal_type_present_flag=0`: its 8-bit
+depth is real, while its missing colour tags cannot be recovered from that SPS.
+
+For BT.2020 HEVC with compatible SDR/unknown VUI, a bounded startup probe reads
+up to the first key packet (64 packets / 4 MiB) before codec configuration. Every
+read packet is retained and replayed in order, including audio; seek/exit releases
+unconsumed references. The validated SEI is retained independently because opening
+FFmpeg's codec can re-export the SPS VUI into codecpar. This fixes HLG output as
+well as its HUD label. It does not infer HDR from BT.2020 alone.
+
+BT.2020 non-constant-luminance sources with SDR or unspecified transfer use a GPU
+BT.2020-to-BT.709 gamut conversion in hardware and software playback. Unspecified
+transfer uses the BT.1886 SDR display curve as an output fallback; the source HUD
+continues to report unknown HDR/SDR and unknown transfer. BT.2020 alone does not
+select PQ/HLG tone mapping. Explicit BT.709 override still reinterprets the YUV
+matrix without HDR mapping. A decoder reporting BT.709 SDR output bypasses the
+extra gamut conversion to avoid applying it twice.
+
+`audit-playlist.py PLAYLIST OUTPUT` captures bounded source samples and
+decodes them with host FFmpeg/ffprobe. `--retry-failed --reuse-captured` checks
+failed entries again without recapturing successful entries. Source checks are
+separate from Android playback: `PlaylistPlaybackInstrumentation` replays a JSON
+manifest through the actual Activity and checks first frame, advancing video,
+dimensions, audio decoder, colour signalling and visible video. Its optional
+`expectedGpuTransfer` also checks the configured GPU path, rather than the HUD
+alone. The `playlist` URL argument also validates the real importer against the
+manifest's `sourceUrl` fields and checks EPG reuse/backup-source merge controls.
+An EPG ID alone is not a channel identity: distinct names keep separate entries.
+See `HDR_VALIDATION.md` for device results and scope.
+
 The app packages prebuilt libraries, so running Gradle alone does not compile these changes.
 
 The source overlays target the existing `.codex-tmp/ijkplayer-0.8.8` checkout, its configured FFmpeg 3.4 `android/contrib/ffmpeg-arm64` and `ffmpeg-armv7a` trees, NDK r14b and the unchanged `libijksdl.so` in the app. `module-ntv.sh` is the feature profile for a fresh FFmpeg configuration. SoundTouch is the upstream `Bilibili/soundtouch` branch `ijk-r0.1.2-dev`, placed at `ijkmedia/ijksoundtouch`.
@@ -27,6 +129,14 @@ The source overlays target the existing `.codex-tmp/ijkplayer-0.8.8` checkout, i
 The IJK overlays are LGPL-2.1-or-later, like their host sources. Keep these source changes alongside the redistributed native libraries.
 
 ## Interactive cast latency
+
+Realtime RTSP PCM uses the first audio output's monotonic clock to correct slow
+audio-device drift. The existing resampler makes bounded corrections of about
+1%, after a smoothed 40 ms error, while video still follows audio. This prevents
+growing receiver delay without changing playback speed or dropping encoded
+reference frames. Ordinary live/VOD media retains its original sync policy.
+TCP casting skips RTP reordering; UDP retains its bounded reorder window.
+Starting a multimedia receiver also closes the outgoing channel's HLS proxy.
 
 For nTv's realtime RTSP session, the player uses a three-frame decoded audio queue instead of IJK's default nine-frame queue. Its AudioTrack uses Android's reported minimum safe buffer instead of the upstream 2x-playback buffer, and the AudioTrack worker uses normal priority so it cannot starve video/UI on small CPUs. Video-only casting still renders the newest decoded picture immediately. When system audio is present, audio remains the master clock, while decoded video pictures more than 80 ms behind that clock are discarded until playback catches up. This bounds pointer lag without dropping compressed H.264/H.265 reference packets. Ordinary live streams retain the normal audio queue and priority; their hardware video synchronization policy is described below.
 
@@ -64,6 +174,8 @@ adb -s DEVICE shell am instrument -w xiao.bu.tv.test/xiao.bu.tv.DolbyPlaybackIns
 It requires a no-HDMI speaker route, checks prepare/render callbacks, codec/module identity and advancing audio clock, and does not modify channel settings. Check `nTvDolby` and `nTvDolbyTest` logcat tags. An instrumentation failure is not a passed playback test.
 
 ## High frame rate playback and stream statistics
+
+The debug HUD labels output and source cadence separately. `输出50.0fps 源25.0帧/50.0场` means 50 decoded output pictures per second from an interlaced 25-frame/50-field source; it is not a 25 fps playback cap. Scan order is recovered from codec/container/parser/frame metadata and published separately as `currentSourceStats.scanType` and `sourceFieldRate`. Unknown scan order is not inferred from 1080-line resolution or from a 25 fps value. Progressive sources use source fps, without doubling it. Source access-unit statistics use completed media-timestamp bins with a one-second reorder allowance, so normal B-picture timestamp reordering in remuxed HLS/Matroska does not repeatedly reset the measurement. Output counters still count distinct successful frame submissions against wall time; source fields are never substituted for measured output.
 
 `ntv-frame-sync` keeps audio as master and tolerates 80 ms of hardware scheduling jitter before discarding decoded pictures. Consecutive early drops are bounded; compressed reference packets are never discarded. An empty picture queue wakes on decoder production instead of waiting for another fixed refresh interval.
 
@@ -155,17 +267,83 @@ hardware/software setting. `currentSourceStats` in `/api/media` exposes the same
 
 `apply-hdr-patches.cjs` runs from the playback overlay script. MediaCodec receives the stream's colour standard, range, transfer, HEVC Main10 profile and available CTA-861.3 static metadata. HDR10/HLG are distinguished by PQ/HLG transfer metadata; HEVC or 10-bit alone does not imply HDR. Dolby Vision keeps its separate decoder policy.
 
-Advanced settings expose the persisted `hdrMode` (`mapping`, `hardware`, `bt709`, `hardware_sdr`) through `/api/settings` and `/api/state?view=advanced`. Changing it restarts the current channel. Each player receives `ntv-hdr-mode` (0/1/2/3); policy is carried in that player's MediaFormat rather than a process-global colour switch.
+Advanced settings expose the persisted `hdrMode` (`mapping`, `hardware`, `bt709`, `hardware_sdr`, `passthrough`) through `/api/settings` and `/api/state?view=advanced`. Changing it restarts the current channel. Each player receives `ntv-hdr-mode` (0/1/2/3); policy is carried in that player's MediaFormat rather than a process-global colour switch.
 
-* **HDR 映射 / mapping** explicitly converts HDR10/HLG to SDR even if the display advertises HDR. API 17–30 use a hardware decoder -> SurfaceTexture -> one GLES tone-mapping pass -> SurfaceView. Rendering applies the PQ/HLG EOTF, BT.2020 -> BT.709 conversion in linear light, a luminance shoulder and gamut compression. Decoder output explicitly tagged SDR bypasses the extra tone mapping. Codec-provided static metadata updates the peak; the bounded default for missing metadata is 1000 nits. API 31+ requests codec HDR -> SDR conversion and verifies acknowledgement before playback, otherwise retaining the existing FFmpeg fallback.
-* **HDR 硬解 / hardware (default)** keeps original HDR SurfaceView output only when the display owning the SurfaceView advertises the corresponding format: HDR10/HDR10+ for PQ, HLG for HLG. Unsupported, unavailable or pre-API-24 display capabilities select HDR-to-SDR mapping instead, using the same path as mapping mode. Main10 decoder support alone does not qualify a display. Capability queries use an API-isolated helper for legacy compatibility and inspect the actual output display, including external displays. Correct passthrough still requires a compatible decoder/display/HDMI chain. The separate decode-mode setting remains authoritative: explicit software decoding or a codec fallback still maps HDR to SDR because the software renderer cannot emit native HDR Surface buffers.
-* **硬解软显 / hardware_sdr** forces the hardware decoder -> SurfaceTexture -> GPU HDR-to-SDR pass -> SurfaceView path on API 17+, including API 31+ where it bypasses the decoder tone-mapping request. This is a manual alternative for devices that advertise HDR but cannot display native HDR correctly. Explicit software decoding and hardware-decoder failure retain the software fallback; ordinary SDR uses direct output without an extra GPU bridge.
+* **HDR 映射 / mapping** explicitly converts HDR10/HLG to SDR even if the display advertises HDR. API 17–30 use a hardware decoder -> SurfaceTexture -> one GLES tone-mapping pass -> SurfaceView. The shared shader uses BT.2446 method-B reference viewing conditions (291-nit HLG, system gamma 1.03), a Mobius highlight shoulder and one common RGB multiplier to retain colour ratios. This is an adaptation inspired by method B, not its full ICTCP colour-volume implementation. PQ is matched at the 1000-nit HLG/PQ bridge. SDR BT.2020 gamut conversion preserves neutral code values using matching BT.1886 display decoding/encoding. Decoder output explicitly tagged BT.709 SDR bypasses the extra conversion. Codec static metadata supplies the PQ peak (1000-nit fallback); it does not rescale scene-relative HLG. API 31+ requests codec HDR -> SDR conversion and verifies acknowledgement before playback, otherwise retaining the existing FFmpeg fallback.
+* **硬解映射 / hardware (default)** and the existing **硬解软显 / hardware_sdr** selection both send native mode 3: hardware decoder -> SurfaceTexture -> GPU HDR-to-SDR pass -> SurfaceView on API 17+, including API 31+. This is the same policy for every manufacturer/model. Existing `hardware` preferences automatically receive this output path without resetting preferences. Main10 support and advertised HDR display capability do not prove that a vendor's decoder/compositor chain will produce native HDR correctly. Explicit software decoding and hardware-decoder failure retain the software fallback; ordinary SDR keeps direct output without an extra GPU bridge.
+* **HDR 直出 / passthrough** is a separate explicit opt-in (native mode 1). It keeps original HDR SurfaceView output only on API 26+ when the actual output display advertises the corresponding format: HDR10/HDR10+ for PQ, HLG for HLG. Otherwise it selects HDR-to-SDR mapping. Display capability checks are API-isolated for legacy compatibility; no manufacturer/model checks are used. A physically compatible decoder/display/HDMI chain is still required. Software decoding continues to map to SDR.
+
+When the GPU bridge receives a partial decoder output format, it retains the configured colour standard. An unknown transfer, or a reported SDR/linear transfer without a known colour standard on an HDR source, retains the validated source transfer. This prevents an incomplete tag from silently disabling HDR mapping. Complete known SDR output tags remain authoritative, avoiding double mapping when the decoder actually returns SDR. `decoderColor` logs the original decoder fields and identifies this fallback; it does not relabel the source bit depth.
+
+The third debug line includes the actual colour output route (GPU to SDR, native
+HDR, decoder to SDR, or software to SDR), separately from the source HDR label.
+`currentSourceStats.colorOutput` and `decoderColor` expose the route and the GPU
+bridge's reported decoder standard/transfer/range. A source HLG label alone does
+not establish that the output display received HDR or that mapping ran.
 * **HDR BT.709 / bt709** overrides MediaCodec colour standard/transfer to BT.709/SDR, omits HDR static metadata, and uses the BT.709 YUV matrix with tone mapping disabled for software frames. For hardware streams originally tagged HDR or a different colour standard, a GPU pass produces an SDR RGB Surface even if the vendor continues to attach HDR tags to its decoded buffers. It reinterprets the decoder's reported YUV matrix as BT.709 in the encoded domain, with no HDR luminance mapping. Correctly tagged BT.709 SDR keeps direct output. The mode preserves actual bit depth and range. This is a manual compatibility mode for incorrectly tagged SDR sources, not HDR-to-SDR conversion; true PQ/HLG sources can look washed out in this mode. Vendor behaviour still needs validation on each device. Dolby Vision retains its separate decoder policy.
 
-Mapping/hardware/hardware_sdr leave normal SDR colour metadata unchanged. New installs and absent/invalid preferences default to hardware; saved valid selections are retained. Java, the web selector and the native player's default use the same policy. The hardware-mode name describes the HDR output path, not a replacement for the separate decoder selection. Software/SDR behaviour is explicit in the settings help. `test-hdr-display-policy.java` verifies format-specific capabilities, unknown display fallback, the forced GPU policy and preference compatibility on the host.
+Mapping/hardware/hardware_sdr/passthrough leave normal SDR colour metadata unchanged. New installs and absent/invalid preferences default to `hardware`, which the app explicitly supplies as native mode 3; the saved `hardware_sdr` alias remains supported. Other saved selections persist. The separate decoder setting controls hardware/software selection. `test-hdr-display-policy.java` verifies default GPU output across API levels and advertised HDR capabilities, manual passthrough matching, unknown display fallback, and saved preferences.
 
 Software decoding uses a YUV GLES output from the first frame, including on API 14–16, and preserves per-frame matrix/range/transfer/static light levels unless BT.709 is explicitly selected. Its YUV420 10-bit -> 8-bit upload conversion remains in FFmpeg; tone mapping runs on the GPU. This does not make old CPUs capable of software 4K playback. Replacement IJK preparation waits asynchronously for the preceding player release (bounded to two seconds), and HDR bridge replacement also waits for its old EGL producer to disconnect. These handoffs prevent a new output connecting to a Surface still owned by the old codec. GPU output statistics count distinct texture timestamps after successful swaps, return zero after a stall, and do not count retained repaints.
 
 The source `app/src/main/res/raw/hdr_tonemap.glsl` is shared with the native shaders; keep it with the LGPL native overlays when redistributing. Both `libijkplayer.so` and `libijksdl.so` must be rebuilt together because overlay colour fields extend their shared structure. The current ARM32/ARM64 IJK/SDL builds use NDK r17c against the existing FFmpeg binaries; Gradle alone cannot rebuild them. The format-prefix migration also removes previously duplicated performance/DV blocks and is idempotent.
 
 The real test source is [Apple's advanced HLS example](https://developer.apple.com/streaming/examples/advanced-stream-dv-atmos.html). The pinned [1080p HDR + AAC playlist](fixtures/hdr-1080p.m3u8) selects PQ HEVC instead of letting the mixed master choose SDR or Dolby Vision. The current sample contains HDR10+ dynamic metadata; this revision uses the HDR10 base/static metadata and does not implement dynamic HDR10+ scene grading. The master also offers SDR companion renditions for comparison.
+
+
+## Software deinterlacing
+
+The bundled IJK 0.8.8 has no `deinterlace=auto/1` player option and was built
+without libavfilter. `apply-deinterlace-patches.cjs` installs automatic BWDIF
+into the software video thread. Frames marked interlaced by the actual decoder
+produce one progressive output per field, preserving field order and half-frame
+PTS spacing. Progressive frames bypass filtering. Stream/seek serial, dimensions
+and pixel-format changes discard temporal references; EOF drains the last frame.
+Original source scan order, bit depth, colour tags and HDR side data remain
+independent of the progressive output frames. Unsupported interlaced pixel formats
+surface a playback error rather than silently uploading combed frames.
+
+The scalar kernels in `ntv_bwdif_kernel.h` derive from pinned FFmpeg 3.4
+`vf_bwdif.c` (FFmpeg commit 2902e33f6e59), retaining LGPL and BBC attribution.
+The wrapper uses the corrected row bounds from current FFmpeg for high-depth
+pixels. It supports planar three-component YUV at 8–16 bits, uses up to four
+workers for HD, and adds one source-frame lookahead. It does not add libavfilter,
+extra shared libraries or fixture videos to the APK.
+
+This path runs on software decoding, including hardware-decoder fallback.
+It does not configure MediaCodec's vendor deinterlacer. Android has no common
+quality/field-rate switch for that pipeline. Hardware interlaced playback is
+shown as system handling, unverified; 25 decoded pictures versus 50 fields
+must not be relabelled as 50 actual submissions. For BWDIF choose Advanced >
+decoder > software (BWDIF). Sustained performance depends on CPU capacity;
+native progressive 25p remains 25p.
+
+Long property `22012` returns BWDIF active (source snapshot bit 30).
+`/api/media.currentSourceStats.deinterlace` returns `bwdif_field`,
+`system_unverified`, `not_needed` or `unknown`; the TV HUD and control page show
+the interlaced route. Source scan order occupies snapshot bits 27–29.
+
+`test-deinterlace.c` executes the production frame wrapper using real FFmpeg
+AVFrames and test-only pthread adapters for SDL. `test-deinterlace.py` builds
+that standalone executable, then compares Android output pixel-for-pixel against
+host FFmpeg `bwdif=mode=send_field:parity=auto:deint=interlaced`. Assertions
+cover field count, PTS/duration, seek/EOF, colour preservation and references.
+Example on Windows, with the configured IJK source and NDK r17c:
+
+```powershell
+python tools/ijk/test-deinterlace.py --serial DEVICE --abi arm64-v8a --ndk D:/android/sdk/ndk/android-ndk-r17c --output .codex-tmp/deinterlace/pixels-arm64
+```
+
+Use `--abi armeabi-v7a` for an ARM32 device. Both top/bottom first, 8/10-bit,
+multithreaded and progressive controls are compared; differences fail the run.
+Reference: https://ffmpeg.org/ffmpeg-filters.html#bwdif
+
+RTSP debug latency uses property 22002: match packet PTS and stream serial to
+the submitted video frame, then measure monotonic time from demux arrival to
+successful display submission. This includes decoder and A/V scheduling waits,
+unlike compressed queue duration. Samples use a bounded 256-entry ring, existing
+queue mutex and 0.2 EWMA; no allocations or frame logs. Missing/stalled samples
+expire after 2 seconds. It does not measure socket/demux buffering before packet
+arrival or Surface/compositor/panel delay after submission. Sender telemetry
+expires per field after 3 seconds. The total remains an estimate (sender encode,
+queue, send, half control RTT, receiver interval); missing fields yield `--`.

@@ -90,6 +90,12 @@ public final class DolbyAudioOutput {
         // Before API 33 direct-playback queries can report an inactive HDMI route.
         if (manager == null || manager.isBluetoothA2dpOn() || manager.isBluetoothScoOn()
                 || manager.isWiredHeadsetOn()) return false;
+        // Modern queries describe the active route, including built-in phone speakers.
+        if (Build.VERSION.SDK_INT >= 33) {
+            AudioFormat format = new AudioFormat.Builder().setEncoding(encoding).setSampleRate(rate)
+                    .setChannelMask(channelMask(count)).build();
+            return AudioTrack.isDirectPlaybackSupported(format, attributes());
+        }
         Intent hdmi = application.registerReceiver(null, new IntentFilter(AudioManager.ACTION_HDMI_AUDIO_PLUG));
         boolean advertised = hdmi != null && hdmi.getIntExtra(AudioManager.EXTRA_AUDIO_PLUG_STATE, 0) == 1
                 && contains(hdmi.getIntArrayExtra(AudioManager.EXTRA_ENCODINGS), encoding)

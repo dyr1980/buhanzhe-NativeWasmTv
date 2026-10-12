@@ -16,6 +16,12 @@
     var dark = mode === "dark" || (mode === "system" && systemDark());
     document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
     document.documentElement.style.colorScheme = dark ? "dark" : "light";
+    try {
+      if (window.NtvDevice && typeof window.NtvDevice.setPageDark === "function") {
+        window.NtvDevice.setPageDark(dark);
+      }
+    } catch (ignored) {}
+
     var select = document.getElementById("pageTheme");
     if (select) select.value = mode;
   }

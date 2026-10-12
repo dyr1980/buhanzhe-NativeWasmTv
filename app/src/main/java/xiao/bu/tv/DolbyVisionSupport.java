@@ -5,9 +5,51 @@ import android.media.MediaCodecList;
 import android.os.Build;
 import android.util.Log;
 import java.util.Locale;
+import java.util.concurrent.ConcurrentHashMap;
 
 final class DolbyVisionSupport {
+    private static final ConcurrentHashMap<String, Boolean> playlistSupport =
+            new ConcurrentHashMap<String, Boolean>();
     private DolbyVisionSupport() {}
+
+    static boolean supportsPlaylistCodec(String codecs) {
+        if (!DolbyFormats.isDolbyVision(codecs)) return true;
+        for (String raw : codecs.toLowerCase(Locale.US).split(",")) {
+            String codec = raw.trim();
+            if (!DolbyFormats.isDolbyVision(codec)) continue;
+            Boolean cached = playlistSupport.get(codec);
+            if (cached != null) return cached;
+            boolean supported = false;
+            String[] fields = codec.split("\\.");
+            try {
+                int profile = Integer.parseInt(fields[1]);
+                int level = Integer.parseInt(fields[2]);
+                supported = profile >= 0 && profile <= 9 && level >= 1 && level <= 13
+                        && selectDecoder(1 << profile, 1 << (level - 1)) != null;
+            } catch (RuntimeException ignored) { }
+            playlistSupport.put(codec, supported);
+            return supported;
+        }
+        return false;
+    }
+
+    private static volatile Boolean atmosDecoderSupported;
+    static boolean supportsAtmosDecoder() {
+        if (Build.VERSION.SDK_INT < 23) return false;
+        if (atmosDecoderSupported != null) return atmosDecoderSupported.booleanValue();
+        try {
+            for (int i = 0; i < MediaCodecList.getCodecCount(); i++) {
+                MediaCodecInfo codec = MediaCodecList.getCodecInfoAt(i);
+                if (codec.isEncoder()) continue;
+                for (String type : codec.getSupportedTypes())
+                    if ("audio/eac3-joc".equalsIgnoreCase(type) || "audio/eac3".equalsIgnoreCase(type)) {
+                        atmosDecoderSupported = Boolean.TRUE; return true;
+                    }
+            }
+        } catch (RuntimeException error) { Log.w("nTvDolby", "Cannot query Atmos decoder", error); }
+        atmosDecoderSupported = Boolean.FALSE;
+        return false;
+    }
 
     static String selectDecoder(int profile, int level) {
         if (Build.VERSION.SDK_INT < 21 || profile <= 0 || level <= 0) return null;

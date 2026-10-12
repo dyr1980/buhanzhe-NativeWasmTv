@@ -1561,10 +1561,9 @@ final class PlaylistManager {
                     keys.add("url:" + canonical);
                 }
             }
-            String epg = canonicalText(channel.epgId);
-            if (epg.length() > 0) {
-                keys.add("epg:" + epg);
-            }
+            // EPG IDs describe schedules, not channel identity. Providers may
+            // reuse one ID for a whole family (CDTV1..6, movie/children channels).
+            // Merge by channel name or source; retain epgId for programme lookup.
             String canonicalName = canonicalChannelName(channel.name);
             if (canonicalName.length() > 0) {
                 keys.add("channel:" + canonicalName);
@@ -1616,6 +1615,7 @@ final class PlaylistManager {
         return value.startsWith("http://") || value.startsWith("https://")
                 || value.startsWith("rtmp://") || value.startsWith("rtmpt://")
                 || value.startsWith("rtmps://")
+                || value.startsWith("rtp://") || value.startsWith("udp://")
                 || value.startsWith("rtsp://")
                 || value.startsWith("webview://http://")
                 || value.startsWith("webview://https://");

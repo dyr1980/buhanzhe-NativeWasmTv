@@ -2,8 +2,28 @@
 (function (global) {
   "use strict";
   var current = null, overlays = [], popping = false, busy = false, closeTimer = null,
-    pendingNavigation = null, leaveHooks = [], sequence = 0, retiringOverlay = false;
+    pendingNavigation = null, leaveHooks = [], sequence = 0, retiringOverlay = false,
+    busyTimer = null, resumePending = false;
   var key = "ntvNavigationTransferV2";
+  function unlockNavigation() {
+    busy = false;
+    clearTimeout(busyTimer); busyTimer = null;
+  }
+  function lockNavigation() {
+    unlockNavigation(); busy = true;
+    // Some embedded browsers omit popstate/pageshow on history restoration.
+    // A cancelled or failed navigation must not leave visible menu links locked.
+    busyTimer = setTimeout(function () {
+      busyTimer = null;
+      if (document.hidden || !current || route(location.href) !== current.url) return;
+      busy = false; retiringOverlay = false;
+      if (!overlays.length && history.state && history.state.ntvOverlay === current.id)
+        write(false, false);
+      if (pendingNavigation) {
+        var target = pendingNavigation; pendingNavigation = null; navigate(target);
+      }
+    }, 4000);
+  }
   function route(value) {
     try {
       if (/^[a-z]+:\/\/[^/?#]*@/i.test(String(value))) return "";
@@ -49,7 +69,7 @@
     // A reload can restore an overlay history entry, but not its live UI/callbacks.
     // Consume that owned entry once rather than leaving an invisible extra Back.
     if (history.state && history.state.ntvOverlay === current.id && !overlays.length && !busy) {
-      busy = true; retiringOverlay = true; history.back();
+      lockNavigation(); retiringOverlay = true; history.back();
     }
   }
   function saveUi(value) {
@@ -82,7 +102,7 @@
     if (!current) return false;
     if (overlays.length) return false; // Close the current dialog before navigating.
     if (closeTimer !== null) { pendingNavigation = target; return true; }
-    busy = true;
+    lockNavigation();
     leave(function () {
       if (target.split("?")[0] === "/index.html") { location.replace(target); return; }
       var transfer = {id: id(), url: target, parent: {id: current.id, url: current.url}, time: Date.now()};
@@ -111,7 +131,7 @@
     closeTimer = setTimeout(function () {
       closeTimer = null;
       if (!overlays.length && history.state && history.state.ntvOverlay === current.id) {
-        busy = true; retiringOverlay = true; history.back();
+        lockNavigation(); retiringOverlay = true; history.back();
       }
     }, 0);
   }
@@ -125,9 +145,9 @@
     }
     if (home()) {
       if (nativeBack) return false; // Host closes only the management Activity.
-      busy = true; leave(function () { history.back(); }); return true;
+      lockNavigation(); leave(function () { history.back(); }); return true;
     }
-    busy = true;
+    lockNavigation();
     leave(function () {
       if (current && current.parent && current.parent.id && route(current.parent.url)) history.back();
       else location.replace("/index.html");
@@ -141,7 +161,7 @@
     saveUi: saveUi, readUi: function () { return current && current.ui || {}; }
   };
   global.addEventListener("popstate", function () {
-    busy = false;
+    unlockNavigation();
     var top = overlays[overlays.length - 1];
     if (top && !retiringOverlay) {
       popping = true;
@@ -152,16 +172,23 @@
     if (overlays.length) write(true, true); // Nested layer or cancelled editor dismissal.
     else if (history.state && history.state.ntvOverlay === (current && current.id)) {
       // Forward into an already-dismissed overlay must not create a dead Back step.
-      busy = true; history.back(); return;
+      lockNavigation(); history.back(); return;
     }
     if (pendingNavigation) { var target = pendingNavigation; pendingNavigation = null; navigate(target); }
   }, false);
   global.addEventListener("pageshow", function () {
-    busy = false; init();
+    resumePending = false; unlockNavigation(); init();
     var ui = current && current.ui;
     if (ui && typeof ui.scrollY === "number" && global.scrollTo) global.scrollTo(ui.scrollX || 0, ui.scrollY);
   }, false);
-  global.addEventListener("pagehide", function () { busy = true; leave(); }, false);
+  global.addEventListener("pagehide", function () { resumePending = true; busy = true; leave(); }, false);
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) { resumePending = true; return; }
+    if (resumePending) { resumePending = false; unlockNavigation(); init(); }
+  }, false);
+  global.addEventListener("focus", function () {
+    if (resumePending && !document.hidden) { resumePending = false; unlockNavigation(); init(); }
+  }, false);
   document.addEventListener("click", function (event) {
     if (event.defaultPrevented || event.button > 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
     var a = event.target;

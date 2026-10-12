@@ -1,3 +1,50 @@
+function toggleRadioUiOptions() {
+  var panel = document.getElementById("radioUiOptions");
+  var open = panel.style.display === "none";
+  panel.style.display = open ? "block" : "none";
+  var button = document.getElementById("radioUiToggle");
+  button.textContent = open ? "收起" : "设置";
+  button.setAttribute("aria-expanded", open ? "true" : "false");
+}
+function resetRadioUiUrl() {
+  document.getElementById("radioUiUrl").value="";
+  saveRadioUiUrl(false);
+}
+function saveRadioUiUrl(download) {
+  api("/api/radio-ui", {url: document.getElementById("radioUiUrl").value, download: download}, function(error, result) {
+    if(error){toast(error.message,true);return;}
+    toast(download ? "电台界面已更新" : "界面地址已保存");
+    loadRadioUiUrl();
+  }, download ? 120000 : 15000);
+}
+function loadRadioUiUrl() {
+  api("/api/radio-ui", null, function(error,result) {
+    var status = document.getElementById("radioUiStatus");
+    if(error){status.textContent=error.message;return;}
+    document.getElementById("radioUiUrl").value=result.url || result.defaultUrl || "";
+    status.textContent=(result.loaded ? "已安装 · 版本 " + result.version : "未安装") + (result.error ? " · " + result.error : "");
+  });
+}
+function installRadioUi() {
+  var file = document.getElementById("radioUiJar").files[0];
+  if (!file) { toast("请选择电台界面 JAR", true); return; }
+  if (file.size > 2 * 1024 * 1024) { toast("JAR 不能超过 2 MB", true); return; }
+  var xhr = new XMLHttpRequest();
+  xhr.open("POST", "/api/radio-ui", true);
+  xhr.timeout = 30000;
+  xhr.setRequestHeader("Content-Type", "application/octet-stream");
+  xhr.onload = function () {
+    try {
+      var result = JSON.parse(xhr.responseText);
+      if (xhr.status !== 200 || !result.ok) throw new Error(result.error || "导入失败");
+      toast("电台界面已替换，版本 " + result.version);
+      loadRadioUiUrl();
+    } catch (error) { toast(error.message, true); }
+  };
+  xhr.onerror = xhr.ontimeout = function () { toast("电台界面导入失败", true); };
+  toast("正在导入电台界面…");
+  xhr.send(file);
+}
 function saveReverse() {
   var reverse = document.getElementById("reverse");
   api("/api/settings", { reverseKeys: reverse.checked }, function (error) {
@@ -146,3 +193,5 @@ function saveGithubProxy() {
 }
 document.getElementById("githubProxyUrl").oninput = function () { this._dirty = true; };
 startPage();
+
+loadRadioUiUrl();

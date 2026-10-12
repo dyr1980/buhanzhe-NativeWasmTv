@@ -32,5 +32,13 @@ scripts/*
 /docs
 /tests/*
 !/tests/hls-cache-performance.test.py
+!/tests/hls-hot-switch.test.py
+!/tests/cast-delay-metrics.test.py
+!/tests/channel-startup-timing.test.py
+!/tests/startup-maintenance.test.py
+!/tests/tls-pressure-server.py
 userscripts/
 tools/
+!tools/
+/tools/*
+!/tools/cjs/

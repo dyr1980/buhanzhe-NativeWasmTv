@@ -158,18 +158,67 @@ public final class CjsPluginRuntime {
         CjsSource source = CjsSource.parse(url);
         if (source == null) throw new IOException("不是 CJS 频道地址");
         synchronized (INSTALL_LOCK) {
-            boolean cached = hasCatalog();
-            ensureCatalog();
-            if (!knowsSource(source) && cached) refreshCatalog();
+            JSONObject discovered = !knowsSource(source) ? discoverSourceDescriptor(source) : null;
             playbackUrl(url); // Validate parameters before retrying playback.
+            State selected = sourceState(source);
+            if (selected != null) {
+                installOrUpdate(selected.id, discovered);
+                synchronized (CjsPluginRuntime.class) { checked.add(selected.id); }
+            }
         }
+    }
+    /** A self-contained descriptor is an import source, not a catalog allowlist entry. */
+    private static JSONObject discoverSourceDescriptor(CjsSource source) throws Exception {
+        String descriptor = GithubProxy.unwrap(source.descriptorUrl);
+        JSONObject probe = new JSONObject(new String(download(cacheBustedUrl(online(descriptor)),
+                MAX_MANIFEST_BYTES), "UTF-8"));
+        String id = name(probe.getString("id"));
+        if (probe.optInt("v") < 1) throw new IOException("CJS 来源版本无效");
+        online(probe.getString("manifest"));
+        JSONObject selected = probe.optJSONObject("site");
+        // Older descriptors may reuse known site metadata, but their own URL selects the release.
+        if (selected == null) {
+            synchronized (CjsPluginRuntime.class) {
+                State existing = states.get(id);
+                if (existing != null) selected = new JSONObject(existing.entry.toString());
+            }
+        }
+        if (selected == null || !id.equals(selected.optString("id")) || !selected.has("playback"))
+            throw new IOException("CJS 来源缺少站点播放配置");
+        selected = new JSONObject(selected.toString());
+        selected.put("config", descriptor);
+        selected.put("sources", new JSONArray().put(descriptor));
+        // Validate all channel parameters before selecting the remote component.
+        JSONObject playback = selected.getJSONObject("playback");
+        JSONObject rules = playback.getJSONObject("parameters");
+        Map<String, String> parameters = new LinkedHashMap<String, String>();
+        Iterator<String> keys = rules.keys();
+        while (keys.hasNext()) { String key = keys.next(); parameters.put(key, rules.getString(key)); }
+        String page = online(source.page(playback.getString("page"), parameters));
+        if (!matchesHost(URI.create(page).getHost(), selected.optJSONArray("hosts")))
+            throw new IOException("CJS 频道页面与站点不匹配");
+        synchronized (CjsPluginRuntime.class) {
+            JSONObject merged = catalog == null ? new JSONObject().put("protocol", HOST_PROTOCOL)
+                    .put("sites", new JSONArray()) : new JSONObject(catalog.toString());
+            JSONArray mergedEntries = new JSONArray();
+            JSONArray current = merged.getJSONArray("sites");
+            for (int i = 0; i < current.length(); i++) {
+                JSONObject entry = current.getJSONObject(i);
+                if (!selected.getString("id").equals(entry.getString("id"))) mergedEntries.put(entry);
+            }
+            mergedEntries.put(selected);
+            merged.put("sites", mergedEntries);
+            useCatalog(merged);
+            checked.remove(selected.getString("id"));
+        }
+        return probe;
     }
     static synchronized String playbackUrl(String url) throws Exception {
         CjsSource source = CjsSource.parse(url);
         if (source == null) return url;
         State s = sourceState(source);
         if (s == null || !s.entry.has("playback"))
-            throw new IOException("插件目录未登记此 CJS 频道入口，请检查目录配置");
+            throw new IOException("CJS 来源尚未读取播放配置");
         JSONObject playback = s.entry.getJSONObject("playback");
         JSONObject declared = playback.getJSONObject("parameters");
         Map<String, String> rules = new LinkedHashMap<String, String>();
@@ -254,10 +303,13 @@ public final class CjsPluginRuntime {
         }
     }
     public static String installOrUpdate(String id) throws Exception {
+        return installOrUpdate(id, null);
+    }
+    private static String installOrUpdate(String id, JSONObject discovered) throws Exception {
         synchronized (INSTALL_LOCK) {
             ensureCatalog();
             State s = state(id);
-            JSONObject probe = new JSONObject(new String(download(cacheBustedUrl(
+            JSONObject probe = discovered != null ? discovered : new JSONObject(new String(download(cacheBustedUrl(
                     online(s.entry.getString("config"))), MAX_COMPONENT_CONFIG_BYTES), "UTF-8"));
             if (!id.equals(probe.optString("id")) || probe.optInt("v") < 1) throw new IOException("站点配置无效");
             int version = probe.getInt("v");

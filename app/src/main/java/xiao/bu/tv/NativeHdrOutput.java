@@ -34,11 +34,13 @@ public final class NativeHdrOutput implements SurfaceTexture.OnFrameAvailableLis
     private static volatile Context context;
     private static volatile Display targetDisplay;
     private static volatile NativeHdrOutput active;
+    private static volatile String outputRoute = "";
     private final CountDownLatch stopped = new CountDownLatch(1);
     private final HandlerThread thread = new HandlerThread("nTv HDR output");
     private Handler handler;
     private final Surface target;
     private final int width, height, transfer;
+    private final int configuredStandard;
     private final boolean forceBt709;
     private final float peak;
     private volatile boolean closed;
@@ -57,6 +59,7 @@ public final class NativeHdrOutput implements SurfaceTexture.OnFrameAvailableLis
     private long lastTextureTimestamp, rateStart, rateFrames;
     private volatile long renderedFrames, lastRenderedAt;
     private volatile float renderedRate;
+    private volatile String decoderColor = "";
 
     static void initialize(Context value, View output) {
         context = value.getApplicationContext();
@@ -102,28 +105,40 @@ public final class NativeHdrOutput implements SurfaceTexture.OnFrameAvailableLis
         int sourceStandard = integer(format,"ntv-source-standard",1);
         boolean forceBt709 = mode == 2 && (sourceTransfer == 6 || sourceTransfer == 7
                 || sourceStandard != 0 && sourceStandard != 1);
-        if ((!forceBt709 && transfer != 6 && transfer != 7) || surface == null) return null;
+        boolean wideGamut = !forceBt709 && sourceStandard == 6 && transfer != 6 && transfer != 7;
+        outputRoute = "SDR直出";
+        if ((!forceBt709 && !wideGamut && transfer != 6 && transfer != 7) || surface == null) return null;
         int[] hdrTypes = supportedHdrTypes();
-        if (HdrDisplayPolicy.passthrough(mode, transfer, hdrTypes)) {
+        if (HdrDisplayPolicy.passthrough(mode, transfer, hdrTypes, Build.VERSION.SDK_INT)) {
+            outputRoute = "HDR直出";
             Log.i(TAG, "HDR hardware passthrough transfer=" + transfer);
             return null;
         }
-        if (mode == 1) Log.i(TAG, "HDR display fallback: transfer=" + transfer
-                + " hdrTypes=" + java.util.Arrays.toString(hdrTypes) + " -> SDR mapping");
+        if (mode == 1 && !wideGamut) Log.i(TAG, "HDR display fallback: transfer=" + transfer
+                + " hdrTypes=" + java.util.Arrays.toString(hdrTypes)
+                + " sdk=" + Build.VERSION.SDK_INT + " -> SDR mapping");
         Context ctx = context;
         if (ctx == null) throw new IllegalStateException("HDR output context is unavailable");
         // Do not silently tag PQ/HLG as SDR. New codecs may perform real tone mapping.
-        if (!forceBt709 && HdrDisplayPolicy.decoderToneMapping(mode, Build.VERSION.SDK_INT)) {
+        if (!forceBt709 && !wideGamut
+                && HdrDisplayPolicy.decoderToneMapping(mode, Build.VERSION.SDK_INT)) {
             format.setInteger("color-transfer-request", 3);
+            outputRoute = "解码器→SDR";
             Log.i(TAG, "Request decoder HDR -> SDR transfer=" + transfer);
             return null;
         }
         float peak = peak(format,1000f);
+        // Missing transfer is not proof of HDR. Convert wide-gamut SDR using the
+        // SDR display curve, without changing the source metadata in the HUD.
+        int renderTransfer = forceBt709 ? 0 : wideGamut ? (transfer == 1 ? 1 : 3) : transfer;
         NativeHdrOutput bridge = new NativeHdrOutput(surface, integer(format, "width", 0),
-                integer(format, "height", 0), forceBt709 ? 0 : transfer, peak, forceBt709);
+                integer(format, "height", 0), renderTransfer, peak, forceBt709,
+                integer(format, "color-standard", sourceStandard));
+        if (wideGamut) Log.i(TAG, "BT.2020 -> BT.709 gamut conversion; source transfer=" + sourceTransfer);
         Log.i(TAG, "GPU HDR output mode=" + mode + " transfer=" + transfer
                 + " display=" + (targetDisplay == null ? "unknown" : targetDisplay.getDisplayId()));
         active = bridge;
+        outputRoute = forceBt709 ? "GPU BT.709" : "GPU→SDR";
         return bridge;
     }
 
@@ -148,8 +163,9 @@ public final class NativeHdrOutput implements SurfaceTexture.OnFrameAvailableLis
         catch (RuntimeException ignored) { return fallback; }
     }
 
-    private NativeHdrOutput(Surface surface, int w, int h, int trc, float max, boolean bt709) {
+    private NativeHdrOutput(Surface surface, int w, int h, int trc, float max, boolean bt709, int standard) {
         target = surface; width = w; height = h; transfer = trc; peak = max;
+        configuredStandard = standard;
         forceBt709 = bt709;
         vertices.put(new float[]{-1,-1, 0,0, 1,-1, 1,0, -1,1, 0,1, 1,1, 1,1}).position(0);
         thread.start(); handler = new Handler(thread.getLooper());
@@ -166,7 +182,7 @@ public final class NativeHdrOutput implements SurfaceTexture.OnFrameAvailableLis
             release();
             throw new IllegalStateException("HDR GPU output initialization failed", failure);
         }
-        Log.i(TAG, (forceBt709 ? "GPU BT.709 override " : "GPU HDR -> SDR ")
+        Log.i(TAG, (forceBt709 ? "GPU BT.709 override " : transfer < 6 ? "GPU BT.2020 -> BT.709 " : "GPU HDR -> SDR ")
                 + width + "x" + height + " transfer=" + transfer + " peak=" + peak);
     }
 
@@ -193,8 +209,26 @@ public final class NativeHdrOutput implements SurfaceTexture.OnFrameAvailableLis
 
     public void outputFormat(MediaFormat format) {
         Log.i(TAG,"HDR decoder output " + format);
-        int outputTransfer = integer(format,"color-transfer",transfer);
-        int outputStandard = integer(format,"color-standard",1);
+        int reportedTransfer = integer(format,"color-transfer",0);
+        int reportedStandard = integer(format,"color-standard",0);
+        int outputStandard = knownStandard(reportedStandard) ? reportedStandard : configuredStandard;
+        boolean knownTransfer = reportedTransfer == 1 || reportedTransfer == 3
+                || reportedTransfer == 6 || reportedTransfer == 7;
+        boolean incompleteSdr = (transfer == 6 || transfer == 7)
+                && (reportedTransfer == 1 || reportedTransfer == 3) && !knownStandard(reportedStandard);
+        // Missing/unspecified output tags do not demonstrate HDR -> SDR conversion.
+        // Keep the validated source transfer until the codec reports a complete
+        // SDR colour description. Otherwise a legacy partial SDR tag bypasses
+        // the HLG/PQ shader while its pixels are still HDR.
+        final int outputTransfer = !knownTransfer || incompleteSdr ? transfer : reportedTransfer;
+        decoderColor = "standard=" + integer(format,"color-standard",0)
+                + " transfer=" + integer(format,"color-transfer",0)
+                + " range=" + integer(format,"color-range",0);
+        if (incompleteSdr) {
+            decoderColor += " (source fallback=" + configuredStandard + "/" + transfer + ")";
+            Log.w(TAG,"Incomplete SDR output tags; keep source HDR transfer=" + transfer
+                    + " standard=" + configuredStandard);
+        }
         float outputPeak = peak(format,peak);
         if (!closed) handler.post(() -> {
             if (closed || program == 0) return;
@@ -204,17 +238,33 @@ public final class NativeHdrOutput implements SurfaceTexture.OnFrameAvailableLis
                 return;
             }
             GLES20.glUniform1f(GLES20.glGetUniformLocation(program,"ntvPeak"),outputPeak);
-            if (outputTransfer == 3) {
-                GLES20.glUniform1f(GLES20.glGetUniformLocation(program,"ntvTransfer"),0f);
-                Log.i(TAG,"Decoder already converted to SDR; bypass GPU tone mapping");
+            if (outputTransfer == 6 || outputTransfer == 7) {
+                GLES20.glUniform1f(GLES20.glGetUniformLocation(program,"ntvTransfer"),outputTransfer);
+            } else if (outputTransfer == 3 || outputTransfer == 1) {
+                GLES20.glUniform1f(GLES20.glGetUniformLocation(program,"ntvTransfer"),
+                        outputStandard == 6 ? outputTransfer : 0f);
+                Log.i(TAG,"Decoder SDR output; gamut conversion=" + (outputStandard == 6));
             }
         });
+    }
+
+    private static boolean knownStandard(int value) {
+        return value == 1 || value == 2 || value == 4 || value == 6;
     }
 
     static float renderedFrameRate() {
         NativeHdrOutput output = active;
         if (output == null || output.closed) return Float.NaN;
         return SystemClock.elapsedRealtime()-output.lastRenderedAt > 1000 ? 0f : output.renderedRate;
+    }
+
+    static String outputRoute(boolean hardware) {
+        return hardware ? outputRoute : "软解→SDR";
+    }
+
+    static String decoderColor() {
+        NativeHdrOutput output = active;
+        return output == null || output.closed ? "" : output.decoderColor;
     }
 
     public static long renderedFrameCount() {

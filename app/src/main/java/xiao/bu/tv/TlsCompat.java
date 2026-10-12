@@ -41,8 +41,12 @@ final class TlsCompat {
             installedTrustManager = new TrustAllManager();
             context.init(null, new TrustManager[] {installedTrustManager}, new SecureRandom());
             SSLSocketFactory socketFactory = context.getSocketFactory();
-            // Pre-Lollipop TLS providers lack GCM suites required by current stream CDNs.
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+            // Android 5/6 Conscrypt still waits with select()/FD_SET. A socket or
+            // its handshake wakeup pipe above FD_SETSIZE aborts the whole process
+            // (__FD_SET_chk), rather than throwing an IOException. Our transport
+            // uses Java socket I/O and never passes descriptors to that TLS path.
+            // Android 4.x also needs its missing modern cipher suites.
+            if (usesLegacyTransport(Build.VERSION.SDK_INT)) {
                 socketFactory = new LegacyTlsSocket.Factory(installedTrustManager);
             }
             installedSocketFactory = socketFactory;
@@ -59,6 +63,10 @@ final class TlsCompat {
         } catch (Exception error) {
             Log.e(TAG, "Unable to install trust-all HTTPS compatibility", error);
         }
+    }
+
+    static boolean usesLegacyTransport(int sdk) {
+        return sdk < 24;
     }
 
     static synchronized SSLSocketFactory socketFactory() {

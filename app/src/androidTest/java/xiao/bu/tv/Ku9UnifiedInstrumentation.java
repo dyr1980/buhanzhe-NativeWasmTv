@@ -35,7 +35,8 @@ public final class Ku9UnifiedInstrumentation extends Instrumentation {
         }
     }
 
-    @Override public void onCreate(Bundle args) { super.onCreate(args); start(); }
+    private boolean coreOnly;
+    @Override public void onCreate(Bundle args) { super.onCreate(args); coreOnly=Boolean.parseBoolean(args.getString("coreOnly","false")); start(); }
     private static void check(boolean condition, String why) { if (!condition) throw new AssertionError(why); }
 
     @Override public void onStart() {
@@ -57,6 +58,7 @@ public final class Ku9UnifiedInstrumentation extends Instrumentation {
             runOnMainSync(() -> engine = new Ku9ScriptEngine(activity));
             contract = new Ku9JsContract(activity);
             String report = Ku9CjsContractTest.run(activity);
+            report += Ku9StartupChecks.run(activity);
             check(!Ku9EnginePolicy.usesWebView("// document\nfunction main(){var s='fetch';return {url:'https://x'};}"), "plain script policy");
             check(Ku9EnginePolicy.usesWebView("function main(){return document.createElement('canvas');}"), "DOM routing");
             check(Ku9EnginePolicy.usesWebView("function main(){return window['document'];}"), "bracket routing");
@@ -71,6 +73,10 @@ public final class Ku9UnifiedInstrumentation extends Instrumentation {
                     + "ok(CryptoJS.SHA256('abc').toString()===ku9.sha256('abc'),'SHA');"
                     + "ok(typeof RSA==='function','RSA');ok(cjs===ku9,'alias');"
                     + "ok(ku9.decodeBase64(ku9.encodeBase64('中文'))==='中文','base64');"
+                    + "var binary='';for(var z=0;z<256;z++)binary+=String.fromCharCode(z);"
+                    + "ok(atob(btoa(binary))===binary,'binary base64 including NUL/high bytes');"
+                    + "ok(atob(' Zg==\\n')==='f'&&atob('Zg')==='f'&&btoa('')==='','base64 padding/whitespace');"
+                    + "var bad=0;try{atob('x');}catch(e){bad++;}try{atob('AA%');}catch(e){bad++;}try{btoa('€');}catch(e){bad++;}ok(bad===3,'base64 invalid input');"
                     + "ku9.setCache('obj',{n:1,a:[true,'x']});ok(ku9.getCache('obj').a[1]==='x','object cache');"
                     + "ku9.setCache('str','123');ok(ku9.getCache('str')==='123','string cache');"
                     + "ku9.setCache('num',123);ok(ku9.getCache('num')===123,'number cache');"
@@ -113,7 +119,7 @@ public final class Ku9UnifiedInstrumentation extends Instrumentation {
             check(next.error == null && next.output.contains("next"), "switch engine after cancellation");
             report += "PASS DOM/Canvas/async, cancellation and engine switch\n";
             }
-            report += Ku9PageResultTest.run(this, activity);
+            if(!coreOnly)report += Ku9PageResultTest.run(this, activity);
             result.putString("stream", report);
             finish(-1, result);
         } catch (Throwable error) {

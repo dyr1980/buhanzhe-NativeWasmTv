@@ -141,13 +141,14 @@ final class Ku9ScriptLoader {
         // Ku9 treats every /ku9/js/ address without /k-web/ as a local script.
         // The host is only a placeholder (usually "A") and time-shift sources may
         // insert another path segment between /k-web/ and /ku9/js/.
-        if (!lowerPath.contains(NETWORK_MARKER)) {
+        String host = uri.getHost();
+        boolean localPlaceholder = host != null && host.indexOf('.') < 0
+                && host.indexOf(':') < 0;
+        if (localPlaceholder || !lowerPath.contains(NETWORK_MARKER)) {
             script = readLocal(fileName);
         } else {
             String scriptUrl = GithubProxy.apply(activity, withoutQuery(uri));
-            script = HNYX_SCRIPT.equalsIgnoreCase(fileName)
-                    ? loadOnlineCache(scriptUrl)
-                    : Ku9HttpClient.getText(scriptUrl, null, MAX_SCRIPT_BYTES);
+            script = loadOnlineCache(scriptUrl);
         }
         return legacySyntax && HNYX_SCRIPT.equalsIgnoreCase(fileName) ? toLegacySyntax(script) : script;
     }
@@ -171,6 +172,7 @@ final class Ku9ScriptLoader {
         long age = System.currentTimeMillis() - file.lastModified();
         if (file.isFile() && age >= 0 && age < ONLINE_CACHE_MS) {
             try {
+                Log.i(TAG,"Online script cache hit ageMs="+age);
                 return readFile(file);
             } catch (IOException error) {
                 Log.w(TAG, "Unable to read script cache " + file, error);
@@ -281,12 +283,20 @@ final class Ku9ScriptLoader {
         }
     }
 
-    private static void writeCache(File directory, File file, String content) {
+    private static synchronized void writeCache(File directory, File file, String content) {
         if (ensureDirectory(directory) == null) {
             return;
         }
         try {
             writeUserScript(file, content.getBytes("UTF-8"));
+            File[] files=directory.listFiles();
+            if(files!=null) {
+                java.util.Arrays.sort(files,(a,b)->a.lastModified()<b.lastModified()?-1:a.lastModified()==b.lastModified()?0:1);
+                long bytes=0;int count=0;for(File cached:files)if(cached.getName().endsWith(".js")){bytes+=cached.length();count++;}
+                for(File cached:files)if((count>64||bytes>8*1024*1024L)&&!cached.equals(file)&&cached.getName().endsWith(".js")) {
+                    long size=cached.length();if(cached.delete()){count--;bytes-=size;}
+                }
+            }
         } catch (IOException error) {
             Log.w(TAG, "Unable to write script cache " + file, error);
         }

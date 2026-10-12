@@ -116,7 +116,7 @@
         android:fontFamily="monospace"
         android:gravity="left"
         android:includeFontPadding="true"
-        android:maxLines="3"
+        android:maxLines="4"
         android:shadowColor="#E6000000"
         android:shadowDx="1"
         android:shadowDy="1"

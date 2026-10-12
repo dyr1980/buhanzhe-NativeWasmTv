@@ -19,6 +19,7 @@
 # Release only shrinks unreachable code. Keep names and disable bytecode
 # optimization so old TV reflection and readable crash traces remain stable.
 -dontobfuscate
+-keep interface xiao.bu.tv.radio.RadioUi { *; }
 
 # Ku9, web resolvers and the in-app remote invoke these methods from JavaScript.
 -keepclassmembers class * {

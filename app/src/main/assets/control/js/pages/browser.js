@@ -23,6 +23,7 @@ function saveWebViewSettings(includeScript) {
     adBlock = document.getElementById("webViewAdBlock"),
     webRtc = document.getElementById("webViewWebRtcEnabled");
   var payload = {
+    webViewMinimalMode: document.getElementById("webViewMinimalMode").checked,
     webViewResolution: resolution.value,
     webViewPageScale: Number(pageScale.value),
     webViewUserAgent: userAgent.value,
@@ -48,6 +49,7 @@ function saveWebViewSettings(includeScript) {
 }
 function renderPageState() {
   var s = state.settings;
+  document.getElementById("webViewMinimalMode").checked = s.webViewMinimalMode === true;
   document.getElementById("webViewResolution").value = s.webViewResolution || "720p";
   document.getElementById("webViewPageScale").value = String(s.webViewPageScale || 1);
   document.getElementById("webViewUserAgent").value = s.webViewUserAgent || "windows";
@@ -56,7 +58,7 @@ function renderPageState() {
   document.getElementById("webViewLoadImages").checked = s.webViewLoadImages !== false;
   document.getElementById("webViewAutoPlaySniffed").checked = s.webViewAutoPlaySniffed === true;
   document.getElementById("webViewAutoCloseSniffed").checked = s.webViewAutoCloseSniffed !== false;
-  document.getElementById("webViewAdBlock").checked = s.webViewAdBlock !== false;
+  document.getElementById("webViewAdBlock").checked = s.webViewAdBlock === true;
   document.getElementById("webViewWebRtcEnabled").checked = s.webViewWebRtcEnabled === true;
   document.getElementById("webCacheSize").textContent =
     "系统 WebView · 当前占用：" + formatBytes(Number(s.webViewCacheBytes) || 0);

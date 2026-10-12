@@ -16,12 +16,19 @@ are required; the application-specific configuration lives in `config.h`.
 
 ## Scope and size
 
-- ARM32 and x86/API 14 native libraries, used only on Android 4.0 (API 14/15).
-  The ARM64 APK does not contain this library. API 16+ retains its existing TLS provider.
+- ARM32 and x86/API 14 native libraries, plus ARM64/API 21. Used on Android
+  4.x through 6.x. Android 7+ retains the platform TLS provider.
+- Android 5/6 Conscrypt uses `select()` and `FD_SET`; an invalid or high-numbered
+  socket/wakeup descriptor can abort in `__FD_SET_chk` (Bugly 1040). This adapter
+  uses Java TCP streams for transport and never enters that system TLS wait.
+  See the official [Android 6 source](https://android.googlesource.com/platform/external/conscrypt/+/android-6.0.1_r81/src/main/native/org_conscrypt_NativeCrypto.cpp)
+  and [Android 7 source](https://android.googlesource.com/platform/external/conscrypt/+/android-7.0.0_r1/src/main/native/org_conscrypt_NativeCrypto.cpp).
 - Loaded at the first legacy HTTPS handshake, never in `Application.onCreate`.
 - HTTPS client, TLS 1.2, ECDHE with RSA/ECDSA, AES-GCM/CBC, P-256/P-384/X25519.
   No server, DTLS, PSK, TLS 1.0/1.1/1.3, CLI, or certificate files bundled.
 - The stripped library is 144,856 bytes in the verified NDK r14b build.
+  The added ARM64 library is 181,888 bytes before APK compression; ARM32/x86
+  reuse their existing libraries. No Conscrypt bundle is added.
 - Normal 16 KiB TLS records are retained for public-CDN compatibility. Encrypted
   I/O uses one reusable 16 KiB Java buffer per connection. Native state is per
   socket and freed on close; no worker threads or global session cache are added.
@@ -32,6 +39,12 @@ are required; the application-specific configuration lives in `config.h`.
   can block indefinitely on these old kernels. No deterministic seed is used.
 
 ## Trust and I/O
+
+`NetworkCrashInstrumentation` checks three HTTPS requests while descriptors
+above 1100 are held open, plus 30 proxy-close cycles with blocked upstream
+requests. It explicitly selects this TLS adapter on Android 9, so it tests the
+same transport used by Android 4-6. This validates the replacement transport;
+it does not reproduce the original crash on an affected Android 5/6 device.
 
 The native client returns the complete DER certificate chain to Java, then calls
 the supplied `X509TrustManager` before allowing application data. Hostname checking

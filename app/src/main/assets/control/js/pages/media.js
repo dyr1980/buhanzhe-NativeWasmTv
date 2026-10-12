@@ -44,10 +44,16 @@ function mediaCurrentSourceDescription(data) {
   var frameRate = Number(stats.frameRate), streamRate = Number(stats.videoStreamFrameRate);
   if (!stats.audioOnly && (typeof stats.actualFrameRateAvailable === "boolean" || streamRate > 0)) {
     var actual = stats.actualFrameRateAvailable ? Number(stats.actualFrameRate).toFixed(1) : "--";
-    info.push("实际 " + actual + " / 源 " + (streamRate > 0 ? streamRate.toFixed(1) : "--") + " fps");
+    var source = streamRate > 0 ? stats.scanType === "interlaced"
+      ? streamRate.toFixed(1) + "帧/" + (streamRate * 2).toFixed(1) + "场"
+      : streamRate.toFixed(1) + "fps" : "--fps";
+    info.push("输出 " + actual + "fps / 源 " + source);
   } else if (!stats.audioOnly && frameRate > 0)
     info.push((frameRate >= 10 ? Math.round(frameRate) : frameRate.toFixed(1))
       + "fps" + (stats.sourceFrameRate ? "（源）" : ""));
+  if (!stats.audioOnly && stats.scanType === "interlaced")
+    info.push("去隔行 " + (stats.deinterlace === "bwdif_field" ? "BWDIF逐场"
+      : stats.deinterlace === "system_unverified" ? "系统处理（待验证）" : "未知"));
   if (info.length) return info.join(" · ");
   return data && data.prepared ? "正在获取播放参数…" : "正在准备播放…";
 }
@@ -589,7 +595,7 @@ function renderMediaController(data) {
   document.getElementById("mediaNext").disabled = mediaState.nextAvailable === false;
   var speed = document.getElementById("mediaSpeed");
   speed.value = String(Number(mediaState.speed) || 1);
-  speed.disabled = !prepared || !!mediaState.webPageVisible;
+  speed.disabled = !prepared || !mediaState.speedAvailable || !!mediaState.webPageVisible;
   document.getElementById("subtitleSize").value = String(style.sizePercent || 100);
   if (!subtitleOffsetEditing) {
     document.getElementById("subtitlePosition").value = style.position || "bottom";
