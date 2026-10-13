@@ -25,6 +25,7 @@ final class LegacyWebSession {
     final HashMap<Integer, WebSourceView.SmartContextCallback> inspections = new HashMap<>();
     Bundle configuration = new Bundle(), state = new Bundle();
     String token = "", url = "", script = "";
+    String channelTitle = "", channelGroup = "";
     int request = -1, pid, retiredPid, sequence;
     float scale = 1f;
     boolean active, visible, suspended;
@@ -33,11 +34,13 @@ final class LegacyWebSession {
     IBinder.DeathRecipient death;
     long lastBeat, started;
     LegacyWebSession(WebSourceView owner) { this.owner = owner; }
-    void open(int id, String value, String pageScript, boolean forceHtml) {
+    void open(int id, String value, String pageScript, boolean forceHtml,
+            String title, String group) {
         final int previousPid = pid > 0 ? pid : retiredPid;
         close();
         current = this;
         request = id; url = value; script = pageScript;
+        channelTitle = title; channelGroup = group;
         htmlMimeOverride = forceHtml;
         token = UUID.randomUUID().toString();
         active = visible = true; suspended = false;
@@ -83,6 +86,7 @@ final class LegacyWebSession {
             send("scale", bundle("scale", scale));
             Bundle open = bundle("url", url); open.putInt("request", request); open.putString("script", script);
             open.putBoolean("htmlMimeOverride", htmlMimeOverride);
+            open.putString("channelTitle", channelTitle); open.putString("channelGroup", channelGroup);
             send("open", open);
         } else if (message.what == HEARTBEAT) {
             lastBeat = SystemClock.elapsedRealtime();

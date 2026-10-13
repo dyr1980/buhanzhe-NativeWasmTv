@@ -30,15 +30,31 @@ final class Ku9ScriptResolver {
     static final class Result {
         final String url;
         final boolean directDataSource;
+        final boolean noReferer, http1;
+        final boolean playlistRefresh;
+        final java.util.Map<String, String> signedHeaders;
         final String referer, cookies;
         final String userAgent;
         final String webViewUrl, pageScript;
 
         Result(String url, boolean directDataSource, JSONObject fields) {
+            this(url, directDataSource, fields, false);
+        }
+
+        Result(String url, boolean directDataSource, JSONObject fields, boolean playlistRefresh) {
+            this.playlistRefresh = playlistRefresh;
+            java.util.Map<String, String> headers = new java.util.HashMap<>();
+            for (String name : new String[] {"UID", "APPID", "APPSIGN", "APPRANDOMSTR"}) {
+                String value = Ku9JsContract.resultHeader(fields, name, name);
+                if (value != null && value.length() > 0) headers.put(name, value);
+            }
+            this.signedHeaders = java.util.Collections.unmodifiableMap(headers);
             this.webViewUrl = fields.optString("webview", "").trim();
             this.pageScript = fields.optString("jscode", "");
             this.url = url;
-            this.directDataSource = directDataSource;
+            this.directDataSource = directDataSource || fields.optBoolean("direct", false);
+            this.noReferer = fields.optBoolean("noReferer", false);
+            this.http1 = fields.optBoolean("http1", false);
             this.referer = Ku9JsContract.resultHeader(fields, "referer", "Referer");
             this.userAgent = Ku9JsContract.resultHeader(fields, "userAgent", "User-Agent");
             this.cookies = Ku9JsContract.resultHeader(fields, "cookies", "Cookie");
@@ -174,15 +190,18 @@ final class Ku9ScriptResolver {
             playlistServer = new Ku9PlaylistServer();
             playlistServer.start();
         }
+        boolean refresh = request.initialCompleted;
+        Result result = new Result(playlistServer.url(), false, fields, refresh);
+        // Renew authentication before exposing the next signed segment URLs.
+        if (refresh) request.callback.onResolved(request.requestId, result);
         playlistServer.update(content);
         handler.removeCallbacks(refreshPlaylist);
         if (!content.contains("#EXT-X-ENDLIST"))
             handler.postDelayed(refreshPlaylist, playlistRefreshDelay(content));
-        if (!request.initialCompleted) {
-            request.initialCompleted = true;
-            request.callback.onResolved(request.requestId,
-                    new Result(playlistServer.url(), false, fields));
-        }
+        request.initialCompleted = true;
+        // Signatures can change with the playlist. Update transport headers
+        // while keeping the current player and local playlist URL alive.
+        if (!refresh) request.callback.onResolved(request.requestId, result);
     }
 
     static long playlistRefreshDelay(String content) {

@@ -27,8 +27,8 @@ public final class CjsPluginRuntime {
     private static boolean catalogReadAttempted;
     private static boolean abiChangedAtStartup;
     private static final Map<String, State> states = new HashMap<String, State>();
-    private static final Set<String> checked = new HashSet<String>();
     private static final Object INSTALL_LOCK = new Object();
+    private static boolean startupUpdateAttempted;
 
     private static final class State {
         final String id;
@@ -161,9 +161,8 @@ public final class CjsPluginRuntime {
             JSONObject discovered = !knowsSource(source) ? discoverSourceDescriptor(source) : null;
             playbackUrl(url); // Validate parameters before retrying playback.
             State selected = sourceState(source);
-            if (selected != null) {
+            if (selected != null && !isInstalled(selected.id)) {
                 installOrUpdate(selected.id, discovered);
-                synchronized (CjsPluginRuntime.class) { checked.add(selected.id); }
             }
         }
     }
@@ -209,7 +208,7 @@ public final class CjsPluginRuntime {
             mergedEntries.put(selected);
             merged.put("sites", mergedEntries);
             useCatalog(merged);
-            checked.remove(selected.getString("id"));
+            persistCatalog(merged);
         }
         return probe;
     }
@@ -232,11 +231,14 @@ public final class CjsPluginRuntime {
     private static void refreshCatalog() throws Exception {
         byte[] bytes = download(cacheBustedUrl(getManifestUrl()), MAX_MANIFEST_BYTES);
         JSONObject value = readManifest(bytes);
-        if (!root().isDirectory() && !root().mkdirs()) throw new IOException("无法创建插件目录");
         // Validate before publishing; preserve the previous catalog if validation fails.
         useCatalog(value);
+        persistCatalog(value);
+    }
+    private static void persistCatalog(JSONObject value) throws Exception {
+        if (!root().isDirectory() && !root().mkdirs()) throw new IOException("无法创建插件目录");
         File temp = new File(root(), "catalog.tmp");
-        writeAndSync(temp, bytes);
+        writeAndSync(temp, value.toString().getBytes("UTF-8"));
         if (!temp.renameTo(new File(root(), "catalog.json"))) throw new IOException("无法保存站点目录");
     }
     private static synchronized State state(String id) throws IOException {
@@ -253,7 +255,8 @@ public final class CjsPluginRuntime {
         if (!currentAbi().equals(new String(readFile(new File(dir, "abi.txt"), 64), "UTF-8"))) return null;
         if (!currentProfile().equals(new String(readFile(new File(dir, "profile.txt"), 64), "UTF-8"))) return null;
         JSONObject result = new JSONObject(new String(readFile(new File(dir, "runtime.json"), MAX_SCRIPT_BYTES), "UTF-8"));
-        return result.optInt("protocol") == HOST_PROTOCOL && s.id.equals(result.optString("id")) ? result : null;
+        return result.optInt("protocol") == HOST_PROTOCOL && s.id.equals(result.optString("id"))
+                && result.optInt("version") > 0 && result.optJSONObject("scripts") != null ? result : null;
     }
     public static synchronized boolean isInstalled(String id) {
         try {
@@ -304,6 +307,39 @@ public final class CjsPluginRuntime {
     }
     public static String installOrUpdate(String id) throws Exception {
         return installOrUpdate(id, null);
+    }
+    /** Playback uses local files independently of background/manual version probes. */
+    static String ensureInstalled(String id) throws Exception {
+        if (isInstalled(id)) return String.valueOf(state(id).runtime.getInt("version"));
+        synchronized (INSTALL_LOCK) {
+            if (isInstalled(id)) {
+                State s = state(id);
+                return String.valueOf(s.runtime.getInt("version"));
+            }
+            return installOrUpdate(id);
+        }
+    }
+    /** One background batch per process, including when its network request fails. */
+    static void checkInstalledOnce() throws Exception {
+        synchronized (CjsPluginRuntime.class) {
+            if (startupUpdateAttempted) return;
+            startupUpdateAttempted = true;
+        }
+        synchronized (INSTALL_LOCK) {
+            List<String> installed = new ArrayList<String>();
+            synchronized (CjsPluginRuntime.class) {
+                if (!hasCatalog()) return;
+                for (String id : states.keySet()) if (isInstalled(id)) installed.add(id);
+            }
+            if (installed.isEmpty()) return;
+            // Imported sites may use a different branch or descriptor URL. Keep
+            // their persisted routing during automatic checks; only an explicit
+            // catalog refresh may replace it.
+            for (String id : installed) {
+                try { installOrUpdate(id); }
+                catch (Exception error) { Log.w(TAG, "Startup site update failed: " + id, error); }
+            }
+        }
     }
     private static String installOrUpdate(String id, JSONObject discovered) throws Exception {
         synchronized (INSTALL_LOCK) {
@@ -465,22 +501,6 @@ public final class CjsPluginRuntime {
             }
             return value;
         } catch (Exception e) { return selected; }
-    }
-    static synchronized boolean needsComponentCheck(String id) {
-        return id != null && id.length() > 0 && isInstalled(id) && !checked.contains(id);
-    }
-    static synchronized void componentCheckFailed(String id) { checked.remove(id); }
-    static boolean ensureComponentCurrent(String id) throws Exception {
-        synchronized (CjsPluginRuntime.class) {
-            if (!needsComponentCheck(id)) return false;
-            checked.add(id);
-        }
-        State s = state(id);
-        int previous = preferences().getInt(pref(s, "active"), 0);
-        int pending = preferences().getInt(pref(s, "pending"), 0);
-        int version = Integer.parseInt(installOrUpdate(id));
-        Log.i(TAG, "Site checked id=" + id + " local=" + previous + " remote=" + version);
-        return version > Math.max(previous, pending);
     }
     private static boolean matchesHost(String host, JSONArray hosts) {
         if (hosts == null) return false;

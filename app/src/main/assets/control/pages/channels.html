@@ -60,7 +60,7 @@
       <section class="config-epg-section">
         <div class="section-head">
           <h2>节目单</h2>
-          <span class="hint">按从上到下的顺序优先匹配</span>
+          <input id="epgEnabled" class="source-toggle" aria-label="节目单" type="checkbox" onchange="saveEpgEnabled()" />
         </div>
         <div id="epgUrls" class="epg-source-list"></div>
         <div class="actions">
@@ -69,7 +69,7 @@
         </div>
         <button class="primary wide push-button" onclick="saveEpg()">保存节目单</button>
         <div class="config-note">
-          前面的来源优先；后续来源中已出现的频道资料和节目内容会自动忽略。
+          关闭后隐藏频道列表节目单列和节目信息，并停止后续节目单刷新。地址按从上到下的顺序优先匹配；后续来源中已出现的频道资料和节目内容会自动忽略。
         </div>
       </section>
       <section>

@@ -160,7 +160,8 @@ public final class LegacyWebActivity extends Activity implements WebSourceView.L
             case "scale": source.setInterfaceScale(data.getFloat("scale", 1f)); cursor.setCastVisualScale(data.getFloat("scale", 1f)); break;
             case "open": request = data.getInt("request"); monitoring = true;
                 rendererBeat = SystemClock.elapsedRealtime(); source.open(request, data.getString("url"),
-                        data.getString("script", ""), data.getBoolean("htmlMimeOverride", false)); break;
+                        data.getString("script", ""), data.getBoolean("htmlMimeOverride", false),
+                        data.getString("channelTitle", ""), data.getString("channelGroup", "")); break;
             case "hide": monitoring = false; source.hideForStreamPlayback(); showPlayer(); break;
             case "restore": source.restoreAfterStreamPlayback(); monitoring = true; rendererBeat = SystemClock.elapsedRealtime(); break;
             case "back": onBackPressed(); break;

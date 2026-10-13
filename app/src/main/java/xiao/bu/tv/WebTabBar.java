@@ -62,6 +62,8 @@ final class WebTabBar extends LinearLayout {
         String url;
         String title;
         String bookmarkTitle = "", bookmarkGroup = "", bookmarkUrl = "";
+        String channelEntryUrl = "";
+        String channelEntryTitle = "", channelEntryGroup = "";
         boolean pinned;
         boolean muted;
         boolean sleeping;

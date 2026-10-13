@@ -21,11 +21,7 @@ public final class ReceivedApkCleanup extends BroadcastReceiver {
 
     static void initialize(Context context) {
         Context app = context.getApplicationContext();
-        IntentFilter filter = new IntentFilter(Intent.ACTION_PACKAGE_ADDED);
-        filter.addAction(Intent.ACTION_PACKAGE_REPLACED);
-        filter.addDataScheme("package");
-        app.registerReceiver(new ReceivedApkCleanup(), filter);
-        runCleanup(app, null, null);
+        runCleanup(app, null, null, true);
     }
 
     @Override public void onReceive(Context context, Intent intent) {
@@ -40,9 +36,25 @@ public final class ReceivedApkCleanup extends BroadcastReceiver {
 
     private static void runCleanup(final Context context, final String target,
             final PendingResult pending) {
+        runCleanup(context, target, pending, false);
+    }
+
+    private static void runCleanup(final Context context, final String target,
+            final PendingResult pending, final boolean register) {
         new Thread(() -> {
             Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND);
-            try { cleanup(context, target); }
+            try {
+                // registerReceiver is a synchronous Binder call. A busy system
+                // server must not block Application.onCreate (Bugly 5099).
+                if (register) {
+                    IntentFilter filter = new IntentFilter(Intent.ACTION_PACKAGE_ADDED);
+                    filter.addAction(Intent.ACTION_PACKAGE_REPLACED);
+                    filter.addDataScheme("package");
+                    try { context.registerReceiver(new ReceivedApkCleanup(), filter); }
+                    catch (RuntimeException error) { Log.w("ReceivedApkCleanup", "Unable to register install cleanup", error); }
+                }
+                cleanup(context, target);
+            }
             finally { if (pending != null) pending.finish(); }
         }, "received-apk-cleanup").start();
     }

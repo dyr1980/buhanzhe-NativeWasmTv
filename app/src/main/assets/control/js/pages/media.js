@@ -30,7 +30,7 @@ function mediaResourceDescription(url, resource) {
     info.push(bitrate ? (resource.bitrateEstimated ? "约 " : "") + bitrate : "码率未知");
   }
   if (resource.probeStatus === "pending") info.push("后台探测中…");
-  else if (resource.probeStatus === "unavailable") info.push("未能获取完整信息，可尝试播放");
+  else if (resource.probeStatus === "unavailable") info.push(resource.probeError || "未能获取完整信息，可尝试播放");
   // Drop signed query parameters only in the label; playback keeps the original URL.
   var shortUrl = path.length > 64 ? path.slice(0, 26) + "…" + path.slice(-37) : path;
   return { type: type, url: shortUrl, info: info.join(" · ") };

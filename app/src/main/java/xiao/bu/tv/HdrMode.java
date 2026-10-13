@@ -10,8 +10,9 @@ final class HdrMode {
     static final String DEFAULT = HARDWARE;
 
     static String sanitize(String value) {
+        // The former passthrough selection uses the same output policy as auto.
         return MAPPING.equals(value) || BT709.equals(value) || HARDWARE_SDR.equals(value)
-                || PASSTHROUGH.equals(value) ? value : DEFAULT;
+                ? value : DEFAULT;
     }
 
     static int nativeValue(String value) {

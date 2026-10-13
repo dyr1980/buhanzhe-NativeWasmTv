@@ -11,13 +11,19 @@ import java.util.Map;
 /** Lazy GET/HEAD failover preserves caller headers, redirects and download streams. */
 final class GithubConnection extends HttpURLConnection {
     interface Opener { HttpURLConnection open(URL url) throws IOException; }
+    interface NextRoute { boolean advance(URL url) throws IOException; }
     private final Opener opener;
+    private final NextRoute nextRoute;
     private volatile HttpURLConnection active;
     private boolean responseReady;
     private volatile boolean cancelled;
     private IOException failure;
 
-    GithubConnection(URL url, Opener opener) { super(url); this.opener = opener; }
+    GithubConnection(URL url, Opener opener) { this(url, opener, null); }
+    // Also used for opt-in HTTP/1 CDN failover: preserve the same headers/body API.
+    GithubConnection(URL url, Opener opener, NextRoute nextRoute) {
+        super(url); this.opener = opener; this.nextRoute = nextRoute;
+    }
     private HttpURLConnection create(String target, boolean retryable) throws IOException {
         HttpURLConnection connection = opener.open(new URL(target));
         connection.setConnectTimeout(retryable ? bounded(getConnectTimeout(), 4000) : getConnectTimeout());
@@ -41,21 +47,27 @@ final class GithubConnection extends HttpURLConnection {
         if (responseReady) return active;
         if (active != null) { active.getResponseCode(); responseReady = true; return active; }
         boolean canRetry = !getDoOutput() && ("GET".equals(method) || "HEAD".equals(method));
-        String[] routes = canRetry ? GithubProxy.candidates(url.toString()) : new String[] {url.toString()};
+        String[] routes = canRetry && nextRoute == null ? GithubProxy.candidates(url.toString())
+                : canRetry && "GET".equals(method) ? new String[] {url.toString(), url.toString(), url.toString()}
+                : new String[] {url.toString()};
         IOException last = null;
         for (int i = 0; i < routes.length; i++) {
             HttpURLConnection connection = null;
             try {
                 connection = create(routes[i], canRetry);
                 int status = connection.getResponseCode();
-                if (canRetry && GithubProxy.retryable(status)) {
+                if (nextRoute != null && status == 403 && i + 1 < routes.length
+                        && nextRoute.advance(connection.getURL())) {
+                    connection.disconnect(); continue;
+                }
+                if (nextRoute == null && canRetry && GithubProxy.retryable(status)) {
                     GithubProxy.failed(routes[i]);
                     if (i + 1 < routes.length) { connection.disconnect(); continue; }
-                } else if (status >= 200 && status < 400) GithubProxy.succeeded(routes[i]);
+                } else if (nextRoute == null && status >= 200 && status < 400) GithubProxy.succeeded(routes[i]);
                 responseReady = true; connected = true; return connection;
             } catch (IOException error) {
                 last = error;
-                if (canRetry) GithubProxy.failed(routes[i]);
+                if (canRetry && nextRoute == null) GithubProxy.failed(routes[i]);
                 if (connection != null) connection.disconnect();
                 if (cancelled) break;
             }

@@ -51,6 +51,13 @@ function readChannelDraft() {
     return null;
   }
 }
+function saveEpgEnabled() {
+  var input = document.getElementById("epgEnabled");
+  api("/api/settings", {epgEnabled: input.checked}, function(error) {
+    if(error){input.checked=!input.checked;toast(error.message,true);return;}
+    toast(input.checked ? "已开启节目单" : "已关闭节目单");
+  });
+}
 function saveAutoUpdateChannelList() {
   var input = document.getElementById("autoUpdateChannelList");
   api("/api/settings", { autoUpdateChannelList: input.checked }, function (error) {
@@ -1161,6 +1168,7 @@ function renderPageState() {
   saveChannelDraft();
   var draft = readChannelDraft();
   var s = state.settings;
+  document.getElementById("epgEnabled").checked = s.epgEnabled !== false;
   document.getElementById("autoUpdateChannelList").checked = s.autoUpdateChannelList === true;
   playlistSources = JSON.parse(JSON.stringify(s.playlistSources || []));
   channelBaseSources = channelSourceSnapshot(playlistSources);

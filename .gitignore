@@ -32,7 +32,12 @@ scripts/*
 /docs
 /tests/*
 !/tests/hls-cache-performance.test.py
+!/tests/cjs-install-cancellation.test.py
 !/tests/hls-hot-switch.test.py
+!/tests/hls-uri.test.py
+!/tests/sniffed-playback-gate.test.py
+!/tests/hls-probe-failure.test.py
+!/tests/web-channel-identity.test.py
 !/tests/cast-delay-metrics.test.py
 !/tests/channel-startup-timing.test.py
 !/tests/startup-maintenance.test.py

@@ -732,6 +732,9 @@ test('sniffed metadata updates display type, duration, dimensions and bitrate wi
   row=render({probeStatus:'unavailable',type:'unknown'});
   assert.ok(row.children[0].textContent.includes('类型未知'));
   assert.ok(!row.children[2].textContent.includes('0 kbps'));
+  row=render({probeStatus:'unavailable',type:'unknown',probeError:'HTTP 404：资源不存在或链接已失效'});
+  assert.ok(row.children[2].textContent.includes('HTTP 404'));
+  assert.ok(!row.children[2].textContent.includes('可尝试播放'));
   c.renderMediaSources({webPage:true,sniffedResources:[]});
   assert.equal(b.elements.get('mediaSniffedList').children.length,0);
 });

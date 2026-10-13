@@ -357,8 +357,7 @@ edit(player, '        SDL_VoutDisplayYUVOverlay(ffp->vout, vp->bmp);', `        
         if (ntv_display_result >= 0)
             ntv_output_frame(&ffp->ntv_timing, av_gettime_relative() / 1000, vp->pts, vp->serial);`);
 edit(player, '#include "ff_ffplay.h"', '#include "ff_ffplay.h"\n#include "ntv_stream_probe.h"');
-edit(player, '            packet_queue_put(&is->videoq, pkt);', `            ntv_measure_source(ffp, is->video_st, pkt, is->videoq.serial);
-            packet_queue_put(&is->videoq, pkt);`);
+
 edit(player, `            if (ffp && ffp->ntv_live_video && ffp->is && !ffp->is->paused
                     && (uint32_t)((uint32_t)(av_gettime_relative() / 1000)
                             - ffp->ntv_last_video_output_ms) > 1000)
@@ -480,16 +479,7 @@ edit(def, '    ffp->ntv_last_video_output_ms = 0;', `    memset(ffp->ntv_latency
     ffp->ntv_latency_output_us = 0;
     ffp->ntv_latency_ms = 0;
     ffp->ntv_last_video_output_ms = 0;`);
-edit(player, '            packet_queue_put(&is->videoq, pkt);', `            if (ffp->ntv_live_video && pkt->pts != AV_NOPTS_VALUE) {
-                SDL_LockMutex(is->videoq.mutex);
-                int slot = ffp->ntv_latency_cursor;
-                ffp->ntv_latency_cursor = (slot + 1) & 255;
-                ffp->ntv_latency_pts[slot] = pkt->pts * av_q2d(is->video_st->time_base);
-                ffp->ntv_latency_read_us[slot] = av_gettime_relative();
-                ffp->ntv_latency_serial[slot] = is->videoq.serial;
-                SDL_UnlockMutex(is->videoq.mutex);
-            }
-            packet_queue_put(&is->videoq, pkt);`);
+require('./apply-stream-timing-patches.cjs')(root);
 edit(player, '        ffp->ntv_last_video_output_ms = (uint32_t)(av_gettime_relative() / 1000);', `        if (ntv_display_result >= 0 && ffp->ntv_live_video && !isnan(vp->pts)) {
             int64_t now = av_gettime_relative();
             SDL_LockMutex(is->videoq.mutex);

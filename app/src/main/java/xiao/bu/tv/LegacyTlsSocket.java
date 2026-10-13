@@ -162,7 +162,14 @@ final class LegacyTlsSocket extends SSLSocket {
     }
 
     @Override protected void finalize() throws Throwable {
-        try { close(); } finally { super.finalize(); }
+        // FinalizerWatchdog must never wait on socket I/O, SO_LINGER, or the
+        // engine monitor. JNI calls retain this owner while using its handle;
+        // an unreachable owner can only have an idle engine. The transport's
+        // own Socket cleanup owns its descriptor. Explicit close() still
+        // cancels reads and releases the engine deterministically.
+        try {
+            if (handle != 0) { nativeFree(handle); handle = 0; }
+        } finally { super.finalize(); }
     }
 
     @Override public SSLSession getSession() {

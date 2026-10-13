@@ -6,6 +6,7 @@ source=(root/'app/src/main/java/xiao/bu/tv/MainActivity.java').read_text(encodin
 a=source.index('    private void restartPlayerPreservingPosition(')
 b=source.index('    private void resetPlaybackRecoveryState()',a)
 method=source[a:b]
+completion=source[source.index('    private static boolean isNormalPlaybackCompletion('):a]
 java='''import java.io.IOException;
 public class VodReconnectCheck {
  static final String TAG="test";
@@ -39,6 +40,10 @@ public class VodReconnectCheck {
 
  static void check(boolean b,String s){if(!b)throw new AssertionError(s);}
  public static void main(String[] args)throws Exception {
+  check(isNormalPlaybackCompletion(75560,75560),"MP4 normal EOF must stop without reconnect");
+  check(isNormalPlaybackCompletion(75560,75300),"Allow rounded final frame clock");
+  check(!isNormalPlaybackCompletion(75560,23000),"Truncated MP4 must still recover");
+  check(!isNormalPlaybackCompletion(0,23000),"Live EOF must still recover");
   VodReconnectCheck c=new VodReconnectCheck();
   c.player=new IjkMediaPlayer(600000,67321);IjkMediaPlayer old=c.player;
   c.restartPlayerPreservingPosition(new Channel(),"url",false);
@@ -72,15 +77,22 @@ public class VodReconnectCheck {
   check(c.systemStarts==2,"Failed system MP3 route falls back to IJK");
   c.systemMp3=false;c.systemDv=true;c.restartPlayerPreservingPosition(new Channel(),"dv",false);
   check(c.systemStarts==3,"Dolby Vision recovery keeps its system backend");
-  c.systemDv=false;c.systemAtmos=true;c.restartPlayerPreservingPosition(new Channel(),"atmos",false);
+  c.systemDv=false;c.systemAtmos=true;c.androidMp3FallbackRequestId=-1;
+  c.restartPlayerPreservingPosition(new Channel(),"atmos",false);
   check(c.systemStarts==4,"Atmos recovery keeps its system backend");
+  c.androidMp3FallbackRequestId=c.playRequestId;c.player=new IjkMediaPlayer(75560,23000);
+  c.restartPlayerPreservingPosition(new Channel(),"atmos",false);
+  check(c.systemStarts==4&&c.player.seek==23000,"Failed Atmos backend must fall back and preserve position");
+  c.androidMp3FallbackRequestId=-1;c.player=new IjkMediaPlayer(75560,24000);
+  c.restartPlayerPreservingPosition(new Channel(),"atmos",true);
+  check(c.systemStarts==4&&c.player.seek==24000,"Software retry must not select the failed Atmos system backend");
   c.systemAtmos=false;c.systemMp3=true;c.androidMp3FallbackRequestId=-1;
   Channel radio=new Channel();radio.radio=true;
   c.restartPlayerPreservingPosition(radio,"radio",false);
   check(c.systemStarts==4,"Radio reconnect must not switch to system MP3");
   System.out.println("PASS VOD initial seek, live, end clamp, invalid clock, old instance, deferred/failed restart");
  }
-}'''.replace('METHOD',method)
+}'''.replace('METHOD',completion+method)
 out=root/'.codex-tmp/vod-reconnect-test';out.mkdir(parents=True,exist_ok=True)
 (out/'VodReconnectCheck.java').write_text(java,encoding='utf-8')
 java_bin=Path(os.environ['JAVA_HOME'])/'bin'

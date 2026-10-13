@@ -14,6 +14,7 @@ public class HlsStreamFailureCheck {
  boolean isTransportStream(String u,String t){return false;}void sampleSourceVideo(byte[] b){}
  void sampleSourceVideo(File file){throw new AssertionError("Not a hot-switch fixture");}
  final Set<Socket> clientSockets=new HashSet<>();
+ final Set<String> dolbyInitUrls=new HashSet<>();
  final Map<String,Double> segmentDurations=new HashMap<>();
  void startupCost(String stage,long duration){}
  void logSegmentCost(String url,long download,long decrypt,boolean encrypted){}
@@ -33,7 +34,9 @@ public class HlsStreamFailureCheck {
  static final Charset UTF_8=StandardCharsets.UTF_8;
  static final int UPSTREAM_MAX_ATTEMPTS=3,UPSTREAM_CONNECT_TIMEOUT_MS=3500,UPSTREAM_READ_TIMEOUT_MS=5500,UPSTREAM_RETRY_DELAY_MS=250;
  static final String TAG="test";boolean running=true,failHeaders,forbidden,failWritingHeaders,resumable,fullBody,badRange,badEntity,ignoredRange,resumeFails,noEntity;int opens;String resumeHeader,ifRange;
+ boolean pacedFixture;String fixtureType="video/x-flv";long fixtureLength=-1;ByteArrayOutputStream pacedSink;
  PlaybackHttpError.Attempt playbackHttpError=new PlaybackHttpError.Attempt();
+ Throwable lastPlaybackFailure;
  AtomicLong upstreamDownloadedBytes=new AtomicLong(),streamedResponseBytes=new AtomicLong(),streamedResponseCount=new AtomicLong();
  ThreadLocal<byte[]> streamCopyBuffer=new ThreadLocal<byte[]>(){protected byte[] initialValue(){return new byte[65536];}};
  static class Log{static void e(String t,String m,Exception e){}static void i(String t,String m){}}
@@ -43,12 +46,14 @@ public class HlsStreamFailureCheck {
  static class HlsSegmentBitrate{static class Sample{void add(byte[] b,int o,int c){}}Sample begin(String u){return null;}void complete(Sample s,long t){}}
  HlsSegmentBitrate segmentBitrate=new HlsSegmentBitrate();
  HlsVodDiskCache vodDiskCache;
- boolean needsCjsTransform(String u){return false;}boolean canStreamWithoutRewrite(String u){return true;}
+ boolean needsCjsTransform(String u){return false;}boolean canStreamWithoutRewrite(String u){return !dolbyInitUrls.contains(u);}
  boolean hasAesSegmentKey(String u){return false;}boolean hasGenericSegmentTask(String u){return false;}
  boolean isPlayerDisconnect(Exception e){return false;}boolean isRetryableUpstreamError(IOException e,String u){return false;}
  String readAsciiLine(InputStream i){return "GET /proxy/token HTTP/1.1";}String readRangeHeader(InputStream i){return null;}
- ProxyResponse fetch(String u){throw new AssertionError("unexpected buffered fetch");}
- void writeOk(OutputStream o,String t,byte[] b){}
+ boolean dolbyInitFixture;
+ ProxyResponse fetch(String u){if(!dolbyInitFixture)throw new AssertionError("unexpected buffered fetch");
+  ProxyResponse r=new ProxyResponse();r.contentType="video/mp4";r.body="normalized-dolby-init".getBytes(UTF_8);return r;}
+ void writeOk(OutputStream o,String t,byte[] b)throws IOException{o.write(b);o.flush();}
  void writeError(OutputStream o,int code,String m)throws IOException{o.write(("HTTP/1.1 "+code+"\r\n\r\n"+m).getBytes(UTF_8));o.flush();}
  String sanitizeHeaderValue(String s){return s;}void applyRequestHeaders(HttpURLConnection c,String u){}
  long contentLength(HttpURLConnection c){String length=c.getHeaderField("Content-Length");return length==null?131072:Long.parseLong(length);}
@@ -56,8 +61,9 @@ public class HlsStreamFailureCheck {
  HttpURLConnection openUpstreamConnection(String u)throws IOException{final int number=++opens;return new HttpURLConnection(new URL(u)){
   public void connect(){}public void disconnect(){}public boolean usingProxy(){return false;}
   public int getResponseCode(){return forbidden?403:failHeaders?500:resumable&&!(fullBody&&number==1)&&!(ignoredRange&&number>1)?206:200;}
-  public String getContentType(){return "video/mp4";}public void setRequestProperty(String key,String value){if(number>1){if(key.equals("Range"))resumeHeader=value;if(key.equals("If-Range"))ifRange=value;}}
+  public String getContentType(){return pacedFixture?fixtureType:"video/mp4";}public void setRequestProperty(String key,String value){if(number>1){if(key.equals("Range"))resumeHeader=value;if(key.equals("If-Range"))ifRange=value;}}
   public String getHeaderField(String s){
+   if(pacedFixture&&s.equals("Content-Length"))return Long.toString(fixtureLength);
    if(!resumable)return null;
    if(s.equals("Content-Length"))return number==1?"131072":"65536";
    if(s.equals("ETag"))return noEntity?null:badEntity&&number>1?"\"v2\"":"\"v1\"";
@@ -65,7 +71,15 @@ public class HlsStreamFailureCheck {
      number==1?"bytes 1000-132071/200000":badRange?"bytes 66537-132072/200000":"bytes 66536-132071/200000";
    return null;
   }
-  public InputStream getInputStream(){return new InputStream(){boolean emitted;
+  public InputStream getInputStream(){if(pacedFixture)return new InputStream(){int packets,headerBytes=-1;
+   public int read(){return -1;}
+   public int read(byte[] b){
+    if(headerBytes<0)headerBytes=pacedSink.size();
+    check(pacedSink.size()==headerBytes+(fixtureLength<0?packets*100:0),"Paced packets retained until next upstream read: "+fixtureType);
+    if(packets==3)return -1;
+    Arrays.fill(b,0,100,(byte)('A'+packets++));return 100;
+   }
+  };return new InputStream(){boolean emitted;
    public int read(){return -1;}
    public int read(byte[] b)throws IOException{if(resumeFails&&number>1)throw new SocketTimeoutException("repeated failure");if(emitted){if(resumable&&number>1)return -1;throw new SocketTimeoutException("Injected segment read timeout");}emitted=true;java.util.Arrays.fill(b,number==1?(byte)'V':(byte)'W');return b.length;}
   };}
@@ -80,6 +94,15 @@ public class HlsStreamFailureCheck {
  STREAM
  static void check(boolean b,String s){if(!b)throw new AssertionError(s);}
  public static void main(String[] args)throws Exception {
+  for(int kind=0;kind<4;kind++){
+   HlsStreamFailureCheck live=new HlsStreamFailureCheck();live.pacedFixture=true;
+   live.fixtureType=kind==0?"video/x-flv":kind==1?"application/octet-stream":kind==2?"audio/aac":"video/x-flv";
+   live.fixtureLength=kind==3?300:-1;live.pacedSink=new ByteArrayOutputStream();
+   live.streamUpstream("http://fixture.test/live.flv?token=test",null,new BufferedOutputStream(live.pacedSink));
+   String delivered=new String(live.pacedSink.toByteArray(),UTF_8);
+   check(delivered.endsWith("CCCC")&&live.streamedResponseBytes.get()==300,"Paced stream payload changed");
+  }
+  System.out.println("PASS live FLV MIME/path and radio flush before next upstream read; finite FLV keeps buffered writes");
   HlsStreamFailureCheck p=new HlsStreamFailureCheck();MemorySocket s=new MemorySocket();p.handle(s);
   String body=new String(s.bytes.toByteArray(),UTF_8);
   check(body.startsWith("HTTP/1.1 200"),"Expected initial media response");
@@ -120,6 +143,11 @@ public class HlsStreamFailureCheck {
   p.vodDiskCache.register("https://example.test/list.m3u8",new String[]{"#EXTM3U","#EXTINF:20,","segment.mp4","#EXT-X-ENDLIST"});
   s=new MemorySocket();p.handle(s);body=new String(s.bytes.toByteArray(),UTF_8);
   check(body.startsWith("HTTP/1.1 200")&&body.endsWith("KKKK")&&p.opens==0,"Cached media must avoid upstream streaming");
+  p.dolbyInitUrls.add("https://example.test/segment.mp4");p.dolbyInitFixture=true;
+  s=new MemorySocket();p.handle(s);
+  check(new String(s.bytes.toByteArray(),UTF_8).equals("normalized-dolby-init"),
+        "Cached Dolby init must pass through the normalizing fetch path");
+  p.dolbyInitUrls.clear();p.dolbyInitFixture=false;
   ByteArrayOutputStream range=new ByteArrayOutputStream();p.serveVodCache("https://example.test/segment.mp4","bytes=10-99",range);
   body=new String(range.toByteArray(),UTF_8);
   check(body.startsWith("HTTP/1.1 206")&&body.length()-body.indexOf("\r\n\r\n")-4==90,"Cached range must copy exact requested bytes");

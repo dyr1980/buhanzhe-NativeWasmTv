@@ -52,6 +52,16 @@ public final class Ku9StartupInstrumentation extends Instrumentation {
     private void start(int index)throws Exception {
         main(()->{Method m=MainActivity.class.getDeclaredMethod("startChannel",int.class);m.setAccessible(true);m.invoke(activity,index);});
     }
+    private long loadMs() throws Exception {
+        ChannelStartupTiming timing = (ChannelStartupTiming) get("channelStartupTiming");
+        synchronized (timing) {
+            if (!timing.finished((Integer) get("playRequestId"))) return -1L;
+            Field started = ChannelStartupTiming.class.getDeclaredField("started");
+            Field finished = ChannelStartupTiming.class.getDeclaredField("finished");
+            started.setAccessible(true); finished.setAccessible(true);
+            return finished.getLong(timing) - started.getLong(timing);
+        }
+    }
     private void play(int index,String name)throws Exception {
         long begin=SystemClock.elapsedRealtime();start(index);
         JSONObject row=new JSONObject().put("channel",name).put("requestId",get("playRequestId"));rows.put(row);
@@ -63,19 +73,65 @@ public final class Ku9StartupInstrumentation extends Instrumentation {
             boolean radio=args.getString("radioPlaylist")!=null;
             if(current!=null&&(Boolean)get("prepared")&&(radio?(Boolean)get("audioOnlyPlayback"):(Boolean)get("videoRenderingStarted"))
                     &&!(Boolean)get("preparingChannelSwitch")&&(Integer)get("currentChannelIndex")==index
-                    &&(Long)get("channelLoadDurationMs")>=0) {
+                    &&loadMs()>=0) {
                 if(seen!=current){seen=current;position=current.getCurrentPosition();}
                 if(current.isPlaying()&&(radio||current.getVideoWidth()>0)&&current.getCurrentPosition()-position>=600) {
                     if(!activity.hasWindowFocus())throw new AssertionError("Playback window lost focus");
-                    row.put("firstFrameMs",get("channelLoadDurationMs")).put("confirmedMs",SystemClock.elapsedRealtime()-begin)
+                    row.put("firstFrameMs",loadMs()).put("confirmedMs",SystemClock.elapsedRealtime()-begin)
                             .put("width",current.getVideoWidth()).put("player",current.getClass().getSimpleName()).put("status","passed");
                     if(radio)row.put("audioConfirmedMs",SystemClock.elapsedRealtime()-begin);
                     long watch=Long.parseLong(args.getString("watchMs","0"));
                     if(watch>0) {
-                        long from=current.getCurrentPosition();SystemClock.sleep(watch);
-                        if(get("player")!=current||!current.isPlaying()||current.getCurrentPosition()-from<watch/2)
+                        long from=current.getCurrentPosition(), lastPosition=from;
+                        long watchStarted=SystemClock.elapsedRealtime(), lastAdvance=watchStarted, maxStall=0, maxRollback=0, advances=0;
+                        long lastTrace=0;
+                        while(SystemClock.elapsedRealtime()-watchStarted<watch) {
+                            long remaining=watch-(SystemClock.elapsedRealtime()-watchStarted);
+                            if(remaining<=0)break;
+                            SystemClock.sleep(Math.min(500,remaining));
+                            long tick=SystemClock.elapsedRealtime(),next=current.getCurrentPosition();
+                            if(next-lastPosition>=30){
+                                if(tick-lastAdvance>1000)android.util.Log.i("Ku9PlaybackAudit","clock resumed elapsed="+(tick-watchStarted)+" gap="+(tick-lastAdvance)+" position="+next);
+                                maxStall=Math.max(maxStall,tick-lastAdvance);lastAdvance=tick;advances+=next-lastPosition;lastPosition=next;
+                            } else if(next<lastPosition-100){
+                                maxRollback=Math.max(maxRollback,lastPosition-next);
+                                android.util.Log.i("Ku9PlaybackAudit","clock rollback elapsed="+(tick-watchStarted)+" from="+lastPosition+" to="+next);
+                                lastPosition=next;lastAdvance=tick;
+                            }
+                            if(Boolean.parseBoolean(args.getString("tracePlaylist","false"))&&tick-lastTrace>=2000) {
+                                lastTrace=tick;
+                                Ku9ScriptResolver resolver=(Ku9ScriptResolver)get("ku9ScriptResolver");
+                                Field serverField=Ku9ScriptResolver.class.getDeclaredField("playlistServer");serverField.setAccessible(true);
+                                Ku9PlaylistServer server=(Ku9PlaylistServer)serverField.get(resolver);
+                                String text=Ku9HttpClient.readUtf8(new java.net.URL(server.url()).openStream(),128*1024);
+                                String seq="",tail="";
+                                for(String line:text.split("\n")) {
+                                    if(line.startsWith("#EXT-X-MEDIA-SEQUENCE:"))seq=line.substring(22);
+                                    if(line.startsWith("http")){String path=java.net.URI.create(line).getPath();tail=path.substring(path.lastIndexOf('/')+1);}
+                                }
+                                android.util.Log.i("Ku9PlaybackAudit","window elapsed="+(tick-watchStarted)+" position="+next+" stalled="+(tick-lastAdvance)+" sequence="+seq+" tail="+tail
+                                    +" outputFps="+(current instanceof tv.danmaku.ijk.media.player.IjkMediaPlayer?((tv.danmaku.ijk.media.player.IjkMediaPlayer)current).getVideoOutputFramesPerSecond():-1));
+                            }
+                        }
+                        maxStall=Math.max(maxStall,SystemClock.elapsedRealtime()-lastAdvance);
+                        row.put("watchMs",watch).put("watchClockAdvanceMs",current.getCurrentPosition()-from).put("maxClockStallMs",maxStall).put("maxClockRollbackMs",maxRollback).put("clockAdvancesMs",advances);
+                        if(get("player")!=current||!current.isPlaying()||advances<watch/2) {
+                            row.put("status","unavailable");
                             throw new AssertionError("Playback stopped during stability watch: "+name);
-                        row.put("watchMs",watch).put("watchClockAdvanceMs",current.getCurrentPosition()-from);
+                        }
+                        String maxAllowed=args.getString("maxClockStallMs");
+                        if(maxAllowed!=null&&maxStall>Long.parseLong(maxAllowed)) {
+                            row.put("status","unavailable");
+                            throw new AssertionError("Playback clock stalled "+maxStall+"ms: "+name);
+                        }
+                    }
+                    if (current instanceof tv.danmaku.ijk.media.player.IjkMediaPlayer) {
+                        float fps = IjkStreamMetrics.sourceFrameRate(
+                                (tv.danmaku.ijk.media.player.IjkMediaPlayer) current);
+                        row.put("sourceFps", fps);
+                        String expected = args.getString("expectedSourceFps");
+                        if (expected != null && Math.abs(fps - Float.parseFloat(expected)) > 1f)
+                            throw new AssertionError("Source FPS mismatch: " + fps + " expected " + expected);
                     }
                     Bundle update=new Bundle();update.putString("stream",row.toString()+"\n");sendStatus(0,update);return;
                 }
@@ -98,6 +154,15 @@ public final class Ku9StartupInstrumentation extends Instrumentation {
         SharedPreferences prefs=getTargetContext().getSharedPreferences(MainActivity.PREFERENCES,0);
         Map<String,?> saved=prefs.getAll();ChannelCatalog.Group[] savedGroups=ChannelCatalog.GROUPS;
         try {
+            if (args.getString("networkDns") != null) prefs.edit()
+                    .putString("network_dns", args.getString("networkDns")).commit();
+            if (Boolean.parseBoolean(args.getString("http1", "false"))) {
+                okhttp3.OkHttpClient http = NetworkClient.sharedClient().newBuilder()
+                        .protocols(java.util.Collections.singletonList(okhttp3.Protocol.HTTP_1_1)).build();
+                Field client = NetworkClient.class.getDeclaredField("client"); client.setAccessible(true); client.set(null, http);
+                Field factory = NetworkClient.class.getDeclaredField("factory"); factory.setAccessible(true);
+                factory.set(null, new okhttp3.OkUrlFactory(http));
+            }
             catalogBootstrap=new java.net.ServerSocket(0,2,java.net.InetAddress.getByName("127.0.0.1"));
             new Thread(()->{try(java.net.Socket socket=catalogBootstrap.accept()) {
                 catalogHold.await(15,java.util.concurrent.TimeUnit.SECONDS);

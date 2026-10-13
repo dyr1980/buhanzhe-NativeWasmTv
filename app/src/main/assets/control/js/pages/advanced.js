@@ -1,3 +1,16 @@
+function updatePlaybackPlugins() {
+  var button = document.getElementById("updatePlaybackPlugins");
+  if (button.disabled) return;
+  button.disabled = true;
+  button.textContent = "正在检查更新…";
+  api("/api/settings", {updateCjsPlugin: true}, function(error, result) {
+    button.disabled = false;
+    button.textContent = "更新播放插件";
+    if (error) { toast(error.message, true); return; }
+    toast((result.message || "插件更新检查完成") + "；正在使用的插件重启后生效");
+    refresh();
+  }, 120000);
+}
 function toggleRadioUiOptions() {
   var panel = document.getElementById("radioUiOptions");
   var open = panel.style.display === "none";
@@ -140,7 +153,7 @@ function renderPageState() {
   document.getElementById("reverse").checked = s.reverseKeys === true;
   document.getElementById("autoStart").checked = s.autoStart === true;
   document.getElementById("decoder").value = s.decodeMode || "auto";
-  document.getElementById("hdrMode").value = s.hdrMode || "hardware";
+  document.getElementById("hdrMode").value = s.hdrMode === "passthrough" ? "hardware" : s.hdrMode || "hardware";
   document.getElementById("surfaceMode").value = s.surfaceMode || "normal";
   document.getElementById("rtspTransport").value = s.rtspTransport || "tcp";
   document.getElementById("spsCompatibility").value = String(s.h264SpsCompatibility !== false);

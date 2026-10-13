@@ -1468,13 +1468,23 @@ public final class WebSourceView extends FrameLayout {
     }
 
     void open(int newRequestId, String url, String pageScript, boolean htmlMimeOverride) {
-        if (legacy != null) { legacy.open(newRequestId, url, pageScript, htmlMimeOverride); return; }
+        open(newRequestId, url, pageScript, htmlMimeOverride, "", "");
+    }
+
+    void open(int newRequestId, String url, String pageScript, boolean htmlMimeOverride,
+            String channelTitle, String channelGroup) {
+        if (legacy != null) { legacy.open(newRequestId, url, pageScript, htmlMimeOverride,
+                channelTitle, channelGroup); return; }
         htmlMimeOverrideUrl = htmlMimeOverride ? url : "";
         htmlMimeOverrideCookies = htmlMimeOverride ? CookieManager.getInstance().getCookie(url) : "";
         channelPageScript = pageScript == null ? "" : pageScript;
         rendererRetries = 0;
         WebTabBar.Tab tab = tabBar.openChannel(url, "");
         if (tab == null) return;
+        // Redirects change the document URL, not the catalog entry that opened it.
+        tab.channelEntryUrl = url;
+        tab.channelEntryTitle = safe(channelTitle);
+        tab.channelEntryGroup = safe(channelGroup);
         releaseTabWebView(tab, false);
         openPage(newRequestId, url);
     }
@@ -1613,6 +1623,10 @@ public final class WebSourceView extends FrameLayout {
         rendererRetries = 0;
         hideFullscreenView();
         pageUrl = target;
+        WebTabBar.Tab activeTab = tabBar.active();
+        if (activeTab != null) {
+            activeTab.channelEntryUrl = activeTab.channelEntryTitle = activeTab.channelEntryGroup = "";
+        }
         tabBar.updateActive(target, null);
         beginPageLoad(webView);
         resetResourcePage(target);
@@ -1661,6 +1675,9 @@ public final class WebSourceView extends FrameLayout {
         tab.bookmarkTitle = safe(title);
         tab.bookmarkGroup = safe(group);
         tab.bookmarkUrl = url;
+        tab.channelEntryUrl = url;
+        tab.channelEntryTitle = safe(title);
+        tab.channelEntryGroup = safe(group);
         rendererRetries = 0;
         openPage(requestId, url);
     }
@@ -2517,19 +2534,27 @@ public final class WebSourceView extends FrameLayout {
     String currentChannelTitle() {
         if (legacy != null) return legacy.value("channelTitle");
         WebTabBar.Tab tab = currentBookmarkChannel();
-        return tab == null ? currentPageTitle() : tab.bookmarkTitle;
+        if (tab != null) return tab.bookmarkTitle;
+        tab = tabBar.active();
+        return tab != null && tab.channelEntryTitle.length() > 0
+                ? tab.channelEntryTitle : currentPageTitle();
     }
 
     String currentChannelUrl() {
         if (legacy != null) return legacy.value("channelUrl");
         WebTabBar.Tab tab = currentBookmarkChannel();
-        return tab == null ? activePageUrl() : tab.bookmarkUrl;
+        if (tab != null) return tab.bookmarkUrl;
+        tab = tabBar.active();
+        return tab != null && tab.channelEntryUrl.length() > 0
+                ? tab.channelEntryUrl : activePageUrl();
     }
 
     String currentChannelGroup() {
         if (legacy != null) return legacy.value("group");
         WebTabBar.Tab tab = currentBookmarkChannel();
-        return tab == null ? "网页" : tab.bookmarkGroup.length() > 0 ? tab.bookmarkGroup : "网页收藏";
+        if (tab != null) return tab.bookmarkGroup.length() > 0 ? tab.bookmarkGroup : "网页收藏";
+        tab = tabBar.active();
+        return tab != null && tab.channelEntryGroup.length() > 0 ? tab.channelEntryGroup : "网页";
     }
 
     private boolean canReadWebMedia() {
@@ -2610,6 +2635,11 @@ public final class WebSourceView extends FrameLayout {
     }
 
     private void observeResource(final WebView origin, final SourceClient client, String url) {
+        observeResource(origin, client, url, null);
+    }
+
+    private void observeResource(final WebView origin, final SourceClient client, String url,
+            final String requestReferer) {
         final long observedNavigation = resourceNavigation;
         if (origin != webView || client != sourceClient || client.awaitingDocument
                 || !pageActive || requestId < 0) {
@@ -2643,6 +2673,7 @@ public final class WebSourceView extends FrameLayout {
                 if (currentPage == null || currentPage.startsWith("about:")) {
                     currentPage = pageUrl;
                 }
+                if (requestReferer != null && isWebPage(requestReferer)) currentPage = requestReferer;
                 String cookies = CookieManager.getInstance().getCookie(observedUrl);
                 listener.onStreamDiscovered(observedRequestId, observedUrl, currentPage,
                         webView.getSettings().getUserAgentString(), cookies);
@@ -2951,7 +2982,15 @@ public final class WebSourceView extends FrameLayout {
                 // Chromium. Repeat immediately before the first scripts are executed.
                 injectJavascriptCompatibility(view);
             }
-            observeResource(view, this, url);
+            // API 21+ interception provides the iframe's actual Referer before
+            // reserving this resource. The parent page is not always authorized.
+            if (Build.VERSION.SDK_INT < 21) observeResource(view, this, url);
+            else {
+                final long navigation = resourceNavigation;
+                postDelayed(() -> {
+                    if (navigation == resourceNavigation) observeResource(view, this, url);
+                }, 100L);
+            }
             super.onLoadResource(view, url);
         }
 
@@ -2991,7 +3030,13 @@ public final class WebSourceView extends FrameLayout {
             }
             if (request.isForMainFrame() && "GET".equals(request.getMethod())
                     && sameDocument(url, htmlMimeOverrideUrl)) return interceptConfirmedHtml(view, url);
-            if (!request.isForMainFrame()) observeResource(view, this, url);
+            if (!request.isForMainFrame()) {
+                String referer = null;
+                for (java.util.Map.Entry<String, String> header : request.getRequestHeaders().entrySet()) {
+                    if ("Referer".equalsIgnoreCase(header.getKey())) { referer = header.getValue(); break; }
+                }
+                observeResource(view, this, url, referer);
+            }
             return null;
         }
 

@@ -3,6 +3,7 @@ package xiao.bu.tv;
 import android.os.SystemClock;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -25,13 +26,14 @@ final class SniffedMediaProbe {
     interface Callback { void complete(Result result); }
     static final class Result {
         String type = "unknown", status = "unavailable";
+        String error = "";
         long durationMs, bitrate;
         int width, height;
         boolean manifestKnown, live, bitrateEstimated;
         String variant, sampleSegment;
         double sampleSeconds;
         JSONObject json() throws JSONException {
-            return new JSONObject().put("type", type).put("probeStatus", status)
+            return new JSONObject().put("type", type).put("probeStatus", status).put("probeError", error)
                     .put("durationMs", durationMs).put("bitrate", bitrate)
                     .put("width", width).put("height", height).put("bitrateEstimated", bitrateEstimated);
         }
@@ -54,6 +56,7 @@ final class SniffedMediaProbe {
             Result result = new Result();
             long deadline = SystemClock.elapsedRealtime() + 10000;
             IjkMediaPlayer player = null;
+            HlsProxyServer probeProxy = null;
             String probeUrl = url;
             try {
                 if (HLS_URL.matcher(url).matches()) {
@@ -64,26 +67,54 @@ final class SniffedMediaProbe {
                         if (result.variant == null) {
                             if (result.bitrate <= 0 && result.sampleSegment != null && result.sampleSeconds > 0
                                     && expected == generation.get() && SystemClock.elapsedRealtime() < deadline) {
-                                result.bitrate = segmentBitrate(new URL(new URL(target), result.sampleSegment).toString(),
+                                result.bitrate = segmentBitrate(HlsUri.resolve(java.net.URI.create(target), result.sampleSegment).toString(),
                                         pageUrl, agent, cookies, result.sampleSeconds);
                                 result.bitrateEstimated = result.bitrate > 0;
                             }
                             break;
                         }
-                        target = new URL(new URL(target), result.variant).toString();
+                        target = HlsUri.resolve(java.net.URI.create(target), result.variant).toString();
                         probeUrl = target;
                         result.variant = null;
                     }
                 }
-            } catch (Exception ignored) { /* IJK may support a transport the Java HTTP stack cannot open. */ }
+            } catch (Exception error) {
+                result.error = probeFailure(error);
+                if (error instanceof ManifestFailure) {
+                    if (expected == generation.get()) callback.complete(result);
+                    return;
+                }
+                // Native HTTP may still support this transport; only a failed native probe blocks opening.
+            }
             if (expected != generation.get()) return;
             try {
+                if (HLS_URL.matcher(url).matches()) {
+                    // Match actual playback's TLS, playlist rewriting and HLS decryption.
+                    // A direct native probe cannot open every stream supported by the proxy.
+                    probeProxy = new HlsProxyServer(null, false, true, true,
+                            0, true, "high", 1, 0, 0);
+                    probeProxy.setWebRequestHeaders(pageUrl, agent, cookies);
+                    probeProxy.start();
+                    probeUrl = probeProxy.playerHlsUrl(url);
+                }
                 IjkMediaPlayer.loadLibrariesOnce(null);
                 player = new IjkMediaPlayer();
                 final CountDownLatch ready = new CountDownLatch(1);
                 final boolean[] prepared = {false};
                 player.setOnPreparedListener(mp -> { prepared[0] = true; ready.countDown(); });
-                player.setOnErrorListener((mp, what, extra) -> { ready.countDown(); return true; });
+                player.setOnErrorListener((mp, what, extra) -> {
+                    if (PlaybackHttpError.isForbidden(what, extra)) result.error = PlaybackHttpError.FORBIDDEN_MESSAGE;
+                    else if (result.error.length() == 0) result.error = HlsProbeFailure.nativeError(what, extra);
+                    ready.countDown(); return true;
+                });
+                player.setOnNativeInvokeListener((what, values) -> {
+                    if ((what == IjkMediaPlayer.OnNativeInvokeListener.EVENT_DID_HTTP_OPEN
+                            || what == IjkMediaPlayer.OnNativeInvokeListener.EVENT_DID_HTTP_SEEK) && values != null) {
+                        int code = values.getInt(IjkMediaPlayer.OnNativeInvokeListener.ARG_HTTP_CODE);
+                        if (code >= 400 && result.error.length() == 0) result.error = httpFailure(code);
+                    }
+                    return false;
+                });
                 player.setVolume(0, 0);
                 player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "start-on-prepared", 0);
                 player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec", 0);
@@ -103,13 +134,19 @@ final class SniffedMediaProbe {
                     IjkMediaMeta meta = IjkMediaMeta.parse(player.getMediaMeta());
                     if (meta != null) applyMeta(result, meta);
                 }
-            } catch (Exception | LinkageError ignored) {
-                // A failed probe must not remove the resource or prevent explicit playback.
+                if (!"ready".equals(result.status) && result.error.length() == 0)
+                    result.error = prepared[0] ? "资源没有可播放的音视频轨道" : "资源探测超时";
+            } catch (Exception | LinkageError error) {
+                if (result.error.length() == 0) result.error = probeFailure(error);
             } finally {
+                if (!"ready".equals(result.status) && probeProxy != null
+                        && probeProxy.lastPlaybackFailure() != null)
+                    result.error = probeFailure(probeProxy.lastPlaybackFailure());
                 if (player != null) {
                     player.setOnPreparedListener(null); player.setOnErrorListener(null);
                     try { player.release(); } catch (RuntimeException ignored) { }
                 }
+                if (probeProxy != null) probeProxy.close();
             }
             if (expected == generation.get()) callback.complete(result);
         });
@@ -118,6 +155,7 @@ final class SniffedMediaProbe {
     private static void applyMeta(Result result, IjkMediaMeta meta) {
         if (meta.mVideoStream == null && meta.mAudioStream == null) return;
         result.status = "ready";
+        result.error = "";
         if (!result.manifestKnown) result.durationMs = Math.max(0, meta.mDurationUS / 1000);
         if (meta.mVideoStream != null) {
             if (meta.mVideoStream.mWidth > 0) result.width = meta.mVideoStream.mWidth;
@@ -185,15 +223,21 @@ final class SniffedMediaProbe {
     private String readManifest(String url, String page, String agent, String cookies, int expected, long deadline) throws Exception {
         HttpURLConnection connection = openConnection(url, page, agent, cookies);
         try {
-            if (connection.getResponseCode() != 200) return "";
+            int status = connection.getResponseCode();
+            if (status != 200) throw new IOException(httpFailure(status));
             try (InputStream input = connection.getInputStream(); ByteArrayOutputStream bytes = new ByteArrayOutputStream()) {
                 byte[] buffer = new byte[4096]; int count;
                 while (expected == generation.get() && SystemClock.elapsedRealtime() < deadline
                         && (count = input.read(buffer)) >= 0) {
-                    if (bytes.size() + count > 256 * 1024) return "";
+                    if (bytes.size() + count > 256 * 1024) throw new IOException("HLS playlist exceeds probe limit");
                     bytes.write(buffer, 0, count);
                 }
-                return bytes.toString("UTF-8");
+                if (SystemClock.elapsedRealtime() >= deadline)
+                    throw new java.net.SocketTimeoutException("HLS manifest probe deadline exceeded");
+                String manifest = bytes.toString("UTF-8");
+                String failure = HlsProbeFailure.manifest(manifest);
+                if (failure.length() > 0) throw new ManifestFailure(failure);
+                return manifest.replace("\uFEFF", "").trim();
             }
         } finally { connection.disconnect(); }
     }
@@ -207,6 +251,38 @@ final class SniffedMediaProbe {
     }
 
     private static String clean(String text) { return text == null ? "" : text.replace("\r", "").replace("\n", ""); }
+    private static final class ManifestFailure extends IOException {
+        ManifestFailure(String message) { super(message); }
+    }
+    private static String httpFailure(int status) {
+        if (status == 403) return PlaybackHttpError.FORBIDDEN_MESSAGE;
+        if (status == 404) return "HTTP 404：资源不存在或链接已失效";
+        if (status == 401) return "HTTP 401：资源需要授权";
+        return "HTTP " + status + "：资源请求失败";
+    }
+    private static String probeFailure(Throwable error) {
+        for (int depth = 0; error != null && depth < 8; depth++, error = error.getCause()) {
+            if (error instanceof ManifestFailure) return error.getMessage();
+            if (error instanceof java.net.SocketTimeoutException) return "资源连接超时";
+            if (error instanceof javax.net.ssl.SSLException) return "资源 TLS / 证书连接失败";
+            if (error instanceof java.net.UnknownHostException) return "资源域名无法解析";
+            if (error instanceof LinkageError) return "播放器组件加载失败";
+            String message = error.getMessage();
+            if (message != null) {
+                if (message.contains("HLS playlist response is empty")) return "清单请求返回空内容（HTTP 200）";
+                if (message.contains("HLS playlist exceeds probe limit")) return "HLS 清单超过 256 KB 探测上限";
+                Matcher status = Pattern.compile("\\bHTTP\\s+(\\d{3})\\b").matcher(message);
+                if (message.contains("AES-128 key request failed"))
+                    return "AES-128 密钥请求失败：" + (status.find() ? httpFailure(Integer.parseInt(status.group(1))) : "连接失败或服务器未返回密钥");
+                if (status.find()) return httpFailure(Integer.parseInt(status.group(1)));
+                if (message.contains("Invalid AES-128 key length")) return "AES-128 密钥内容错误：密钥必须是 16 字节";
+                if (message.contains("AES-128 segment length is not block aligned")) return "AES-128 加密分片长度错误：数据可能不完整";
+            }
+            if (error instanceof javax.crypto.BadPaddingException) return "AES-128 解密失败：密钥或 IV 不匹配，也可能是分片损坏";
+            if (error instanceof java.net.ConnectException) return "无法连接资源服务器";
+        }
+        return "资源连接或格式解析失败";
+    }
     private static String headers(String page, String agent, String cookies) {
         return "Referer: " + clean(page) + "\r\nUser-Agent: " + clean(agent) + "\r\nCookie: " + clean(cookies) + "\r\n";
     }

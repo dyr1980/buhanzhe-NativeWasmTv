@@ -26,6 +26,9 @@ final class NetworkClient {
     private static Context context;
     private static OkHttpClient client;
     private static OkUrlFactory factory;
+    private static OkUrlFactory http1Factory;
+    private static final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>
+            http1Positions = new java.util.concurrent.ConcurrentHashMap<>();
 
     private NetworkClient() {
     }
@@ -109,8 +112,60 @@ final class NetworkClient {
         return client;
     }
 
+    static synchronized HttpURLConnection openHttp1(URL url) throws IOException {
+        return openHttp1(url, 0);
+    }
+
+    /** Python-style short HTTP/1 connections must not stay pinned to one CDN address. */
+    static synchronized HttpURLConnection openHttp1(URL url, int timeoutMs) throws IOException {
+        factory();
+        if (http1Factory == null) {
+            final Dns cachedDns = client.dns();
+            http1Positions.clear();
+            final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>
+                    positions = http1Positions;
+            Dns rotatingDns = hostname -> {
+                java.util.List<java.net.InetAddress> addresses = cachedDns.lookup(hostname);
+                java.util.concurrent.atomic.AtomicInteger position = positions.get(hostname);
+                if (position == null) {
+                    java.util.concurrent.atomic.AtomicInteger candidate = new java.util.concurrent.atomic.AtomicInteger();
+                    position = positions.putIfAbsent(hostname, candidate);
+                    if (position == null) position = candidate;
+                }
+                java.util.List<java.net.InetAddress> ordered = new java.util.ArrayList<>(addresses);
+                java.util.Collections.rotate(ordered, -(position.get() & Integer.MAX_VALUE) % ordered.size());
+                return ordered;
+            };
+            http1Factory = new OkUrlFactory(client.newBuilder().dns(rotatingDns)
+                    .protocols(java.util.Collections.singletonList(okhttp3.Protocol.HTTP_1_1)).build());
+        }
+        final OkUrlFactory transport = http1Factory;
+        final long deadline = timeoutMs > 0 ? System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs) : 0;
+        GithubConnection.Opener opener = target -> {
+            if (deadline == 0) return transport.open(target);
+            long remaining = deadline - System.nanoTime();
+            if (remaining <= 0) throw new java.net.SocketTimeoutException("HTTP request timeout");
+            return new OkUrlFactory(transport.client().newBuilder()
+                    .callTimeout(remaining, TimeUnit.NANOSECONDS).build()).open(target);
+        };
+        String github = GithubProxy.githubSource(url.toString());
+        if (github != null) {
+            if (!GithubProxy.isEnabled()) return opener.open(new URL(github));
+            return new GithubConnection(url, opener);
+        }
+        return new GithubConnection(url, opener, target -> {
+            String host = target.getHost();
+            if (transport.client().dns().lookup(host).size() <= 1) return false;
+            java.util.concurrent.atomic.AtomicInteger position = http1Positions.get(host);
+            if (position == null) return false;
+            position.incrementAndGet();
+            return true;
+        });
+    }
+
     private static synchronized OkUrlFactory factory() {
         if (factory == null) {
+            http1Factory = null;
             Dns dns = DNS_SYSTEM.equals(getDnsMode())
                     ? Dns.SYSTEM : new PublicDns(getDnsMode());
             OkHttpClient.Builder builder = new OkHttpClient.Builder()

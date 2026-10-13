@@ -45,6 +45,8 @@ final class VideoControlsOverlay extends FrameLayout {
     private final SeekBar seek;
     private float downX, downY, startBrightness;
     private int startVolume;
+    private long startPosition, gestureDuration, seekPosition;
+    private int gestureAxis;
     private boolean moved, dragging;
     private final Runnable dismiss = new Runnable() { public void run() { hide(); } };
     private final Runnable tick = new Runnable() {
@@ -85,9 +87,9 @@ final class VideoControlsOverlay extends FrameLayout {
         if (touchAdjustments) {
             Icon volume = new Icon(owner, "volume"), brightness = new Icon(owner, "sun");
             LayoutParams left = new LayoutParams(dp(48), dp(48), Gravity.LEFT | Gravity.CENTER_VERTICAL);
-            left.leftMargin = dp(32); addView(volume, left);
+            left.leftMargin = dp(32); addView(brightness, left);
             LayoutParams right = new LayoutParams(dp(48), dp(48), Gravity.RIGHT | Gravity.CENTER_VERTICAL);
-            right.rightMargin = dp(32); addView(brightness, right);
+            right.rightMargin = dp(32); addView(volume, right);
         }
         feedback = label("", 15);
         LayoutParams hint = new LayoutParams(dp(180), dp(40), Gravity.CENTER_HORIZONTAL | Gravity.TOP);
@@ -150,7 +152,7 @@ final class VideoControlsOverlay extends FrameLayout {
     }
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
     void show() { title.setText(playback.title()); feedback.setText(""); speedOptions.setVisibility(GONE); setVisibility(VISIBLE); bringToFront(); refresh(); removeCallbacks(tick); post(tick); arm(); }
-    void hide() { setVisibility(GONE); removeCallbacks(tick); removeCallbacks(dismiss); dragging = false; }
+    void hide() { setVisibility(GONE); removeCallbacks(tick); removeCallbacks(dismiss); dragging = false; gestureAxis = 0; }
     void step(long delta) {
         long duration = playback.duration();
         if (duration <= 0L) return;
@@ -236,6 +238,10 @@ final class VideoControlsOverlay extends FrameLayout {
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
                 downX = event.getX(); downY = event.getY(); moved = false;
+                gestureAxis = 0;
+                gestureDuration = playback.duration();
+                startPosition = playback.position();
+                seekPosition = startPosition;
                 if (!touchAdjustments) return true;
                 startVolume = audio == null ? 0 : audio.getStreamVolume(AudioManager.STREAM_MUSIC);
                 startBrightness = activity.getWindow().getAttributes().screenBrightness;
@@ -244,16 +250,32 @@ final class VideoControlsOverlay extends FrameLayout {
                 }
                 return true;
             case MotionEvent.ACTION_MOVE:
+                float dx = event.getX() - downX;
                 float dy = downY - event.getY();
-                if (Math.abs(dy) > ViewConfiguration.get(getContext()).getScaledTouchSlop()) moved = true;
-                if (!moved || !touchAdjustments) return true;
+                if (gestureAxis == 0) {
+                    int slop = ViewConfiguration.get(getContext()).getScaledTouchSlop();
+                    if (Math.max(Math.abs(dx), Math.abs(dy)) <= slop) return true;
+                    moved = true;
+                    gestureAxis = Math.abs(dx) > Math.abs(dy) ? 1 : 2;
+                }
+                if (gestureAxis == 1) {
+                    if (gestureDuration <= 0L) return true;
+                    dragging = true;
+                    seekPosition = Math.max(0L, Math.min(gestureDuration - 1L,
+                            startPosition + Math.round(dx / Math.max(1f, getWidth()) * gestureDuration)));
+                    seek.setProgress((int) (seekPosition * 1000L / gestureDuration));
+                    time.setText(stamp(seekPosition) + " / " + stamp(gestureDuration));
+                    feedback.setText("进度 " + stamp(seekPosition));
+                    return true;
+                }
+                if (!touchAdjustments) return true;
                 float delta = dy / Math.max(1f, getHeight()) * 1.5f;
-                if (downX < getWidth() / 2f && audio != null) {
+                if (downX >= getWidth() / 2f && audio != null) {
                     int max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
                     int value = Math.max(0, Math.min(max, startVolume + Math.round(delta * max)));
                     audio.setStreamVolume(AudioManager.STREAM_MUSIC, value, 0);
                     feedback.setText("音量 " + (max > 0 ? value * 100 / max : 0) + "%");
-                } else {
+                } else if (downX < getWidth() / 2f) {
                     float value = Math.max(0.02f, Math.min(1f, startBrightness + delta));
                     WindowManager.LayoutParams params = activity.getWindow().getAttributes();
                     params.screenBrightness = value; activity.getWindow().setAttributes(params);
@@ -261,7 +283,12 @@ final class VideoControlsOverlay extends FrameLayout {
                 }
                 return true;
             case MotionEvent.ACTION_UP:
+                if (gestureAxis == 1 && dragging) playback.seek(seekPosition);
+                dragging = false; gestureAxis = 0; refresh();
                 if (!moved) hide();
+                return true;
+            case MotionEvent.ACTION_CANCEL:
+                dragging = false; gestureAxis = 0; feedback.setText(""); refresh();
                 return true;
             default: return true;
         }

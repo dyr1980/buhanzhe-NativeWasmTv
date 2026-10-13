@@ -70,7 +70,7 @@ final class EpgListAdapter extends BaseAdapter {
     @Override
     public View getView(int position, View convertView, ViewGroup parent) {
         ViewHolder holder;
-        if (convertView == null) {
+        if (convertView == null || !(convertView.getTag() instanceof ViewHolder)) {
             convertView = inflater.inflate(R.layout.item_epg_program, parent, false);
             holder = new ViewHolder();
             holder.time = (TextView) convertView.findViewById(R.id.epg_program_time);

@@ -48,7 +48,11 @@ public final class CjsBranchImportInstrumentation extends Instrumentation {
             code = -1;
         } catch (Throwable error) { result.putString("stream", android.util.Log.getStackTraceString(error)); }
         finally {
-            if (original != null && use != null) try { use.invoke(null, original); } catch (Exception ignored) { }
+            if (original != null && use != null) try {
+                use.invoke(null, original);
+                Method persist = CjsPluginRuntime.class.getDeclaredMethod("persistCatalog", JSONObject.class);
+                persist.setAccessible(true); persist.invoke(null, original);
+            } catch (Exception ignored) { }
         }
         finish(code, result);
     }

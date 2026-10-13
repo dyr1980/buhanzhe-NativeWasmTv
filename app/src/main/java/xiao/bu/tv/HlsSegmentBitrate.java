@@ -30,7 +30,7 @@ final class HlsSegmentBitrate {
             } else if (line.startsWith("#EXT-X-BYTERANGE:")) {
                 range = true;
             } else if (!line.isEmpty() && !line.startsWith("#")) {
-                URI segment = base.resolve(line);
+                URI segment = HlsUri.resolve(base, line);
                 if (!range && duration > 0 && segment.getPath().endsWith(".ts")) {
                     durations.put(segment.toString(), duration);
                     while (durations.size() > 128) durations.remove(durations.keySet().iterator().next());

@@ -157,10 +157,15 @@ final class ChannelListAdapter extends BaseAdapter {
     public View getView(int position, View convertView, ViewGroup parent) {
         ViewHolder holder;
         boolean favoriteFocused = !showingGroups && position == favoriteFocusIndex;
-        if (convertView == null) {
+        // A recycled row can survive an adapter or group/channel mode change.
+        // Never bind a group holder (without program/favorite views) as a channel.
+        ViewHolder recycled = convertView != null && convertView.getTag() instanceof ViewHolder
+                ? (ViewHolder) convertView.getTag() : null;
+        if (recycled == null || recycled.groupRow != showingGroups) {
             convertView = inflater.inflate(showingGroups
                     ? R.layout.item_channel_group : R.layout.item_channel, parent, false);
             holder = new ViewHolder();
+            holder.groupRow = showingGroups;
             holder.number = (TextView) convertView.findViewById(R.id.channel_number);
             holder.name = (TextView) convertView.findViewById(R.id.channel_item_name);
             holder.count = (TextView) convertView.findViewById(R.id.channel_group_count);
@@ -228,6 +233,7 @@ final class ChannelListAdapter extends BaseAdapter {
     }
 
     private static final class ViewHolder {
+        boolean groupRow;
         TextView number;
         TextView name;
         TextView count;

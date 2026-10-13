@@ -444,6 +444,7 @@ final class HlsProxyServer implements Closeable {
     private volatile boolean byteRangeMediaPlaylist;
     private final HlsSegmentBitrate segmentBitrate = new HlsSegmentBitrate();
     private final PlaybackHttpError.Attempt playbackHttpError = new PlaybackHttpError.Attempt();
+    private volatile Throwable lastPlaybackFailure;
     private final AtomicInteger sourceVideoProbeAttempts = new AtomicInteger();
     private volatile boolean sourceVideoProbeEnabled;
     private volatile CachedVideoMetadataProbe sourceMetadataProbe;
@@ -464,6 +465,7 @@ final class HlsProxyServer implements Closeable {
 
     void beginPlaybackAttempt() {
         playbackHttpError.reset();
+        lastPlaybackFailure = null;
         sourceVideoProbeEnabled = false;
         sourceVideoProbeAttempts.set(0);
         sourceVideoFrameRate = 0f;
@@ -477,7 +479,9 @@ final class HlsProxyServer implements Closeable {
         sourceAudioCodec = "--";
     }
     boolean wasPlaybackForbidden() { return playbackHttpError.isForbidden(); }
+    Throwable lastPlaybackFailure() { return lastPlaybackFailure; }
     void enableSourceVideoProbe() { sourceVideoProbeEnabled = true; }
+    void disableSourceVideoProbe() { sourceVideoProbeEnabled = false; }
     float sourceVideoFrameRate() { return sourceVideoFrameRate; }
     int sourceVideoWidth() { return sourceVideoWidth; }
     int sourceVideoHeight() { return sourceVideoHeight; }
@@ -624,6 +628,8 @@ final class HlsProxyServer implements Closeable {
     private String lastCctvPlaylistUrl;
     private volatile String monitoredCctvPlaylistUrl;
     private volatile String webReferer;
+    private volatile boolean webNoReferer, webHttp1;
+    private volatile java.util.Map<String, String> webSignedHeaders = java.util.Collections.emptyMap();
     private volatile String webUserAgent;
     private volatile String webCookies;
     private volatile boolean remoteConsumer;
@@ -748,7 +754,9 @@ final class HlsProxyServer implements Closeable {
     }
 
     private HttpURLConnection openUpstreamConnection(String originUrl) throws IOException {
-        return upstreamConnections.track(carrierNetworkRoute.openConnection(originUrl, carrierIptvSession));
+        return upstreamConnections.track(webHttp1 && !carrierIptvSession
+                ? NetworkClient.openHttp1(new java.net.URL(originUrl))
+                : carrierNetworkRoute.openConnection(originUrl, carrierIptvSession));
     }
 
     private final ProxyHttpConnections upstreamConnections = new ProxyHttpConnections();
@@ -840,9 +848,28 @@ final class HlsProxyServer implements Closeable {
     }
 
     void setWebRequestHeaders(String referer, String userAgent, String cookies) {
+        setWebRequestHeaders(referer, userAgent, cookies, false, false);
+    }
+
+    void setWebRequestHeaders(String referer, String userAgent, String cookies,
+            boolean noReferer, boolean http1) {
+        setWebRequestHeaders(referer, userAgent, cookies, noReferer, http1,
+                java.util.Collections.<String, String>emptyMap());
+    }
+
+    void setWebRequestHeaders(String referer, String userAgent, String cookies,
+            boolean noReferer, boolean http1, java.util.Map<String, String> signedHeaders) {
+        java.util.Map<String, String> headers = new java.util.HashMap<>();
+        for (String name : new String[] {"UID", "APPID", "APPSIGN", "APPRANDOMSTR"}) {
+            String value = sanitizeHeaderValue(signedHeaders.get(name));
+            if (value != null) headers.put(name, value);
+        }
+        webSignedHeaders = java.util.Collections.unmodifiableMap(headers);
         webReferer = sanitizeHeaderValue(referer);
         webUserAgent = sanitizeHeaderValue(userAgent);
         webCookies = sanitizeHeaderValue(cookies);
+        webNoReferer = noReferer;
+        webHttp1 = http1;
     }
 
     void configureCjsTransformer(String transformer, String[] arguments,
@@ -936,7 +963,10 @@ final class HlsProxyServer implements Closeable {
             }
             String originUrl = new String(Base64.decode(token, Base64.URL_SAFE), UTF_8);
             if(serveSwitchFile(originUrl,rangeHeader,output))return;
-            if (vodDiskCache != null && serveVodCache(originUrl, rangeHeader, output)) return;
+            // Cached init fragments still carry dvh1. They must use fetch()'s
+            // sample-entry alias before reaching the legacy FFmpeg demuxer.
+            if (!dolbyInitUrls.contains(originUrl)
+                    && vodDiskCache != null && serveVodCache(originUrl, rangeHeader, output)) return;
             if (!needsCjsTransform(originUrl) && (directMedia || canStreamWithoutRewrite(originUrl))
                     && !hasAesSegmentKey(originUrl)
                     && !hasGenericSegmentTask(originUrl)) {
@@ -971,6 +1001,7 @@ final class HlsProxyServer implements Closeable {
             }
             Log.e(TAG, "Proxy request failed", error);
             playbackHttpError.record(httpAttempt, error);
+            if (httpAttempt == playbackHttpError.token()) lastPlaybackFailure = error;
             // The player already received a 200/206 header and part of the media.
             // Close that response so its HTTP reader can reconnect; appending a
             // second HTTP error response here corrupts the compressed stream.
@@ -1100,6 +1131,9 @@ final class HlsProxyServer implements Closeable {
                     contentLength(connection), isPlaylist(originUrl, contentType)
                             ? MAX_PLAYLIST_RESPONSE_BYTES : MAX_BUFFERED_RESPONSE_BYTES);
             responseConsumed = true;
+            if (body.length == 0 && isPlaylist(originUrl, contentType)) {
+                throw new IOException("HLS playlist response is empty");
+            }
             if (!running) {
                 throw new SocketException("Proxy closed");
             }
@@ -1234,8 +1268,11 @@ final class HlsProxyServer implements Closeable {
                 String contentRange = sanitizeHeaderValue(
                         connection.getHeaderField("Content-Range"));
                 long contentLength = contentLength(connection);
-                boolean liveAudio = contentLength < 0
-                        && contentType.toLowerCase(Locale.US).startsWith("audio/");
+                String mediaType = contentType.toLowerCase(Locale.US);
+                String mediaPath = URI.create(originUrl).getPath();
+                boolean pacedLiveMedia = contentLength < 0
+                        && (mediaType.startsWith("audio/") || mediaType.contains("flv")
+                                || mediaPath != null && mediaPath.toLowerCase(Locale.US).endsWith(".flv"));
                 responseStarted = true;
                 writeStreamingHeaders(output, status, contentType, contentLength, contentRange);
 
@@ -1305,9 +1342,10 @@ final class HlsProxyServer implements Closeable {
                         if (count < 0) break;
                         if (received == 0) startupCost("first-data", -1);
                         output.write(buffer, 0, count);
-                        // Paced radio packets must reach the decoder immediately;
-                        // an 8 KiB output queue adds delay at low audio bitrates.
-                        if(liveAudio)output.flush();
+                        // Continuous FLV and radio arrive at playback speed. Keeping
+                        // small reads in the output buffer turns paced packets into
+                        // bursts and can starve the player's decode queue.
+                        if (pacedLiveMedia) output.flush();
                         received += count;
                         if (bitrateSample != null) bitrateSample.add(buffer, 0, count);
                         recordUpstreamBytes(count);
@@ -1427,7 +1465,7 @@ final class HlsProxyServer implements Closeable {
         for (String line : lines) {
             String rewritten = rewritePlaylistTagUris(base, line);
             if (!line.startsWith("#") && line.length() > 0) {
-                rewritten = proxyUrl(base.resolve(line).toString());
+                rewritten = proxyUrl(HlsUri.resolve(base, line).toString());
             }
             result.append(rewritten).append('\n');
         }
@@ -1468,7 +1506,7 @@ final class HlsProxyServer implements Closeable {
                     Matcher ivMatcher = HLS_KEY_IV.matcher(attributes);
                     byte[] explicitIv = ivMatcher.find() ? parseAesIv(ivMatcher.group(1)) : null;
                     currentKey = new AesPlaylistKey(
-                            base.resolve(uriMatcher.group(1)).toString(), explicitIv);
+                            HlsUri.resolve(base, uriMatcher.group(1)).toString(), explicitIv);
                     // Segments are returned clear, so prevent old FFmpeg from constructing
                     // an unsupported crypto+http URL for them.
                     result.append("#EXT-X-KEY:METHOD=NONE\n");
@@ -1479,7 +1517,7 @@ final class HlsProxyServer implements Closeable {
                 continue;
             }
             if (!trimmed.startsWith("#") && trimmed.length() > 0) {
-                String absolute = base.resolve(trimmed).toString();
+                String absolute = HlsUri.resolve(base, trimmed).toString();
                 if (durationTag != null) {
                     rememberSegmentDuration(absolute, Collections.singletonList(durationTag));
                     durationTag = null;
@@ -1553,7 +1591,7 @@ final class HlsProxyServer implements Closeable {
         Variant selected = variants.get(preferredVariantIndex(
                 variants.size(), variantQualityMode));
         for (Variant candidate : variants) {
-            if (base.resolve(candidate.uri).toString().equals(requestedVideoVariant)) {
+            if (HlsUri.resolve(base, candidate.uri).toString().equals(requestedVideoVariant)) {
                 selected = candidate;
                 break;
             }
@@ -1586,7 +1624,7 @@ final class HlsProxyServer implements Closeable {
             }
         }
         rememberSelectedVariant(selected);
-        manifest.selectedVideoUrl = base.resolve(selected.uri).toString();
+        manifest.selectedVideoUrl = HlsUri.resolve(base, selected.uri).toString();
         StringBuilder result = new StringBuilder(512);
         result.append("#EXTM3U\n");
         for (String line : lines) {
@@ -1604,7 +1642,7 @@ final class HlsProxyServer implements Closeable {
             }
         }
         result.append(selected.info).append('\n')
-                .append(proxyUrl(base.resolve(selected.uri).toString())).append('\n');
+                .append(proxyUrl(HlsUri.resolve(base, selected.uri).toString())).append('\n');
         Log.i(TAG, "Selected generic HLS variant quality=" + variantQualityMode
                 + " choices=" + variants.size() + " bandwidth=" + selected.bandwidth
                 + " advertised=" + selected.width + "x" + selected.height
@@ -1807,7 +1845,10 @@ final class HlsProxyServer implements Closeable {
         }
         if (key == null) {
             long keyStarted = SystemClock.elapsedRealtime();
-            key = downloadRaw(segmentKey.keyUrl);
+            try { key = downloadRaw(segmentKey.keyUrl); }
+            catch (IOException failure) {
+                throw new IOException("AES-128 key request failed: " + failure.getMessage(), failure);
+            }
             startupCost("密钥", SystemClock.elapsedRealtime() - keyStarted);
             if (key.length != 16) {
                 throw new IOException("Invalid AES-128 key length " + key.length);
@@ -1943,7 +1984,7 @@ final class HlsProxyServer implements Closeable {
                 continue;
             }
             sawSegment = true;
-            String absolute = base.resolve(line).toString();
+            String absolute = HlsUri.resolve(base, line).toString();
             PlaylistSegment segment = new PlaylistSegment(nextSequence++, absolute,
                     new ArrayList<String>(pendingTags));
             rememberSegmentDuration(absolute, pendingTags);
@@ -1977,7 +2018,10 @@ final class HlsProxyServer implements Closeable {
             }
         }
         for (PlaylistSegment segment : currentSegments) {
-            history.put(segment.url, segment);
+            // Signed URLs can rotate while the media sequence stays the same.
+            // Keep one entry per segment; duplicate sequence entries make the
+            // small live window repeat a TS and invent a following sequence.
+            history.put(Long.toString(segment.sequence), segment);
         }
         while (history.size() > LIVE_PLAYLIST_HISTORY_LIMIT) {
             String firstKey = history.keySet().iterator().next();
@@ -2328,7 +2372,7 @@ final class HlsProxyServer implements Closeable {
             List<String> segments = new ArrayList<String>();
             for (String line : body.split("\\r?\\n")) {
                 if (line.length() > 0 && !line.startsWith("#")) {
-                    segments.add(base.resolve(line).toString());
+                    segments.add(HlsUri.resolve(base, line).toString());
                 }
             }
             if (segments.isEmpty()) {
@@ -2636,8 +2680,15 @@ final class HlsProxyServer implements Closeable {
             Process.setThreadPriority(Process.THREAD_PRIORITY_FOREGROUND);
         } catch (RuntimeException ignored) {
         }
-        NativeH5eDecryptor.setSpsCompatibilityMode(spsCompatibilityMode);
-        byte[] decrypted = NativeH5eDecryptor.decryptTransportStream(body);
+        byte[] decrypted;
+        try {
+            NativeH5eDecryptor.setSpsCompatibilityMode(spsCompatibilityMode);
+            decrypted = NativeH5eDecryptor.decryptTransportStream(body);
+        } catch (LinkageError error) {
+            // Missing/incompatible plugins are a source failure, not a fatal
+            // Error that kills the request worker (and poisons class init).
+            throw new IOException("央视网解密插件未安装或不兼容，请更新插件", error);
+        }
         if (decrypted == null && running) {
             /* A wasm trap invalidates only this worker's thread-local runtime.
              * Recreate it and retry the untouched TS once instead of exposing a
@@ -2796,7 +2847,7 @@ final class HlsProxyServer implements Closeable {
         Matcher matcher = ATTRIBUTE_URI.matcher(line);
         StringBuffer updated = new StringBuffer();
         while (matcher.find()) {
-            String absolute = base.resolve(matcher.group(1)).toString();
+            String absolute = HlsUri.resolve(base, matcher.group(1)).toString();
             if (selectedDolbyVision() && line.startsWith("#EXT-X-MAP:")) dolbyInitUrls.add(absolute);
             matcher.appendReplacement(updated,
                     "URI=\"" + Matcher.quoteReplacement(proxyUrl(absolute)) + "\"");
@@ -2831,7 +2882,7 @@ final class HlsProxyServer implements Closeable {
                 + " actual=" + selected.actualDescription()
                 + " uri=" + variant.uri);
         return "#EXTM3U\n" + variant.info + '\n'
-                + proxyUrl(base.resolve(variant.uri).toString()) + '\n';
+                + proxyUrl(HlsUri.resolve(base, variant.uri).toString()) + '\n';
     }
 
     private void rememberSelectedVariant(Variant variant) {
@@ -2861,7 +2912,7 @@ final class HlsProxyServer implements Closeable {
                 continue;
             }
             Variant variant = variants.get(index);
-            String absolute = base.resolve(variant.uri).toString();
+            String absolute = HlsUri.resolve(base, variant.uri).toString();
             VariantCandidate candidate = inspectVariant(absolute, variant);
             if (!candidate.available) {
                 Log.w(TAG, "Skipping unavailable HLS variant bandwidth=" + variant.bandwidth
@@ -2943,7 +2994,7 @@ final class HlsProxyServer implements Closeable {
         String[] lines = playlist.split("\\r?\\n", -1);
         for (String line : lines) {
             if (line.length() > 0 && !line.startsWith("#")) {
-                return base.resolve(line).toString();
+                return HlsUri.resolve(base, line).toString();
             }
         }
         return null;
@@ -3013,6 +3064,11 @@ final class HlsProxyServer implements Closeable {
         String customUserAgent = webUserAgent;
         String customReferer = webReferer;
         String customCookies = webCookies;
+        if (webHttp1) {
+            connection.setRequestProperty("Accept", "*/*");
+            connection.setRequestProperty("Accept-Encoding", "identity");
+            connection.setRequestProperty("Connection", "close");
+        }
         if (customUserAgent != null) {
             connection.setRequestProperty("User-Agent", customUserAgent);
         } else if (isYangshipinUrl(url)) {
@@ -3037,12 +3093,18 @@ final class HlsProxyServer implements Closeable {
             } catch (IllegalArgumentException ignored) {
                 // A malformed optional Referer must not prevent the stream request.
             }
-        } else if (isYangshipinUrl(url)) {
+        } else if (!webNoReferer && isYangshipinUrl(url)) {
             connection.setRequestProperty("Referer", "https://www.yangshipin.cn/");
             connection.setRequestProperty("Origin", "https://www.yangshipin.cn");
         }
         if (customCookies != null) {
             connection.setRequestProperty("Cookie", customCookies);
+        }
+        String host = connection.getURL().getHost().toLowerCase(Locale.US);
+        if (host.endsWith(".cctv.cn") || host.endsWith(".cctv.com")
+                || host.equals("cctv.cn") || host.equals("cctv.com")) {
+            for (java.util.Map.Entry<String, String> header : webSignedHeaders.entrySet())
+                connection.setRequestProperty(header.getKey(), header.getValue());
         }
     }
 
