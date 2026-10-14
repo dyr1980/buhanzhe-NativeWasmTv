@@ -8,11 +8,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Local fixtures served on port 19981, forwarded with adb reverse. */
 public final class SniffedMediaProbeInstrumentation extends Instrumentation {
+    private String base="http://127.0.0.1:19981/";
     private SniffedMediaProbe probe;
     private SniffedMediaProbe.Result inspect(String path) throws Exception {
         CountDownLatch done = new CountDownLatch(1);
         SniffedMediaProbe.Result[] result = {null};
-        probe.submit("http://127.0.0.1:19981/" + path, "http://127.0.0.1:19981/", "nTv probe test", "",
+        probe.submit(base + path, base, "nTv probe test", "",
                 value -> { result[0] = value; done.countDown(); });
         if (!done.await(15, TimeUnit.SECONDS)) throw new AssertionError("Probe callback timeout: " + path);
         return result[0];
@@ -41,19 +42,29 @@ public final class SniffedMediaProbeInstrumentation extends Instrumentation {
             java.lang.reflect.Field manual = MainActivity.class.getDeclaredField("manualWebPlaybackRequestId"); manual.setAccessible(true);
             int request = id.getInt(activity) + 1;
             runOnMainSync(() -> {
-                try { id.setInt(activity, request); manual.setInt(activity, request); }
+                try {
+                    ((java.util.concurrent.atomic.AtomicInteger)field(activity,"catalogLoadGeneration")).incrementAndGet();
+                    java.lang.reflect.Field pending=MainActivity.class.getDeclaredField("pendingCjsChannelIndex");
+                    pending.setAccessible(true);pending.setInt(activity,-1);
+                    for(String name:new String[]{"cancelCustomSourceTimeout","clearPendingPlayer","cancelRemoteResolve","releasePlayer","closeWebSource"}) {
+                        java.lang.reflect.Method stop=MainActivity.class.getDeclaredMethod(name);stop.setAccessible(true);stop.invoke(activity);
+                    }
+                    id.setInt(activity, request); manual.setInt(activity, request);
+                    java.lang.reflect.Field autoplay=MainActivity.class.getDeclaredField("webViewAutoPlaySniffed");
+                    autoplay.setAccessible(true);autoplay.setBoolean(activity,false);
+                }
                 catch (Exception error) { throw new RuntimeException(error); }
-                source.open(request, "http://127.0.0.1:19981/a.html");
+                source.open(request, base+"a.html");
             });
             waitResource(activity, "video.mp4");
             android.webkit.WebView web = (android.webkit.WebView) field(source, "webView");
-            runOnMainSync(() -> web.loadUrl("http://127.0.0.1:19981/b.html"));
+            runOnMainSync(() -> web.loadUrl(base+"b.html"));
             waitResource(activity, "audio.mp3");
-            runOnMainSync(() -> web.loadUrl("http://127.0.0.1:19981/a.html"));
+            runOnMainSync(() -> web.loadUrl(base+"a.html"));
             waitResource(activity, "video.mp4");
         } finally { runOnMainSync(activity::finish); }
     }
-    @Override public void onCreate(Bundle args) { super.onCreate(args); start(); }
+    @Override public void onCreate(Bundle args) { super.onCreate(args); if(args!=null) base=args.getString("base",base); start(); }
     @Override public void onStart() {
         Bundle output = new Bundle(); int code = -1;
         probe = new SniffedMediaProbe();
@@ -70,13 +81,18 @@ public final class SniffedMediaProbeInstrumentation extends Instrumentation {
             SniffedMediaProbe.Result missing = inspect("missing.mp4");
             check("unavailable".equals(missing.status), "Failed probe removed fallback");
             AtomicBoolean stale = new AtomicBoolean();
-            probe.submit("http://127.0.0.1:19981/slow.mp4", "", "nTv", "", result -> stale.set(true));
+            probe.submit(base+"slow.mp4", "", "nTv", "", result -> stale.set(true));
             probe.clear();
             inspect("audio.mp3");
             check(!stale.get(), "Old-page probe callback escaped reset");
-            checkNavigation();
+            // API 14-25 owns WebView in LegacyWebActivity's separate process.
+            // This direct-instance navigation fixture requires the embedded host;
+            // do not dereference the player's intentionally absent WebView.
+            boolean embedded = android.os.Build.VERSION.SDK_INT >= 26;
+            if (embedded) checkNavigation();
             output.putString("stream", "PASS MP4 " + video.json() + " MP3 " + audio.json()
-                    + " HLS VOD " + vod.json() + " HLS live " + live.json() + " failure, page reset and actual A/B/A WebView navigation\n");
+                    + " HLS VOD " + vod.json() + " HLS live " + live.json() + " failure, page reset; "
+                    + (embedded ? "actual A/B/A WebView navigation passed" : "A/B/A navigation not covered: separate browser process") + "\n");
         } catch (Throwable error) { code = 0; output.putString("stream", android.util.Log.getStackTraceString(error)); }
         finally { probe.close(); }
         finish(code, output);

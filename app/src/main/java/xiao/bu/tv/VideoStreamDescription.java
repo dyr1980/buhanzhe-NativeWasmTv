@@ -24,7 +24,7 @@ final class VideoStreamDescription {
         colorInferred = available && (snapshot & (1L << 26)) != 0;
         int order = (int) ((snapshot >>> 27) & 7);
         scanType = !available ? "unknown" : order == 1 ? "progressive"
-                : order >= 2 && order <= 5 ? "interlaced" : "unknown";
+                : order >= 2 && order <= 6 ? "interlaced" : "unknown";
         dynamicRange = available && (dolbyVision || transfer == 16 || transfer == 18)
                 ? "HDR" : available && (transfer == 1 || transfer >= 4 && transfer <= 15 || transfer == 17)
                 ? "SDR" : "未知";

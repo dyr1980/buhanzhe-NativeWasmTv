@@ -1,0 +1,51 @@
+[
+  {
+    "index": 1,
+    "name": "洛阳综合",
+    "fixture": "https://live.lytv.com.cn/live/LYTV1.m3u8",
+    "decodeMode": "hardware",
+    "checkDebugInfo": true,
+    "checkUiResponsiveness": true,
+    "sampleMs": 30000,
+    "maxNoProgressMs": 3000,
+    "width": 1920,
+    "height": 1080,
+    "expectedVideoCodec": "H.264",
+    "expectedAudioCodec": "AAC",
+    "expectedSourceFps": 25,
+    "expectedSampleRate": 48000,
+    "expectedAudioChannels": 2
+  },
+  {
+    "index": 2,
+    "name": "洛阳科教",
+    "fixture": "https://live.lytv.com.cn/live/LYTV2.m3u8",
+    "decodeMode": "hardware",
+    "checkDebugInfo": true,
+    "sampleMs": 30000,
+    "maxNoProgressMs": 3000,
+    "width": 1920,
+    "height": 1080,
+    "expectedVideoCodec": "H.264",
+    "expectedAudioCodec": "AAC",
+    "expectedSourceFps": 25,
+    "expectedSampleRate": 48000,
+    "expectedAudioChannels": 2
+  },
+  {
+    "index": 3,
+    "name": "洛阳文旅",
+    "fixture": "https://live.lytv.com.cn/live/LYTV3.m3u8",
+    "decodeMode": "hardware",
+    "checkDebugInfo": true,
+    "sampleMs": 30000,
+    "maxNoProgressMs": 3000,
+    "width": 1920,
+    "height": 1080,
+    "expectedVideoCodec": "H.264",
+    "expectedAudioCodec": "AAC",
+    "expectedSourceFps": 25,
+    "expectedSampleRate": 48000,
+    "expectedAudioChannels": 2
+  }
+]

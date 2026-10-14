@@ -616,7 +616,13 @@ public final class BrowserMediaStateInstrumentation extends Instrumentation {
             if(ready[0]) return;
             SystemClock.sleep(100);
         } while(SystemClock.elapsedRealtime()<deadline);
-        throw new AssertionError("New site's favicon did not arrive: "+color);
+        String[] diagnostic={""};
+        main(() -> {
+            WebView view=(WebView)get(source,"webView");
+            diagnostic[0]=" active="+bar.active().url+" icon="+(bar.active().icon==null?"null":bar.active().icon.getPixel(0,0))
+                +" viewIcon="+(view.getFavicon()==null?"null":view.getFavicon().getPixel(0,0));
+        });
+        throw new AssertionError("New site's favicon did not arrive: "+color+diagnostic[0]);
     }
 
     private void checkFaviconIsolation(String base) throws Exception {

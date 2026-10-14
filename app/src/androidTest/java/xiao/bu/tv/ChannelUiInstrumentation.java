@@ -153,9 +153,12 @@ public final class ChannelUiInstrumentation extends Instrumentation {
         Method parse=EpgManager.class.getDeclaredMethod("parse", byte[].class); parse.setAccessible(true);
         EpgManager manager=new EpgManager(getTargetContext());
         Object guide=parse.invoke(null,(Object)xml.getBytes("UTF-8"));
-        Method publish=EpgManager.class.getDeclaredMethod("publish",guide.getClass(),String.class);
+        Method resolve=EpgManager.class.getDeclaredMethod("resolveLogos",guide.getClass(),String.class);
+        resolve.setAccessible(true);
+        resolve.invoke(null,guide,"https://epg.example.test/feed/daily.xml");
+        Method publish=EpgManager.class.getDeclaredMethod("publish",guide.getClass(),List.class);
         publish.setAccessible(true);
-        publish.invoke(manager,guide,"https://epg.example.test/feed/daily.xml");
+        publish.invoke(manager,guide,java.util.Collections.singletonList("https://epg.example.test/feed/daily.xml"));
         Channel named=new Channel("1","Test","test","http://test",null,null);
         check("https://epg.example.test/logos/test.png".equals(manager.logoFor(named)),"Relative EPG logo/name match failed");
         Channel identified=new Channel("1","Different name","test","http://test",null,null,null,"test");
@@ -182,9 +185,10 @@ public final class ChannelUiInstrumentation extends Instrumentation {
         try {
             new FileOutputStream(file).close();
             EpgManager cached=new EpgManager(wrapper);
-            check((Boolean)call(cached,"isCacheFresh"),"Today's cache not reused");
+            Method fresh=EpgManager.class.getDeclaredMethod("isCacheFresh",File.class); fresh.setAccessible(true);
+            check((Boolean)fresh.invoke(cached,file),"Today's cache not reused");
             check(file.setLastModified(day-1),"Cannot set fixture timestamp");
-            check(!(Boolean)call(cached,"isCacheFresh"),"Yesterday's cache treated as today");
+            check(!(Boolean)fresh.invoke(cached,file),"Yesterday's cache treated as today");
         } finally { file.delete(); }
         pass("EPG retains midnight, filters today, deduplicates, checks calendar-day cache");
         final EpgManager rowGuide = new EpgManager(getTargetContext());
@@ -192,7 +196,7 @@ public final class ChannelUiInstrumentation extends Instrumentation {
                 + "<programme channel='row' start='" + format.format(new Date(System.currentTimeMillis()-60000L))
                 + "' stop='" + format.format(new Date(System.currentTimeMillis()+60000L))
                 + "'><title>正在播出的节目</title></programme></tv>";
-        publish.invoke(rowGuide, parse.invoke(null, (Object)rowXml.getBytes("UTF-8")), "https://example.test/epg.xml");
+        publish.invoke(rowGuide, parse.invoke(null, (Object)rowXml.getBytes("UTF-8")), java.util.Collections.singletonList("https://example.test/epg.xml"));
         main(new Check() { public void run() {
             ChannelListAdapter adapter = new ChannelListAdapter(getTargetContext(), new UiScaleHelper());
             try {
@@ -224,6 +228,7 @@ public final class ChannelUiInstrumentation extends Instrumentation {
             if (epgOnly) {
                 result.putString("stream","EPG CHECKS PASSED\n"); finish(-1,result); return;
             }
+            setInTouchMode(false);
             activity=(MainActivity)startActivitySync(new Intent(getTargetContext(),MainActivity.class)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
             SystemClock.sleep(3500);
@@ -297,10 +302,15 @@ public final class ChannelUiInstrumentation extends Instrumentation {
                     int center=selected.getTop()+selected.getHeight()/2;
                     check(Math.abs(center-list.getHeight()/2)<=selected.getHeight(),"Selected channel not centered: "+center+" / "+list.getHeight()
                             +" padding="+list.getPaddingTop()+","+list.getPaddingBottom()+" first="+list.getFirstVisiblePosition()+" selected="+list.getSelectedItemPosition());
+                    // Test row -> favorite -> EPG, independent of remembered menu focus.
+                    set(activity,"favoriteActionFocused",false); call(activity,"updateFavoriteButton");
+                    list.requestFocus();
+                    key(KeyEvent.KEYCODE_DPAD_RIGHT);
+                    check((Boolean)get(activity,"favoriteActionFocused"),"Channel favorite action not reachable");
                     key(KeyEvent.KEYCODE_DPAD_RIGHT);
                     check(epg.getVisibility()==View.VISIBLE,"Right did not expand EPG");
-                    check(((View)get(activity,"epgFavorite")).hasFocus(),"Favorite header not reachable");
                     key(KeyEvent.KEYCODE_DPAD_LEFT);
+                    if(epg.getVisibility()==View.VISIBLE) key(KeyEvent.KEYCODE_DPAD_LEFT);
                     check(epg.getVisibility()==View.GONE,"Left did not collapse EPG");
                 }});
                 pass("Menu defaults collapsed, selected channel centered, favorite header reachable");

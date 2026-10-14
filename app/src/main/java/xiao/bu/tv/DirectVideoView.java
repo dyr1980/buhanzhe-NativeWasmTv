@@ -14,7 +14,7 @@ public final class DirectVideoView extends FrameLayout implements SurfaceHolder.
     private SurfaceCallback callback;
     private SurfaceHolder activeHolder;
     private int videoWidth, videoHeight, sarNum = 1, sarDen = 1;
-    private boolean stretchVideo, legacySurfaceMode;
+    private boolean stretchVideo, legacySurfaceMode, viewportBufferMode;
 
     public DirectVideoView(Context context) { this(context, null); }
 
@@ -70,12 +70,14 @@ public final class DirectVideoView extends FrameLayout implements SurfaceHolder.
         this.sarNum = sarNum > 0 ? sarNum : 1;
         this.sarDen = sarDen > 0 ? sarDen : 1;
         if (surfaceView != null) {
-            if (videoWidth > 0 && videoHeight > 0)
+            if (!viewportBufferMode && videoWidth > 0 && videoHeight > 0)
                 surfaceView.getHolder().setFixedSize(videoWidth, videoHeight);
             else surfaceView.getHolder().setSizeFromLayout();
         }
         requestLayout();
     }
+
+    void setViewportBufferMode(boolean enabled) { viewportBufferMode = enabled; }
 
     void resetSurfaceBufferSizePreservingAspect() {
         if (surfaceView != null) surfaceView.getHolder().setSizeFromLayout();

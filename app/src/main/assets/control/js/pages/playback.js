@@ -236,7 +236,7 @@ function renderPageState() {
   document.getElementById("clockLocation").value = s.clockLocation || "right";
   document.getElementById("dateTimeFormat").value = s.dateTimeFormat || "date_time_week";
   var liveMode = s.liveDelayMode || "stable";
-  document.getElementById("liveDelay").value = /^(auto|stable|balanced|low)$/.test(liveMode) ? liveMode : "auto";
+  document.getElementById("liveDelay").value = /^(auto|stable|balanced|low)$/.test(liveMode) ? liveMode : "stable";
   syncLegacySelectButtons();
 }
 setupLegacyDateTimeSelects();

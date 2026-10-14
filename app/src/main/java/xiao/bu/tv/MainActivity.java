@@ -190,7 +190,8 @@ public final class MainActivity extends Activity {
     private static final String AUTO_UPDATE_CHANNEL_LIST = "auto_update_channel_list";
     private static final String REMOTE_CATALOG_URL = "remote_catalog_url";
 
-    private static final String LIVE_DELAY_MODE = "live_delay_mode_v2";
+    private static final String LIVE_DELAY_MODE = "live_delay_mode";
+    private static final String LIVE_DELAY_MODE_V2 = "live_delay_mode_v2";
     private static final String LIVE_DELAY_AUTO = "auto";
     private static final String LIVE_DELAY_LOW = "low";
     private static final String LIVE_DELAY_BALANCED = "balanced";
@@ -307,9 +308,13 @@ public final class MainActivity extends Activity {
             java.util.concurrent.Executors.newSingleThreadExecutor();
     private static final java.util.concurrent.ExecutorService LEGACY_PLAYER_RELEASE_WORKER =
             java.util.concurrent.Executors.newSingleThreadExecutor();
+    private static final java.util.concurrent.ExecutorService PROXY_SWITCH_WORKER =
+            java.util.concurrent.Executors.newSingleThreadExecutor();
     private View channelBar;
     private long channelCardEpgUpdatedAt;
     private View channelListPanel;
+    private Runnable pendingChannelListSelection;
+    private android.view.ViewTreeObserver.OnPreDrawListener channelListSelectionDraw;
     private LoadingSpinnerView channelProgress;
     private TextView videoClock;
     private TextView videoDate;
@@ -542,6 +547,7 @@ public final class MainActivity extends Activity {
     private volatile HlsProxyServer proxy;
     private boolean proxyStatefulCmgSource;
     private boolean lowResourceDevice;
+    private int maxSoftwareVideoPixels;
     private volatile IMediaPlayer player;
     private int androidMp3FallbackRequestId = -1;
     private boolean legacyPlayerReleasePending;
@@ -1179,9 +1185,7 @@ public final class MainActivity extends Activity {
         remoteCatalogUrl = "";
         preferences.edit().remove(REMOTE_CATALOG_URL).apply();
 
-        String storedLiveDelayMode = preferences.getString(LIVE_DELAY_MODE, null);
-        liveDelayMode = sanitizeLiveDelayMode(storedLiveDelayMode == null
-                ? LIVE_DELAY_AUTO : storedLiveDelayMode);
+        liveDelayMode = readLiveDelayMode(preferences);
         subtitleSizePercent = sanitizeSubtitleSizePercent(
                 preferences.getInt(SUBTITLE_SIZE_PERCENT, 100));
         subtitlePosition = sanitizeSubtitlePosition(preferences.getString(
@@ -5669,6 +5673,7 @@ public final class MainActivity extends Activity {
     }
 
     private void startChannel(int index) {
+        cancelPendingChannelListSelection();
         final long switchStartedAt = SystemClock.elapsedRealtime();
         if (multimediaSuspended) return;
         cancelChannelWarmup();
@@ -5758,7 +5763,7 @@ public final class MainActivity extends Activity {
         HlsProxyServer playingProxy=outgoingPlaybackProxy!=null?outgoingPlaybackProxy:proxy;
         boolean parallelLegacyWarmup=retainPlayback&&Build.VERSION.SDK_INT<=15
                 && (player==null || player instanceof AndroidMediaPlayer&&playingProxy!=null
-                        &&!playingProxy.canKeepForQuickSwitch(player.getCurrentPosition()));
+                        &&!playingProxy.canKeepForQuickSwitch(player.getCurrentPosition(),lowResourceDevice?1500L:6000L));
         if(parallelLegacyWarmup&&player!=null) {
             outgoingReopenChannel=activePlayerChannel;outgoingReopenUrl=activePlayerStreamUrl;
             if(outgoingPlaybackProxy==null) {
@@ -5793,27 +5798,29 @@ public final class MainActivity extends Activity {
             @Override public void run() {
                 if (requestId != playRequestId || isFinishing()) return;
                 pendingChannelSetupAfterRelease = null;
-                try {
-                    logChannelSwitchStage(requestId, "proxy-reset-begin");
-                    // The outgoing HLS proxy must stay alive until MediaPlayer.release()
-                    // has stopped the old LiveSession. Closing it first makes Android
-                    // 4.0 retry the dead loopback connection for tens of seconds.
-                    resetProxyForChannelSwitch();
-                    logChannelSwitchStage(requestId, "proxy-ready");
-                } catch (IOException error) {
-                    Log.e(TAG, "Unable to reset proxy for channel switch", error);
-                    abortChannelSwitchAnimation();
-                    hideLoading();
-                    showChannelBar(channel.name, "切换失败: " + error.getMessage());
-                    return;
-                }
-                logChannelSwitchStage(requestId, "resolve-begin");
-                if (source == ChannelCatalog.SOURCE_CCTV_WEB
-                        || source == ChannelCatalog.SOURCE_CUSTOM) {
-                    resolveFallbackUrl(channel, requestId);
-                } else {
-                    resolveYangshipinUrl(channel, requestId);
-                }
+                logChannelSwitchStage(requestId, "proxy-reset-begin");
+                retireProxiesForChannelSwitch(requestId, () -> {
+                    try {
+                        // Keep the outgoing HLS proxy alive until MediaPlayer.release()
+                        // stops the old LiveSession. Closing it first makes Android
+                        // 4.0 retry the dead loopback connection for tens of seconds.
+                        resetProxyForChannelSwitch();
+                        logChannelSwitchStage(requestId, "proxy-ready");
+                    } catch (IOException error) {
+                        Log.e(TAG, "Unable to reset proxy for channel switch", error);
+                        abortChannelSwitchAnimation();
+                        hideLoading();
+                        showChannelBar(channel.name, "切换失败: " + error.getMessage());
+                        return;
+                    }
+                    logChannelSwitchStage(requestId, "resolve-begin");
+                    if (source == ChannelCatalog.SOURCE_CCTV_WEB
+                            || source == ChannelCatalog.SOURCE_CUSTOM) {
+                        resolveFallbackUrl(channel, requestId);
+                    } else {
+                        resolveYangshipinUrl(channel, requestId);
+                    }
+                });
             }
         };
         if (legacyPlayerReleasePending && !parallelLegacyWarmup) {
@@ -6700,8 +6707,15 @@ public final class MainActivity extends Activity {
         int largeMemoryClassMb = manager == null ? 0 : manager.getLargeMemoryClass();
         boolean systemLowRam = Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT
                 && manager != null && manager.isLowRamDevice();
+        ActivityManager.MemoryInfo memoryInfo = new ActivityManager.MemoryInfo();
+        if (manager != null) manager.getMemoryInfo(memoryInfo);
+        // Decoded UHD reference frames can exhaust sub-1-GiB devices even with
+        // two decoder threads. Hardware playback keeps its normal capability.
+        maxSoftwareVideoPixels = systemLowRam && memoryInfo.totalMem > 0
+                && memoryInfo.totalMem < 1024L * 1024L * 1024L ? 1920 * 1080 : 0;
         lowResourceDevice = Build.VERSION.SDK_INT <= Build.VERSION_CODES.KITKAT
                 || systemLowRam
+                || "mt6580".equalsIgnoreCase(Build.HARDWARE)
                 || (memoryClassMb > 0 && memoryClassMb <= 64);
         Log.i(TAG, "Resource profile low=" + lowResourceDevice
                 + " memoryClassMb=" + memoryClassMb
@@ -6709,26 +6723,49 @@ public final class MainActivity extends Activity {
                 + " heapLimitMb=" + (Runtime.getRuntime().maxMemory() / (1024L * 1024L)));
     }
 
-    private void resetProxyForChannelSwitch() throws IOException {
-        boolean statefulCmgSource = !isActiveCctvWebSource()
+    private boolean nextProxyUsesCmgSession() {
+        return !isActiveCctvWebSource()
                 && (currentCatalogSource() != ChannelCatalog.SOURCE_CUSTOM
                         || activeEmbeddedYangshipinResolver);
+    }
+
+    private void retireProxiesForChannelSwitch(final int requestId, final Runnable ready) {
         HlsProxyServer previous = proxy;
+        boolean previousStateful = proxyStatefulCmgSource;
         proxy = null;
+        HlsProxyServer outgoing = null;
+        boolean outgoingStateful = outgoingProxyStateful;
         if(preparingChannelSwitch) {
             if(outgoingPlaybackProxy==null){outgoingPlaybackProxy=previous;outgoingProxyStateful=proxyStatefulCmgSource;previous=null;}
         } else if(outgoingPlaybackProxy!=null) {
-            if (outgoingProxyStateful) outgoingPlaybackProxy.close(); else outgoingPlaybackProxy.closeAsync();outgoingPlaybackProxy=null;
+            outgoing=outgoingPlaybackProxy;outgoingPlaybackProxy=null;
         }
-        if (previous != null) {
-            // A CCTV proxy may still have prefetched segments queued for decryption.
-            // Closing it first cancels the old stateful H5E session before the new one starts.
-            if (proxyStatefulCmgSource) previous.close(); else previous.closeAsync();
-        }
-        // Reset shared CMG state only after every old proxy decrypt task has been
-        // cancelled. Otherwise a late old task can repopulate the just-reset runtime
-        // while the next source is being initialized.
-        if(!preparingChannelSwitch)HlsProxyServer.resetCmgSessionForChannelSwitch();
+        final HlsProxyServer retired=previous, retiredOutgoing=outgoing;
+        final boolean closeStateful=previousStateful, closeOutgoingStateful=outgoingStateful;
+        final boolean resetCmg=!preparingChannelSwitch
+                && (nextProxyUsesCmgSession() || previousStateful && retired!=null
+                        || outgoingStateful && retiredOutgoing!=null);
+        // Old stateful decryptors must finish before the next session starts, but
+        // cancellation, HTTP disconnect and the shared decrypt lock can take seconds.
+        // Serialize that handoff off the UI thread; obsolete selections still retire
+        // their detached proxies, and cannot open a player or reset a newer session.
+        PROXY_SWITCH_WORKER.execute(() -> {
+            if(retiredOutgoing!=null) {
+                if(closeOutgoingStateful)retiredOutgoing.close();else retiredOutgoing.closeAsync();
+            }
+            if(retired!=null) {
+                if(closeStateful)retired.close();else retired.closeAsync();
+            }
+            if(requestId!=playRequestId)return;
+            if(resetCmg)HlsProxyServer.resetCmgSessionForChannelSwitch();
+            runOnUiThread(() -> {
+                if(requestId==playRequestId && !isFinishing())ready.run();
+            });
+        });
+    }
+
+    private void resetProxyForChannelSwitch() throws IOException {
+        boolean statefulCmgSource=nextProxyUsesCmgSession();
         HlsProxyServer next = new HlsProxyServer(
                 this, statefulCmgSource, lowResourceDevice,
                 h264SpsCompatibility, cctvLiveEdgeHoldBackSegments(),
@@ -7418,7 +7455,10 @@ public final class MainActivity extends Activity {
                 && outgoing.canHotSwitch(ready)) {
             try {
                 final IMediaPlayer retained=player;
-                final long boundary=outgoing.hotSwitch(candidate,ready,retained.getCurrentPosition());
+                // Older devices can open the warmed decoder sooner than a long
+                // existing queue drains. Retain only a short, bounded handoff.
+                final long boundary=outgoing.hotSwitch(candidate,ready,retained.getCurrentPosition(),
+                        lowResourceDevice?1500L:4000L);
                 proxy=outgoing;outgoingPlaybackProxy=null;candidate.close();
                 activePlayerChannel=channel;activePlayerStreamUrl=url;rememberActivePlayerSelection();
                 cachedIjkMetadata=null;sampledMetadataPlayer=null;
@@ -7810,7 +7850,9 @@ public final class MainActivity extends Activity {
                         LegacyBackgroundMemoryRelief.afterHighResolutionPlayerError(this,
                                 proxy.sourceVideoWidth(), proxy.sourceVideoHeight());
                     recoverStalledPlayback(sourceRequestId, mediaPlayer,
-                            "system " + (hls ? "HLS" : "MP3") + " error " + what + "/" + extra);
+                            what == android.media.MediaPlayer.MEDIA_ERROR_SERVER_DIED
+                                    ? "system decoder died " + what + "/" + extra
+                                    : "system " + (hls ? "HLS" : "MP3") + " error " + what + "/" + extra);
                 }
             });
             return true;
@@ -7952,6 +7994,12 @@ public final class MainActivity extends Activity {
             });
         }
         final boolean softwareDecode = forceSoftwareDecode || shouldUseSoftwareDecode();
+        // Automatic codec fallback also uses these options. Frame threading on
+        // low-RAM devices otherwise retains several extra full-resolution frames.
+        if (lowResourceDevice) nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_CODEC, "threads", 2);
+        nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "ntv-max-software-pixels", maxSoftwareVideoPixels);
+        nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "ntv-mtk-avc-fields",
+                "mt6580".equalsIgnoreCase(Build.HARDWARE) ? 1 : 0);
         if (Build.VERSION.SDK_INT >= 17) NativeHdrOutput.initialize(this, videoView);
         // Keep software YUV on the GPU too; mixing CPU and EGL producers on one
         // Surface prevents old Android versions from reconnecting the output.
@@ -8024,7 +8072,7 @@ public final class MainActivity extends Activity {
         // Use the same late-frame budget as explicit software playback so costly
         // video conversion does not keep falling further behind the audio clock.
         nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "framedrop",
-                realtimeCastSource ? 0 : (softwareDecode
+                realtimeCastSource || isDatagramSource(streamUrl) ? 0 : (softwareDecode
                         || Build.VERSION.SDK_INT <= Build.VERSION_CODES.KITKAT) ? 5 : 1);
         if (realtimeCastSource) receiverNetworkLease.acquire(this);
         nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "ntv-live-video",
@@ -8035,7 +8083,7 @@ public final class MainActivity extends Activity {
             nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "max-fps", -1);
         }
         nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "ntv-trace-latency",
-                realtimeCastSource && BuildConfig.DEBUG && BuildConfig.CAST_LATENCY_TRACE ? 1 : 0);
+                BuildConfig.DEBUG && BuildConfig.CAST_LATENCY_TRACE ? 1 : 0);
         final boolean remoteCatalogPlayback = isRemoteCatalogPlayback();
         final boolean cctvSource = isActiveCctvWebSource();
         final boolean yangshipinSource = activeEmbeddedYangshipinResolver
@@ -8046,8 +8094,14 @@ public final class MainActivity extends Activity {
         final boolean broadcastProbe = cctvSource || yangshipinSource;
         final boolean finiteHls = proxy != null && proxy.finiteMedia();
         final boolean genericLiveHls = !cctvSource && isHttpHlsSource(streamUrl) && !finiteHls;
-        final boolean proxyControlledLive = proxy != null && (cctvSource || yangshipinSource || genericLiveHls)
-                && (LIVE_DELAY_LOW.equals(liveDelayMode) || LIVE_DELAY_AUTO.equals(liveDelayMode));
+        final boolean knownLiveTracks = genericLiveHls && proxy != null
+                && proxy.hasVerifiedLiveAvTracks();
+        final boolean proxyControlledLive = proxy != null && (cctvSource || yangshipinSource
+                || genericLiveHls
+                && (LIVE_DELAY_LOW.equals(liveDelayMode) || LIVE_DELAY_AUTO.equals(liveDelayMode)));
+        // Broadcast proxies deliver whole clear TS segments and retain their prefetch
+        // reserve in every mode. A second IJK startup queue and longer stream probe
+        // only delay the same ready audio/video; refill reserve remains in the proxy.
         // The proxy retains complete playable segments; don't gate the same data
         // again on IJK's packet high-water mark. Decode queues and A/V sync stay on.
         nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "packet-buffering",
@@ -8136,7 +8190,13 @@ public final class MainActivity extends Activity {
                 realtimeCastSource ? 128 * 1024
                         : liveRadioStartup ? 32 * 1024
                         : remoteCatalogPlayback ? 1024 * 1024
-                        : genericThirdPartySource ? 4 * 1024 * 1024 : 256 * 1024);
+                        : genericThirdPartySource && !knownLiveTracks ? 4 * 1024 * 1024 : 256 * 1024);
+        if(knownLiveTracks) {
+            // Preloading has already verified video parameter sets and actual AAC
+            // track. Avoid collecting another FPS window across a live playlist refresh.
+            // Unprobed/late-audio sources keep the larger compatibility probe below.
+            nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT,"fpsprobesize",0);
+        }
         if (realtimeCastSource) {
             // Keep enough socket space for one paced IDR on old kernels. The sender
             // now spreads large access units over a few milliseconds, preventing
@@ -8155,6 +8215,11 @@ public final class MainActivity extends Activity {
             nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT,
                     "reorder_queue_size", orderedCast ? 0 : 16);
         }
+        else if (isDatagramSource(streamUrl)) {
+            // Plain RTP/UDP sources can deliver a complete IDR in one burst;
+            // FFmpeg's small default socket queue loses packets while decoding.
+            nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "buffer_size", 1024 * 1024);
+        }
         if (liveRadioStartup) {
             nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzeduration", 200000);
         } else if (broadcastProbe) {
@@ -8165,7 +8230,7 @@ public final class MainActivity extends Activity {
             // Legacy TS services may announce audio late or begin between GOPs. The
             // previous 256 KiB probe could therefore produce picture without sound.
             nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT,
-                    "analyzeduration", 3000000);
+                    "analyzeduration", knownLiveTracks ? 500000 : 3000000);
         } else if (remoteCatalogPlayback) {
             nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT,
                     "analyzeduration", 1500000);
@@ -8437,8 +8502,17 @@ public final class MainActivity extends Activity {
                     if (what == -20001 || extra == -20001) {
                         if (returnFromFailedSniffedPlayback("设备不支持此 Dolby Vision 格式")) return true;
                         abortChannelSwitchAnimation();
+                        releasePlayer(true);
                         hideLoading();
                         showChannelBar(channel.name, "设备不支持此 Dolby Vision 格式，请切换普通视频轨道或线路");
+                        return true;
+                    }
+                    if (what == -20002 || extra == -20002) {
+                        if (returnFromFailedSniffedPlayback("设备内存不足以软解此分辨率")) return true;
+                        abortChannelSwitchAnimation();
+                        releasePlayer(true);
+                        hideLoading();
+                        showChannelBar(channel.name, "设备内存不足以软解此分辨率，请切换较低分辨率线路");
                         return true;
                     }
                     if (returnFromFailedSniffedPlayback("资源播放失败（" + what + "/" + extra + "）")) return true;
@@ -8453,7 +8527,9 @@ public final class MainActivity extends Activity {
                                 if (sourceRequestId == playRequestId
                                         && player == failedPlayer) {
                                     recoverStalledPlayback(sourceRequestId, failedPlayer,
-                                            "player error " + errorWhat + "/" + errorExtra);
+                                            (errorWhat == android.media.MediaPlayer.MEDIA_ERROR_SERVER_DIED
+                                                    ? "system decoder died " : "player error ")
+                                                    + errorWhat + "/" + errorExtra);
                                 }
                             }
                         }, 1000L);
@@ -8950,6 +9026,22 @@ public final class MainActivity extends Activity {
             return mode;
         }
         return LIVE_DELAY_STABLE;
+    }
+
+    private static String readLiveDelayMode(SharedPreferences preferences) {
+        // Keep the published 1.7.0 key authoritative. Migrate a v2-only choice
+        // once, so a later cold start cannot resurrect a stale second setting.
+        String stored;
+        try {
+            stored = preferences.getString(preferences.contains(LIVE_DELAY_MODE)
+                    ? LIVE_DELAY_MODE : LIVE_DELAY_MODE_V2, LIVE_DELAY_STABLE);
+        } catch (ClassCastException invalid) {
+            stored = null;
+        }
+        String mode = sanitizeLiveDelayMode(stored);
+        if (preferences.contains(LIVE_DELAY_MODE_V2) || !mode.equals(stored))
+            preferences.edit().putString(LIVE_DELAY_MODE, mode).remove(LIVE_DELAY_MODE_V2).apply();
+        return mode;
     }
 
     private static int sanitizeSubtitleSizePercent(int percent) {
@@ -9727,6 +9819,14 @@ public final class MainActivity extends Activity {
                     showChannelBar(channel.name, "兼容软解仍未检测到画面");
                     return;
                 }
+                if (playbackRecoveryAttempts > 0) {
+                    // This channel already rendered on hardware. A failed
+                    // restart is still a recovery failure, not new evidence
+                    // that the format needs software decoding.
+                    recoverStalledPlayback(requestId, watchedPlayer,
+                            "hardware recovery produced no first frame", true);
+                    return;
+                }
                 boolean legacyCodec = Build.VERSION.SDK_INT <= Build.VERSION_CODES.KITKAT
                         || lowResourceDevice;
                 if (legacyCodec && legacyHardwareRetryRequestId != requestId) {
@@ -9769,6 +9869,11 @@ public final class MainActivity extends Activity {
 
     private void recoverStalledPlayback(int requestId, IMediaPlayer watchedPlayer,
             String reason) {
+        recoverStalledPlayback(requestId, watchedPlayer, reason, false);
+    }
+
+    private void recoverStalledPlayback(int requestId, IMediaPlayer watchedPlayer,
+            String reason, boolean videoOutputStopped) {
         if (requestId != playRequestId || player != watchedPlayer
                 || stallRecoveryRequestId == requestId) {
             return;
@@ -9798,6 +9903,8 @@ public final class MainActivity extends Activity {
             return; // Never advance the controlled TV to an unrelated channel.
         }
         syncPlaybackRecoveryTarget();
+        boolean systemDecoderDied = reason.startsWith("system decoder died ");
+        boolean decoderFailure = videoOutputStopped || systemDecoderDied;
         boolean legacyHlsFailure = watchedPlayer instanceof AndroidMediaPlayer
                 && useAndroidHlsPlayer(Build.VERSION.SDK_INT, activePlayerStreamUrl);
         if (legacyHlsFailure && reason.startsWith("system HLS error ")) {
@@ -9818,14 +9925,19 @@ public final class MainActivity extends Activity {
             lastPlaybackRecoveryAt = SystemClock.elapsedRealtime();
             Channel retryChannel = activePlayerChannel;
             String retryUrl = activePlayerStreamUrl;
+            // An intermittent output failure does not prove unsupported hardware.
+            // Recreate the current backend; do not turn an otherwise supported
+            // live channel into expensive software playback after one stall.
             boolean retrySoftwareDecode = activeSoftwareDecode;
             Log.w(TAG, "Recovering stalled playback attempt="
                     + playbackRecoveryAttempts + "/" + recoveryLimit
                     + " reason=" + reason);
-            showLoading(currentChannel().name,
-                    (isDeviceNetworkDisconnected() ? "网络已断开，正在重连（" : "播放异常，正在重试（")
-                    + playbackRecoveryAttempts + "/"
-                    + recoveryLimit + "）");
+            String recoveryMessage = playbackRecoveryMessage(videoOutputStopped,
+                    retrySoftwareDecode, systemDecoderDied,
+                    isDeviceNetworkDisconnected(), playbackRecoveryAttempts, recoveryLimit);
+            if (decoderFailure)
+                Toast.makeText(this, recoveryMessage, Toast.LENGTH_SHORT).show();
+            showLoading(currentChannel().name, recoveryMessage);
             if (retryChannel != null && retryUrl != null && retryUrl.length() > 0) {
                 if (watchedPlayer instanceof AndroidMediaPlayer) {
                     // A failed framework player may still own the old Surface for a
@@ -9860,6 +9972,15 @@ public final class MainActivity extends Activity {
 
         playbackRecoveryAttempts = 0;
         Channel channel = currentChannel();
+        if (decoderFailure) {
+            // A decoder failure is not proof that this channel/source is dead.
+            // Preserve the user's channel and let them retry or choose a mode.
+            abortChannelSwitchAnimation();
+            releasePlayer(true);
+            hideLoading();
+            showChannelBar(channel.name, "系统解码器多次恢复失败，请重试或调整解码模式");
+            return;
+        }
         int sourceCount = Math.max(1, channel.sourceCount());
         if (sourceCount > 1
                 && playbackRecoverySourcesTried < sourceCount - 1) {
@@ -9900,6 +10021,16 @@ public final class MainActivity extends Activity {
         switchChannel(next[1]);
         Toast.makeText(this, "当前频道无法恢复，已切换到下一频道",
                 Toast.LENGTH_LONG).show();
+    }
+
+    private static String playbackRecoveryMessage(boolean videoOutputStopped,
+            boolean softwareDecode, boolean systemDecoderDied, boolean disconnected,
+            int attempt, int limit) {
+        String message = systemDecoderDied ? "系统解码器崩溃，正在恢复"
+                : disconnected ? "网络已断开，正在重连"
+                : videoOutputStopped && !softwareDecode ? "系统解码器异常，正在恢复硬解"
+                : "播放异常，正在重试";
+        return message + "（" + attempt + "/" + limit + "）";
     }
 
     private static boolean isNormalPlaybackCompletion(long duration, long position) {
@@ -10050,6 +10181,7 @@ public final class MainActivity extends Activity {
     }
 
     private void switchRelative(int offset) {
+        cancelPendingChannelListSelection();
         if (offset == 0 || ChannelCatalog.GROUPS.length == 0) {
             return;
         }
@@ -10181,9 +10313,46 @@ public final class MainActivity extends Activity {
     }
 
     private void switchBrowsingChannel(int position) {
+        cancelPendingChannelListSelection();
         currentGroupIndex = browsingGroupIndex;
-        closeChannelList();
-        switchChannel(position);
+        currentChannelIndex = ChannelCatalog.wrapIndex(currentGroup().channels, position);
+        final ChannelCatalog.Group selectedGroup = currentGroup();
+        final int selectedIndex = currentChannelIndex;
+        final int selectionRequest = ++playRequestId;
+        closeChannelList(false);
+        pendingChannelListSelection = new Runnable() {
+            @Override public void run() {
+                if (pendingChannelListSelection != this) return;
+                pendingChannelListSelection = null;
+                if (isFinishing() || selectionRequest != playRequestId
+                        || currentGroup() != selectedGroup || currentChannelIndex != selectedIndex) return;
+                applyClockLocation();
+                switchChannel(selectedIndex);
+            }
+        };
+        // GONE alone does not paint until this input callback returns. Let the
+        // closing frame draw before plugin checks, service calls and player work.
+        channelListSelectionDraw = () -> {
+            android.view.ViewTreeObserver observer = root.getViewTreeObserver();
+            if (observer.isAlive()) observer.removeOnPreDrawListener(channelListSelectionDraw);
+            channelListSelectionDraw = null;
+            Runnable selection = pendingChannelListSelection;
+            if (selection != null) root.post(selection);
+            return true;
+        };
+        root.getViewTreeObserver().addOnPreDrawListener(channelListSelectionDraw);
+        root.invalidate();
+    }
+
+    private void cancelPendingChannelListSelection() {
+        if (root == null) return;
+        if (pendingChannelListSelection != null) root.removeCallbacks(pendingChannelListSelection);
+        pendingChannelListSelection = null;
+        if (channelListSelectionDraw != null) {
+            android.view.ViewTreeObserver observer = root.getViewTreeObserver();
+            if (observer.isAlive()) observer.removeOnPreDrawListener(channelListSelectionDraw);
+            channelListSelectionDraw = null;
+        }
     }
 
     private void loadFavoriteChannels(SharedPreferences preferences) {
@@ -10477,6 +10646,7 @@ public final class MainActivity extends Activity {
     }
 
     private void openChannelList(boolean keepVisibleOnBlackScreen) {
+        cancelPendingChannelListSelection();
         ensureChannelPanelInitialized();
         epgExpanded = false;
         setEpgColumnVisible(false);
@@ -10586,13 +10756,17 @@ public final class MainActivity extends Activity {
     }
 
     private void closeChannelList() {
+        closeChannelList(true);
+    }
+
+    private void closeChannelList(boolean refreshOverlay) {
         channelListPanel.removeCallbacks(hideChannelList);
         keepChannelListVisibleOnWebExit = false;
         channelPanelTouching = false;
         channelPanelHovering = false;
         favoriteActionFocused = false;
         channelListPanel.setVisibility(View.GONE);
-        applyClockLocation();
+        if (refreshOverlay) applyClockLocation();
         root.requestFocus();
     }
 
@@ -11572,6 +11746,10 @@ public final class MainActivity extends Activity {
             videoSarDen = 1;
         }
         {
+            // Software frames still decode at source resolution. The small-screen
+            // compositor needs only a viewport-sized RGB output on low-RAM TVs.
+            videoView.setViewportBufferMode(lowResourceDevice && mediaPlayer instanceof IjkMediaPlayer
+                    && ((IjkMediaPlayer) mediaPlayer).getVideoDecoder()==IjkMediaPlayer.FFP_PROPV_DECODER_AVCODEC);
             videoView.setVideoSize(videoWidth, videoHeight, videoSarNum, videoSarDen);
         }
         refreshVideoInfo();
@@ -11657,16 +11835,27 @@ public final class MainActivity extends Activity {
         }
         if (prepared && player != null) {
             long now = SystemClock.elapsedRealtime();
-            if (outputFps > 0.1f) {
+            if (outputFps > 0.1f || !player.isPlaying() || buffering || audioOnlyPlayback) {
                 lastVideoOutputAt = now;
             } else if (Build.VERSION.SDK_INT > Build.VERSION_CODES.N_MR1
-                    && videoRenderingStarted && !buffering
+                    && videoRenderingStarted
                     && isNtVCastSource(activePlayerStreamUrl)
                     && lastVideoOutputAt > 0L
                     && now - lastVideoOutputAt >= NTV_CAST_STALL_RECOVERY_MS) {
                 recoverStalledPlayback(playRequestId, player,
                         "cast video frames stopped for "
                                 + (now - lastVideoOutputAt) + "ms");
+                return;
+            } else if (videoRenderingStarted && player instanceof IjkMediaPlayer
+                    && lastVideoOutputAt > 0L
+                    && now - lastVideoOutputAt >= PLAYBACK_STALL_RECOVERY_MS
+                    && isHttpHlsSource(activePlayerStreamUrl) && proxy != null && !proxy.finiteMedia()
+                    && IjkStreamMetrics.sourceFrameRate((IjkMediaPlayer) player) >= 1f) {
+                // Checking the audio clock alone misses a frozen video renderer.
+                // Use measured output, with the same bounded retry policy as a
+                // stalled clock. Pause, audio-only and buffering reset the timer.
+                recoverStalledPlayback(playRequestId, player,
+                        "live video frames stopped for " + (now - lastVideoOutputAt) + "ms", true);
                 return;
             }
             long playbackPosition = player.getCurrentPosition();
@@ -12355,10 +12544,10 @@ public final class MainActivity extends Activity {
                     || normalizedStreamUrl.startsWith("rtp://");
             long minimumDurationMs = realtimeTransport ? 40L : 250L;
             long videoSample = MediaBitrateEstimator.fromPayload(
-                    activePlayer.getVideoCachedBytes(), activePlayer.getVideoCachedDuration(),
+                    IjkStreamMetrics.payloadCachedBytes(activePlayer, true), activePlayer.getVideoCachedDuration(),
                     minimumDurationMs, 32000L, 200000000L);
             long audioSample = MediaBitrateEstimator.fromPayload(
-                    activePlayer.getAudioCachedBytes(), activePlayer.getAudioCachedDuration(),
+                    IjkStreamMetrics.payloadCachedBytes(activePlayer, false), activePlayer.getAudioCachedDuration(),
                     minimumDurationMs, 4000L, 10000000L);
             long transportBitrate = playerTransportBitrate.sampleCumulativeBytes(
                     activePlayer.getTrafficStatisticByteCount(), SystemClock.elapsedRealtime());
@@ -12455,6 +12644,9 @@ public final class MainActivity extends Activity {
         if (lower.contains("vorbis")) {
             return "Vorbis";
         }
+        if (lower.equals("mp2") || lower.equals("mp2float") || lower.equals("audio/mpeg-l2")) {
+            return "MP2";
+        }
         if (lower.contains("audio/mpeg") || lower.equals("mp3")) {
             return "MP3";
         }
@@ -12485,8 +12677,15 @@ public final class MainActivity extends Activity {
     }
 
     private static String formatDebugFrameRate(PlaybackDebugStats stats) {
-        String output = stats.sourceFrameRate ? "--" : String.format(Locale.US,"%.1f",stats.frameRate);
-        return "输出" + output + "fps 源" + formatSourceFrameRate(stats);
+        String output = stats.sourceFrameRate ? "--" : String.valueOf(Math.round(stats.frameRate));
+        float sourceRate = stats.nominalFrameRate;
+        if ("interlaced".equals(stats.videoDescription.scanType)) {
+            // Output already counts each deinterlaced picture; only the source
+            // cadence needs conversion from frames to fields.
+            sourceRate *= 2f;
+        }
+        String source = sourceRate > 0.01f ? String.valueOf(Math.round(sourceRate)) : "--";
+        return output + "/" + source + " fps";
     }
 
     private static String formatChannelVideoInfo(PlaybackDebugStats stats) {
@@ -13944,6 +14143,7 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        cancelPendingChannelListSelection();
         if (videoControlsOverlay != null) videoControlsOverlay.hide();
         startupMaintenanceDestroyed = true;
         cancelChannelWarmup();

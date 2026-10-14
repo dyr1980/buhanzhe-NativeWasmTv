@@ -187,17 +187,17 @@ try {
 
 $artifacts = @(
     [pscustomobject]@{
-        Name = 'nTv.apk'
+        Name = '网页电视32位.apk'
         Source = Join-Path $repoRoot 'app\build\outputs\apk\arm32\release\app-arm32-release.apk'
         ExpectedAbi = 'armeabi-v7a'
     },
     [pscustomobject]@{
-        Name = 'nTv64.apk'
+        Name = '网页电视64位.apk'
         Source = Join-Path $repoRoot 'app\build\outputs\apk\arm64\release\app-arm64-release.apk'
         ExpectedAbi = 'arm64-v8a'
     },
     [pscustomobject]@{
-        Name = 'nTvX86.apk'
+        Name = '网页电视x86.apk'
         Source = Join-Path $repoRoot 'app\build\outputs\apk\x86\release\app-x86-release.apk'
         ExpectedAbi = 'x86'
     }
@@ -231,7 +231,8 @@ $results = foreach ($artifact in $artifacts) {
         throw "Unexpected native architectures in $($artifact.Name): $($architectures -join ', ')"
     }
 
-    $badgingOutput = @(& $aapt dump badging $destination)
+    # Windows aapt cannot read Unicode APK names; inspect the source we just copied.
+    $badgingOutput = @(& $aapt dump badging $artifact.Source)
     $badgingExitCode = $LASTEXITCODE
     $badging = $badgingOutput | Select-Object -First 1
     if ($badgingExitCode -ne 0 -or -not $badging) {
@@ -250,9 +251,9 @@ $results = foreach ($artifact in $artifacts) {
     }
 }
 
-$arm32Result = $results | Where-Object { $_.APK -eq 'nTv.apk' } | Select-Object -First 1
-$arm64Result = $results | Where-Object { $_.APK -eq 'nTv64.apk' } | Select-Object -First 1
-$x86Result = $results | Where-Object { $_.APK -eq 'nTvX86.apk' } | Select-Object -First 1
+$arm32Result = $results | Where-Object { $_.ABI -eq 'armeabi-v7a' } | Select-Object -First 1
+$arm64Result = $results | Where-Object { $_.ABI -eq 'arm64-v8a' } | Select-Object -First 1
+$x86Result = $results | Where-Object { $_.ABI -eq 'x86' } | Select-Object -First 1
 if (-not $arm32Result -or -not $arm64Result -or -not $x86Result) {
     throw 'ARM32, ARM64 and x86 artifacts are required to generate update metadata.'
 }

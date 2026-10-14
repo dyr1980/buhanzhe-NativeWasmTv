@@ -9,6 +9,7 @@ export ANDROID_NDK="${ANDROID_NDK:-$repo/.codex-tmp/android-ndk-r14b}"
 export PATH="/usr/bin:$tree/android/contrib/build/ffmpeg-$arch/toolchain/bin:$ANDROID_NDK/prebuilt/windows-x86_64/bin:$PATH"
 cd "$tree/android/contrib/ffmpeg-$arch"
 test -f ffbuild/config.mak
+node "$repo/tools/ijk/apply-ffmpeg-buffer-patches.cjs" "$PWD"
 # Reuse the already configured cross-toolchain, retaining all prior IPTV flags.
 flags="$(sed -n 's/^FFMPEG_CONFIGURATION=//p' ffbuild/config.mak)"
 if [ "${NTV_SKIP_CONFIGURE:-0}" != 1 ]; then

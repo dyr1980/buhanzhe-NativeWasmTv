@@ -24,6 +24,7 @@ final class HttpStreamResolver {
             "(?is)^(?:\\s|\\ufeff|<!--.*?-->|<\\?xml.*?\\?>)*<(?:!doctype\\s+html\\b|html\\b|head\\b|body\\b|script\\b|meta\\b|video\\b|iframe\\b)");
     private static final Pattern HTML_FRAGMENT_START = Pattern.compile(
             "(?is)^(?:\\s|\\ufeff|<!--.*?-->)*</?[a-z][a-z0-9:-]*(?:\\s[^<>]*)?/?>");
+    private static final Pattern SDP_MEDIA = Pattern.compile("(?m)^m=(?:video|audio) +[0-9]+(?:/[0-9]+)? +RTP/",Pattern.CASE_INSENSITIVE);
     private static final String USER_AGENT = "Mozilla/5.0 (Linux; Android 9; TV) "
             + "AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36";
     private static final Pattern ABSOLUTE_MEDIA_URL = Pattern.compile(
@@ -105,6 +106,13 @@ final class HttpStreamResolver {
                 lastError = error;
             } catch (RetryableSourceException error) {
                 lastError = error;
+            } catch (IOException error) {
+                // A pooled socket can close between selection and response headers.
+                // Retry this read-only classification within its original deadline;
+                // cancellation and invalid content must still fail immediately.
+                checkCancelled();
+                if (!isRetryableTransport(error)) throw error;
+                lastError = error;
             }
             if (attempt < MAX_TRANSIENT_ATTEMPTS) {
                 try {
@@ -116,6 +124,14 @@ final class HttpStreamResolver {
             }
         }
         throw lastError == null ? new IOException("源地址解析失败") : lastError;
+    }
+
+    private static boolean isRetryableTransport(IOException error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (cause instanceof java.io.EOFException || cause instanceof java.net.SocketException
+                    || cause instanceof java.net.SocketTimeoutException) return true;
+        }
+        return false;
     }
 
     private static int remainingMs(long deadline) throws IOException {
@@ -188,6 +204,13 @@ final class HttpStreamResolver {
                 if (startsWithPlaylist(body)) {
                     return new Result(current, false);
                 }
+                // SDP describes dynamic RTP payloads; FFmpeg opens its referenced
+                // RTP sockets. Preserve the descriptor instead of treating it as
+                // an API response or an unrecognised HLS playlist.
+                String descriptor=body.trim();
+                if ((descriptor.startsWith("v=0\n") || descriptor.startsWith("v=0\r\n"))
+                        && SDP_MEDIA.matcher(descriptor).find())
+                    return new Result(current,true);
                 // A real page keeps its navigation/player/scripts. Do not choose
                 // an arbitrary .m3u8 link from its examples, menus or source code.
                 if (HTML_START.matcher(body).find()) return new Result(current, false, true,

@@ -21,7 +21,16 @@ public final class ChannelTouchInstrumentation extends Instrumentation {
     private void main(Action action)throws Exception{runOnMainSync(()->{try{action.run();}catch(Throwable t){failure=t;}});if(failure!=null)throw new Exception(failure);}
     private void check(boolean yes,String reason){if(!yes)throw new AssertionError(reason);}
     private void tap(String name)throws Exception{
-        final int[] location=new int[2];main(()->{View v=(View)get(name);check(v.isShown(),name+" hidden");v.getLocationOnScreen(location);location[0]+=v.getWidth()/2;location[1]+=v.getHeight()/2;});
+        final int[] location=new int[2];main(()->{
+            View v;
+            if ("channelFavorite".equals(name)) {
+                ListView list=(ListView)get("channelList");
+                int row=list.getCheckedItemPosition()-list.getFirstVisiblePosition();
+                check(row>=0 && row<list.getChildCount(),"Selected channel outside viewport");
+                v=list.getChildAt(row).findViewById(R.id.channel_item_favorite);
+            } else v=(View)get(name);
+            check(v.isShown(),name+" hidden");v.getLocationOnScreen(location);location[0]+=v.getWidth()/2;location[1]+=v.getHeight()/2;
+        });
         long now=SystemClock.uptimeMillis();
         MotionEvent down=MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,location[0],location[1],0);down.setSource(InputDevice.SOURCE_TOUCHSCREEN);
         MotionEvent up=MotionEvent.obtain(now,now+80,MotionEvent.ACTION_UP,location[0],location[1],0);up.setSource(InputDevice.SOURCE_TOUCHSCREEN);
@@ -37,9 +46,9 @@ public final class ChannelTouchInstrumentation extends Instrumentation {
             setInTouchMode(true);
             tap("epgToggle");
             main(()->{check(((View)get("epgColumn")).getVisibility()==View.VISIBLE,"Touch did not open EPG");check(((TextView)get("epgStatus")).getText().toString().startsWith(expected),"EPG changed channel on touch: "+((TextView)get("epgStatus")).getText());});
-            tap("epgFavorite");
+            tap("channelFavorite");
             main(()->check(!favorites.equals((Set<String>)get("favoriteChannelKeys")),"Touch favorite did nothing"));
-            tap("epgFavorite");
+            tap("channelFavorite");
             main(()->check(favorites.equals((Set<String>)get("favoriteChannelKeys")),"Touch unfavorite changed the wrong channel"));
             tap("epgToggle");
             main(()->check(((View)get("epgColumn")).getVisibility()==View.GONE,"Touch did not close EPG"));

@@ -1,0 +1,49 @@
+[
+  {
+    "suite": "Ku9Compatibility"
+  },
+  {
+    "suite": "AlbumArtCache"
+  },
+  {
+    "suite": "ChannelUi"
+  },
+  {
+    "suite": "ChannelUi",
+    "arguments": {
+      "epgOnly": "true"
+    }
+  },
+  {
+    "suite": "ChannelTouch"
+  },
+  {
+    "suite": "BrowserPolicy"
+  },
+  {
+    "suite": "BrowserMediaState",
+    "arguments": {
+      "faviconOnly": "true"
+    }
+  },
+  {
+    "suite": "VersionBehavior",
+    "timeout": 150
+  },
+  {
+    "suite": "VersionBehavior",
+    "arguments": {
+      "decodeMode": "software"
+    },
+    "timeout": 150
+  },
+  {
+    "suite": "SniffedMediaProbe",
+    "arguments": {
+      "base": "http://127.0.0.1:29981/"
+    }
+  },
+  {
+    "suite": "WebWheelBounds"
+  }
+]

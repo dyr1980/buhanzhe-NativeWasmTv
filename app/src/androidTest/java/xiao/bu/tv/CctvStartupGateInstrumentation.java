@@ -30,8 +30,54 @@ public final class CctvStartupGateInstrumentation extends Instrumentation {
             NetworkClient.initialize(getTargetContext());
             for(int playableCount:new int[]{0,1,2}) verify(playableCount,report);
             verifyCmgPrefetch(report);
+            verifyCmgPlaylistDoesNotWaitForDecrypt(report);
         } catch(Throwable error) {code=0;report.append(android.util.Log.getStackTraceString(error));}
         result.putString("stream",report.toString());finish(code,result);
+    }
+    private void verifyCmgPlaylistDoesNotWaitForDecrypt(StringBuilder report) throws Exception {
+        if(android.os.Build.VERSION.SDK_INT<=15)return;
+        HlsProxyServer proxy=new HlsProxyServer(getTargetContext(),true,true,true,
+                2,true,"high",2,1,1);
+        ExecutorService reader=Executors.newSingleThreadExecutor();
+        CountDownLatch release=new CountDownLatch(1);
+        java.util.List<FutureTask<byte[]>> held=new java.util.ArrayList<>();
+        String base="https://hlsliveali-cdn.ysp.cctv.cn/startup-test/";
+        try {
+            proxy.start();
+            // Keep this deterministic and offline: the monitor and every TS task
+            // are provided by the fixture, with no live resolver/native transform.
+            Field monitor=HlsProxyServer.class.getDeclaredField("cctvPlaylistMonitorStarted");
+            monitor.setAccessible(true);monitor.setBoolean(proxy,true);
+            Map<String,FutureTask<byte[]>> tasks=(Map<String,FutureTask<byte[]>>)field(proxy,"cmgSegmentTasks");
+            Field playlist=HlsProxyServer.class.getDeclaredField("lastCctvPlaylistUrl");
+            playlist.setAccessible(true);playlist.set(proxy,base+"live.m3u8");
+            for(int index=0;index<3;index++) {
+                FutureTask<byte[]> task=new FutureTask<>(()->{release.await();return new byte[]{0x47};});
+                tasks.put(base+index+".ts",task);held.add(task);
+            }
+            String[] lines={"#EXTM3U","#EXT-X-TARGETDURATION:5","#EXT-X-MEDIA-SEQUENCE:0",
+                "#EXTINF:5,","0.ts","#EXTINF:5,","1.ts","#EXTINF:5,","2.ts"};
+            Method rewrite=HlsProxyServer.class.getDeclaredMethod("rewriteBufferedMediaPlaylist",
+                String.class,java.net.URI.class,String[].class);rewrite.setAccessible(true);
+            Future<String> manifest=reader.submit(()->(String)rewrite.invoke(proxy,
+                base+"live.m3u8",java.net.URI.create(base+"live.m3u8"),lines));
+            String body=manifest.get(1000,TimeUnit.MILLISECONDS);
+            if(!body.contains("#EXTINF:5,") || !body.contains("#EXT-X-MEDIA-SEQUENCE:0"))
+                throw new AssertionError("CMG playlist lost its playable startup window");
+            for(FutureTask<byte[]> task:held)if(task.isDone())
+                throw new AssertionError("CMG playlist awaited a decrypted TS");
+            Method get=HlsProxyServer.class.getDeclaredMethod("getCmgSegment",String.class);get.setAccessible(true);
+            Future<byte[]> segment=reader.submit(()->(byte[])get.invoke(proxy,base+"0.ts"));
+            try {segment.get(100,TimeUnit.MILLISECONDS);throw new AssertionError("Unready TS reached the player");}
+            catch(java.util.concurrent.TimeoutException expected) { }
+            release.countDown();held.get(0).run();
+            if(segment.get(1000,TimeUnit.MILLISECONDS)[0]!=0x47)
+                throw new AssertionError("Ready CMG segment was not delivered");
+        } finally {
+            release.countDown();for(FutureTask<byte[]> task:held)task.cancel(true);
+            proxy.close();reader.shutdownNow();
+        }
+        report.append("PASS CMG playlist opens before decrypt while TS reads retain their readiness gate\n");
     }
     private void verifyCmgPrefetch(StringBuilder report) throws Exception {
         HlsProxyServer proxy=new HlsProxyServer(getTargetContext(),true,true,true,

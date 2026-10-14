@@ -14,6 +14,8 @@ final class IjkStreamMetrics {
     private static final int RECEIVER_DELAY = 22002;
     private static final int VIDEO_DESCRIPTION = 22010;
     private static final int DEINTERLACE = 22012;
+    private static final int VIDEO_PAYLOAD_BYTES = 22013;
+    private static final int AUDIO_PAYLOAD_BYTES = 22014;
 
     private static Method findGetter(String name, Class<?>... parameters) {
         try {
@@ -66,6 +68,12 @@ final class IjkStreamMetrics {
 
     static float sourceFrameRate(IjkMediaPlayer player) {
         return floatProperty(player, SOURCE_FPS, 0f);
+    }
+
+    static long payloadCachedBytes(IjkMediaPlayer player, boolean video) {
+        // Upstream cached-byte properties include AVPacket/list-node memory.
+        // That overhead is substantial for small audio packets, not media bitrate.
+        return longProperty(player, video ? VIDEO_PAYLOAD_BYTES : AUDIO_PAYLOAD_BYTES, -1L);
     }
 
     static float outputFrameRate(IjkMediaPlayer player) {

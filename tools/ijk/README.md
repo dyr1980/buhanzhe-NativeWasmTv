@@ -15,6 +15,41 @@ not clamped to common TV frame rates. Both ARM player libraries must be rebuilt.
 sixfold migration and unknown-code rejection. `test-stream-timing.c` checks
 duplicate/reordered timestamps, real 25/30/50/150fps, discontinuities and stalls.
 
+Output samples need at least one second before reporting FPS. The minimum stale
+sample/reset interval is also one second: a loaded decoder can submit only 2fps
+from a 25fps source. The previous 250ms interval kept resetting that measurement
+and displayed zero indefinitely on MT6580/API24. The counter still excludes
+retained-picture repaints and expires when output stops; paused players return
+zero immediately. Sparse source streams retain their longer interval. Both ARM
+libraries include the change, verified on API19 and API24.
+
+## Debug bitrate measurements
+
+Debug bitrate measurements use optional long properties 22013/22014 for encoded
+video/audio bytes. Upstream queue-byte properties include `MyAVPacketList` memory
+and remain unchanged for buffering. `apply-payload-metrics-patches.cjs` subtracts
+that overhead only for the new properties. Small AAC packets previously turned a
+48 kbps MP4 track into roughly 87 kbps on ARM64; the media matrix now measures
+about 48 kbps. Older native libraries return -1 and retain the metadata fallback.
+`tools/regression/media_debug_matrix.py` creates ffprobe references and replays
+HLS/MP4 through the actual HUD using an isolated application ID. Test output and
+media stay under `.codex-tmp/hls-debug-matrix`; fixture HTTP supports byte ranges.
+
+`tools/regression/all_device_media.py --round N` snapshots both test APK ABIs,
+then runs independent HLS/MP4/HDR/script and RTP suites on all connected devices.
+An incomplete instrumentation report is a driver failure, never a pass. API 26+
+video evidence uses PixelCopy from the actual Surface: some Android 9 emulators
+return black rotated display screenshots despite a valid video buffer.
+
+`apply-egl-geometry-patches.cjs` fixes the initial height query and keeps software
+GLES output at the SurfaceHolder's requested size. Low-RAM software playback uses
+the viewport size, while decoding and debug source dimensions stay unchanged.
+Low-RAM decoder threading is capped at two; resource probes use one thread,
+keyframes only, and no redundant FPS sampling. Plain RTP/UDP gets a 1 MiB receive
+buffer. MT6580 is treated as a low-resource device; its field-capable AVC sequences
+use software decoding directly because its MediaCodec stalls on tested 1080i.
+Other chipsets retain their decoder selection.
+
 ## Codec input validation (Bugly 2002)
 
 `apply-codec-input-patches.cjs` rejects non-positive input writes in both IJK
@@ -86,6 +121,31 @@ hvcC length-prefixed samples are supported, including four-byte start codes.
 This supplies Main10 and HLG/PQ signalling to both MediaCodec
 configuration and the source HUD when the container's parameters are incomplete.
 Only headers are parsed; this does not add software pixel decoding to hardware playback.
+
+HEVC scan type also uses the SPS profile-tier-level source flags and VUI
+`field_seq_flag`. A positive interlaced flag reports interlaced source even when
+field order is unavailable; conflicting or absent source flags remain unknown.
+This supplements MediaCodec's missing frame metadata without inferring scan
+type from the codec, resolution or frame rate. `test-hevc-color.c` covers the
+progressive/interlaced flags, both ambiguous combinations and hvcC framing.
+
+`apply-ffmpeg-buffer-patches.cjs` preserves unread AVIO data and reader offsets
+when `ff_configure_buffers_for_index` enlarges the input buffer. FFmpeg 3.4's
+original resize discarded that data, causing fMP4 HLS to miss its initial
+samples when the stream could not seek back. Run this overlay before rebuilding
+FFmpeg for both ABIs; `build-ffmpeg-dolby.sh` applies it automatically.
+
+HTTP SDP descriptors are classified as native media. Once the native demuxer
+identifies SDP, `apply-rtp-buffer-patches.cjs` disables the HTTP download reserve
+gate: dynamic RTP packets may have no packet duration, so that gate could wait
+indefinitely after the first frame. RTP reordering and presentation clocks
+remain active. Bare dynamic RTP still requires an SDP encoding declaration.
+
+`apply-annexb-csd-patches.cjs` also supplies existing Annex B H.264/HEVC
+extradata as MediaCodec's `csd-0`. Upstream only supplied converted MP4 headers;
+the raw-header branch was commented out. SDP sources may carry SPS/PPS only
+out of band, so omitting them stalled hardware output while software decoding
+continued normally. Both raw and converted headers now reach the codec.
 
 AVC/H.264 also reads bounded SPS/VUI headers directly, from Annex B, avcC and
 length-prefixed samples. This supplements FFmpeg 3.4's picture parser, which
@@ -190,7 +250,7 @@ It requires a no-HDMI speaker route, checks prepare/render callbacks, codec/modu
 
 ## High frame rate playback and stream statistics
 
-The debug HUD labels output and source cadence separately. `输出50.0fps 源25.0帧/50.0场` means 50 decoded output pictures per second from an interlaced 25-frame/50-field source; it is not a 25 fps playback cap. Scan order is recovered from codec/container/parser/frame metadata and published separately as `currentSourceStats.scanType` and `sourceFieldRate`. Unknown scan order is not inferred from 1080-line resolution or from a 25 fps value. Progressive sources use source fps, without doubling it. Source access-unit statistics use completed media-timestamp bins with a one-second reorder allowance, so normal B-picture timestamp reordering in remuxed HLS/Matroska does not repeatedly reset the measurement. Output counters still count distinct successful frame submissions against wall time; source fields are never substituted for measured output.
+The debug HUD shows rounded `output/source fps`: `25/25 fps` for normal 25 fps progressive playback, or `50/50 fps` for 50 decoded output pictures per second from an interlaced 25-frame/50-field source. The left number remains the measured output cadence, so dropped frames or frame-rate deinterlacing can show `25/50 fps`; an unmeasured output or unknown source shows `--`. Scan order is recovered from codec/container/parser/frame metadata and published separately as `currentSourceStats.scanType` and `sourceFieldRate`. Unknown scan order is not inferred from 1080-line resolution or from a 25 fps value. Progressive sources use source fps, without doubling it. Source access-unit statistics use completed media-timestamp bins with a one-second reorder allowance, so normal B-picture timestamp reordering in remuxed HLS/Matroska does not repeatedly reset the measurement. Output counters still count distinct successful frame submissions against wall time; source fields are never substituted for measured output.
 
 `ntv-frame-sync` keeps audio as master and tolerates 80 ms of hardware scheduling jitter before discarding decoded pictures. Consecutive early drops are bounded; compressed reference packets are never discarded. An empty picture queue wakes on decoder production instead of waiting for another fixed refresh interval.
 
@@ -362,3 +422,72 @@ expire after 2 seconds. It does not measure socket/demux buffering before packet
 arrival or Surface/compositor/panel delay after submission. Sender telemetry
 expires per field after 3 seconds. The total remains an estimate (sender encode,
 queue, send, half control RTT, receiver interval); missing fields yield `--`.
+
+### All-device playback regression
+
+`python tools/regression/all_device_media.py --round N` runs isolated ARM32 tests
+on legacy devices/the local Android 9 emulator, and ARM64 on physical ARM64
+devices. Each device runs 74 media cases and three supported RTP/SDP cases. A
+round snapshots its APKs and retains partial results if instrumentation crashes;
+an incomplete run is an error. Fixture generation, the external manifest and
+the user's `E:/Downloads/fhshow.js` must be prepared first. Own temporary test
+packages/ports are removed; original nTv is stopped during testing so its
+background decoder cannot compete with the test app. Channel data is retained.
+
+`python tools/regression/all_device_report.py --rounds 6 7` builds an HTML/JSON
+report under `.codex-tmp/all-device-rounds`. It separates successful playback,
+probe failures, low output cadence and explicit device-capacity limits. PixelCopy
+reads the actual video Surface on API 26+; older UI screenshots hide player
+overlays and scan the whole video so a black introduction with a bottom caption
+is not mistaken for a decoder failure.
+
+The MT6580 device policy falls back from its unsupported field-capable AVC
+MediaCodec to software. Actual output FPS remains measured; a 50-field/s source
+does not imply the CPU can output 50 frames/s. Low-resource software playback
+uses two decoder threads and viewport-sized RGB buffers. The Android EGL
+initializer uses the window's height rather than its width for both dimensions.
+Only devices marked low-RAM by Android with less than 1 GiB total RAM impose a
+1080p software frame-allocation limit after hardware decoding has been tried.
+Rejected decoders return a specific error, relinquish their context once, and
+release the player before the next channel. Hardware capabilities are unchanged.
+
+Resource discovery sets `ntv-metadata-only`: publish demuxed tracks without
+opening playback decoders or audio/video outputs. `find_stream_info` uses one
+thread, skips pixel decoding and performs no FPS sampling; missing TS dimensions
+come from bounded, crop-aware AVC/HEVC SPS headers. Live bitrate estimation can reuse already fetched segment payload when
+HEAD cannot provide a usable length. Ordinary RTP/UDP receivers and RTP probes
+request 1 MiB socket buffers; interactive cast settings retain their policy.
+
+HTTP/2 stream/header failures retry only the affected proxy host with HTTP/1.1.
+Ordinary timeouts and carrier IPTV routes retain their transport. Instrumentation
+checks wrapped failure detection, per-host connection/protocol selection and
+carrier exclusions without making network requests; proof is retained in
+`http2-fallback-checks.json`. A passing CDN run alone is not evidence that this
+fallback branch was triggered.
+
+The ARM32 APK on Android 9 remains the playback target. Standalone RTP senders
+are built for the device's native ABI because Houdini can translate an APK yet
+fail to launch an ARM command-line executable. Sending failures are fatal to
+the harness rather than being reported as receiver decoder failures.
+
+`python tools/regression/native_headers_regression.py` compares crop-aware AVC
+and HEVC SPS dimensions, scan flags and color metadata against all generated
+fixture references, including framing, truncation and deterministic fuzz checks.
+
+FFmpeg 3.4 HEVC ignores the generic skip-frame probe option. Metadata-only
+stream-info options therefore deny its decoder while retaining normal audio
+probing and video parsers. Missing dimensions come from SPS; playback decoder
+selection and non-HEVC probing are unchanged.
+
+Manifest discovery lets its local proxy finish bounded upstream retries within
+the remaining overall 10-second deadline instead of prematurely canceling at
+two seconds. Every matrix case retains one video-only capture plus independent
+HUD assertions, system memory samples and a pre-playback crash checkpoint.
+
+Within one metadata probe, at most eight rewritten manifests (256 KiB each) are
+reused for ten seconds. Only the default audio/video rendition is exposed to
+the metadata reader; alternative languages, audio descriptions and subtitle
+downloads would otherwise consume its deadline. Playback proxies keep every
+referenced rendition and refresh manifests normally. Local instrumentation
+verifies both behaviours in `probe-manifest-reuse-checks.json` without external
+network access.

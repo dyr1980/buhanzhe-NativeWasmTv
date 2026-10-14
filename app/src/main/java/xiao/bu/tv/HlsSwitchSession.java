@@ -20,8 +20,13 @@ final class HlsSwitchSession {
     static final class Prepared {
         final String originUrl,mediaUrl;final List<Part> parts;final int first;
         final boolean eligible;final TsSwitchProfile profile;
+        final int targetDuration;
         Prepared(String origin,String media,List<Part> parts,int first,boolean eligible,TsSwitchProfile profile) {
+            this(origin,media,parts,first,eligible,profile,0);
+        }
+        Prepared(String origin,String media,List<Part> parts,int first,boolean eligible,TsSwitchProfile profile,int declaredTarget) {
             originUrl=origin;mediaUrl=media;this.parts=parts;this.first=first;this.eligible=eligible;this.profile=profile;
+            targetDuration=Math.max(declaredTarget,maximumDuration(parts));
         }
     }
     static Prepared prepare(Transport transport,String origin)throws IOException {
@@ -58,7 +63,25 @@ final class HlsSwitchSession {
         TsSwitchProfile profile;
         try{profile=transport.safe(parts.get(first).url)?TsSwitchProfile.inspect(file):null;}
         finally{transport.release(file);}
-        return new Prepared(origin,media,parts,first,profile!=null,profile);
+        return new Prepared(origin,media,parts,first,profile!=null,profile,declaredTargetDuration(text));
+    }
+    private static int maximumDuration(List<Part> parts) {
+        int duration=1;
+        for(Part part:parts)duration=Math.max(duration,(int)Math.round(part.seconds));
+        return duration;
+    }
+    private static int declaredTargetDuration(String text)throws IOException {
+        for(String raw:text.split("\\r?\\n")) {
+            String line=raw.trim();
+            if(line.startsWith("#EXT-X-TARGETDURATION:")) {
+                try {
+                    int value=Integer.parseInt(line.substring(22).trim());
+                    if(value<1||value>60)throw new NumberFormatException();
+                    return value;
+                }catch(NumberFormatException error){throw new IOException("Invalid HLS target duration",error);}
+            }
+        }
+        return 0;
     }
     private static List<Part> parse(Transport transport,String text)throws IOException {
         List<Part> parts=new ArrayList<Part>();long seq=0;double duration=-1;
@@ -86,7 +109,7 @@ final class HlsSwitchSession {
     private final Transport transport;
     private final TreeMap<Long,Entry> entries=new TreeMap<Long,Entry>();
     private final String base;
-    private final int targetDuration;
+    private int targetDuration;
     private Prepared active;
     private String currentSignature;
     private long epoch=1,nextSequence,reservedThrough=-1,lastOriginSequence=-1,lastReloadAt;
@@ -95,8 +118,7 @@ final class HlsSwitchSession {
     private volatile boolean closed;
     HlsSwitchSession(Transport transport,String base,Prepared prepared) {
         this.transport=transport;this.base=base;active=prepared;currentSignature=prepared.profile.signature;
-        int duration=1;for(Part part:prepared.parts)duration=Math.max(duration,(int)Math.ceil(part.seconds));
-        targetDuration=duration;
+        targetDuration=prepared.targetDuration;
         append(prepared,true);lastReloadAt=System.nanoTime();
     }
     private void append(Prepared prepared,boolean channelBoundary) {
@@ -110,7 +132,7 @@ final class HlsSwitchSession {
     }
     synchronized boolean compatible(Prepared prepared) {
         if(prepared==null)return false;
-        for(Part part:prepared.parts)if(Math.ceil(part.seconds)>targetDuration)return false;
+        if(prepared.targetDuration>targetDuration)return false;
         return !closed&&prepared.eligible&&currentSignature!=null
                 &&currentSignature.equals(prepared.profile.signature);
     }
@@ -140,6 +162,9 @@ final class HlsSwitchSession {
     }
     synchronized boolean targetDelivered(){return boundaryEpoch>0&&deliveredEpoch>=boundaryEpoch;}
     synchronized long epoch(){return epoch;}
+    synchronized boolean hasVerifiedAvTracks() {
+        return !closed && currentSignature!=null && active.profile!=null && active.profile.hasAudio;
+    }
     String playlist()throws IOException {
         Prepared source;long version,previousOrigin;boolean reload;
         synchronized(this) {
@@ -154,6 +179,7 @@ final class HlsSwitchSession {
                     ||text.contains("#EXT-X-BYTERANGE:")||text.contains("#EXT-X-KEY:")
                     ||text.contains("#EXT-X-DISCONTINUITY"))throw new IOException("HLS format changed during switch session");
             List<Part> fresh=parse(transport,text);
+            int freshTarget=Math.max(declaredTargetDuration(text),maximumDuration(fresh));
             int firstNew=0;while(firstNew<fresh.size()&&fresh.get(firstNew).originSequence<=previousOrigin)firstNew++;
             Prepared resumed=null;
             if(firstNew<fresh.size()&&previousOrigin>=0&&fresh.get(firstNew).originSequence>previousOrigin+1) {
@@ -164,16 +190,19 @@ final class HlsSwitchSession {
                 File file=transport.segment(fresh.get(firstNew).url);TsSwitchProfile profile;
                 try{profile=transport.safe(fresh.get(firstNew).url)?TsSwitchProfile.inspect(file):null;}
                 finally{transport.release(file);}
-                resumed=new Prepared(source.originUrl,source.mediaUrl,fresh,firstNew,profile!=null,profile);
+                resumed=new Prepared(source.originUrl,source.mediaUrl,fresh,firstNew,profile!=null,profile,freshTarget);
             }
             synchronized(this) {
                 if(epoch==version&&!closed) {
+                    // Some live origins vary between one- and two-second segments
+                    // and change their declared target. That does not change the
+                    // decoder tracks; rejecting it permanently ends a healthy feed.
+                    targetDuration=Math.max(targetDuration,freshTarget);
                     if(resumed!=null&&lastOriginSequence==previousOrigin) {
                         if(!compatible(resumed))throw new IOException("HLS decoder parameters changed across missing interval");
                         active=resumed;epoch++;lastOriginSequence=-1;append(resumed,true);
                     }
                     for(Part part:fresh)if(part.originSequence>lastOriginSequence) {
-                        if(Math.ceil(part.seconds)>targetDuration)throw new IOException("HLS target duration changed");
                         if(lastOriginSequence>=0&&part.originSequence!=lastOriginSequence+1)
                             throw new IOException("HLS origin window skipped a segment");
                         Entry tail=entries.lastEntry().getValue();
@@ -216,18 +245,32 @@ final class HlsSwitchSession {
     }
     void release(File file){transport.release(file);}
     synchronized void delivered(Entry entry){deliveredEpoch=Math.max(deliveredEpoch,entry.epoch);}
+    long contentLength(Entry entry,File file)throws IOException {
+        return entry.boundary ? transfer(entry,file,null) : file.length();
+    }
     void copy(Entry entry,File file,OutputStream output)throws IOException {
+        transfer(entry,file,output);
+    }
+    /** Count and write the same boundary packets without buffering a whole TS. */
+    private long transfer(Entry entry,File file,OutputStream output)throws IOException {
+        long length=0;
         boolean[] seen=entry.boundary?new boolean[8192]:null;
         try(DataInputStream in=new DataInputStream(new BufferedInputStream(new FileInputStream(file),32768))) {
             byte[] packet=new byte[188];
             while(in.available()>0) {
                 if(closed||Thread.currentThread().isInterrupted())throw new InterruptedIOException("HLS switch cancelled");
-                in.readFully(packet);TsSwitchProfile.rewrite(packet,entry.offset90k);
+                in.readFully(packet);
                 int pid=((packet[1]&31)<<8)|(packet[2]&255);
-                if(seen!=null&&!seen[pid]){seen[pid]=true;output.write(TsSwitchProfile.discontinuityPacket(packet));}
-                output.write(packet);
+                if(output!=null)TsSwitchProfile.rewrite(packet,entry.offset90k);
+                if(seen!=null&&!seen[pid]) {
+                    seen[pid]=true;length+=188;
+                    if(output!=null)output.write(TsSwitchProfile.discontinuityPacket(packet));
+                }
+                length+=188;
+                if(output!=null)output.write(packet);
             }
         }
+        return length;
     }
     void close(){closed=true;}
 }

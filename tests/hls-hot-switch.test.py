@@ -30,8 +30,8 @@ import java.io.*;import java.util.*;
 public class HlsSwitchCheck {
  static void check(boolean ok,String why){if(!ok)throw new AssertionError(why);}
  static class Transport implements HlsSwitchSession.Transport {
-  File root;int originSequence;boolean changedProfile;Transport(File root){this.root=root;}
-  public String playlist(String url){return "#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:"+originSequence+"\n#EXTINF:2,\n"+url+"/clip000.ts\n#EXTINF:2,\n"+url+"/clip001.ts\n#EXTINF:2,\n"+url+"/clip002.ts\n";}
+  File root;int originSequence,target=2;double seconds=2;boolean changedProfile;Transport(File root){this.root=root;}
+  public String playlist(String url){return "#EXTM3U\n#EXT-X-TARGETDURATION:"+target+"\n#EXT-X-MEDIA-SEQUENCE:"+originSequence+"\n#EXTINF:"+seconds+",\n"+url+"/clip000.ts\n#EXTINF:"+seconds+",\n"+url+"/clip001.ts\n#EXTINF:"+seconds+",\n"+url+"/clip002.ts\n";}
   public String origin(String url){return url;}
   public File segment(String url){return new File(root,changedProfile?"c/"+url.substring(url.lastIndexOf('/')+1):url);}
   public boolean safe(String url){return true;}
@@ -81,7 +81,21 @@ public class HlsSwitchCheck {
   check(resumed.reserve(0)==reserved&&resumed.epoch()==2,"Rejected gap recovery changed playback");
   transport.changedProfile=false;
   transport.originSequence=0;resumed.close();
+  Transport varying=new Transport(root);varying.target=1;varying.seconds=1;
+  HlsSwitchSession varyingSession=new HlsSwitchSession(varying,"http://local/live-switch/",HlsSwitchSession.prepare(varying,"a"));
+  HlsSwitchSession.Entry beforeChange=varyingSession.reserve(0);
+  varying.originSequence=1;varying.seconds=1.001;reload.setLong(varyingSession,0);
+  check(varyingSession.playlist().contains("#EXT-X-TARGETDURATION:1\n"),"Fractional duration wrongly rejects valid HLS rounding");
+  varying.originSequence=2;varying.seconds=1.999;varying.target=2;reload.setLong(varyingSession,0);
+  String longerPlaylist=varyingSession.playlist();
+  check(longerPlaylist.contains("#EXT-X-TARGETDURATION:2\n")&&longerPlaylist.contains("#EXTINF:1.999,"),"Live target increase ended the feed");
+  check(varyingSession.reserve(0)==beforeChange&&varyingSession.epoch()==1,"Duration change reopened decoder or changed reserved media");
+  varying.target=1;varying.seconds=1;varying.originSequence=3;reload.setLong(varyingSession,0);
+  check(varyingSession.playlist().contains("#EXT-X-TARGETDURATION:2\n"),"Proxy target must not shrink below retained segments");
+  varyingSession.close();
   ByteArrayOutputStream oldBytes=new ByteArrayOutputStream();session.copy(old,session.file(old),oldBytes);session.delivered(old);
+  check(session.hasVerifiedAvTracks(),"Prepared actual AAC/video tracks not recognized");
+  check(session.contentLength(old,session.file(old))==oldBytes.size(),"Ordinary segment HTTP length differs");
   try(FileOutputStream file=new FileOutputStream(new File(root,"unit-a.ts"))){file.write(oldBytes.toByteArray());}
   try{session.switchTo(b,0,1000);throw new AssertionError("Long queued handoff allowed");}catch(IOException expected){}
   check(session.epoch()==1&&session.reserve(0)==old,"Rejected handoff changed active playback");
@@ -90,6 +104,8 @@ public class HlsSwitchCheck {
   check(!session.targetDelivered(),"A manifest change is not rendered output");
   HlsSwitchSession.Entry next=session.reserve(1);check(next.epoch==2&&next.part.url.startsWith("b/"),"Old unrequested queue not replaced");
   ByteArrayOutputStream bytes=new ByteArrayOutputStream();session.copy(next,session.file(next),bytes);
+  check(session.contentLength(next,session.file(next))==bytes.size(),"Boundary packet HTTP length differs");
+  check(bytes.size()>session.file(next).length(),"Boundary test must include inserted packets");
   check(!session.targetDelivered(),"Incomplete delivery claimed ready");session.delivered(next);check(session.targetDelivered(),"New target never marked delivered");
   try(FileOutputStream file=new FileOutputStream(new File(root,"unit-b.ts"))){file.write(bytes.toByteArray());}
   check(session.playlist().contains("#EXT-X-DISCONTINUITY\n#EXTINF:2.0,\nhttp://local/live-switch/1.ts"),"Missing discontinuity");

@@ -18,6 +18,7 @@ public final class HttpContentRoutingInstrumentation extends Instrumentation {
     private MainActivity activity;
     private ServerSocket server;
     private final CopyOnWriteArrayList<Socket> clients=new CopyOnWriteArrayList<>();
+    private final java.util.concurrent.atomic.AtomicInteger transientRequests=new java.util.concurrent.atomic.AtomicInteger();
     @Override public void onCreate(Bundle values){super.onCreate(values);args=values;start();}
     private Field field(String name)throws Exception {
         Field f=MainActivity.class.getDeclaredField(name);f.setAccessible(true);return f;
@@ -37,10 +38,12 @@ public final class HttpContentRoutingInstrumentation extends Instrumentation {
                         String request=in.readLine(),line;
                         while((line=in.readLine())!=null&&!line.isEmpty()){}
                         String path=request.split(" ")[1];
+                        if(path.equals("/transient.mp3") && transientRequests.incrementAndGet()==1) return;
                         if(path.equals("/slow-old.m3u8"))try{Thread.sleep(2000);}catch(InterruptedException ignored){}
                         boolean redirect=path.equals("/redirect.mp4");
                         String body="<!doctype html><html><head><title>HTTP routing fixture</title></head><body><h1>HTTP_ROUTING_OK</h1><a href='https://example.test/other.m3u8'>Example</a></body></html>";
                         String type=path.equals("/wrong.m3u8")?"application/vnd.apple.mpegurl":"text/html";
+                        if(path.equals("/transient.mp3")){body="ID3 regression audio prefix";type="audio/mpeg";}
                         if(path.equals("/wrong.mp4"))type="video/mp4";
                         if(path.equals("/playlist.html")){body="#EXTM3U\n#EXT-X-ENDLIST\n";type="text/html";}
                         if(path.equals("/aikan.php?id=unavailable"))body="获取播放地址失败";
@@ -112,6 +115,9 @@ public final class HttpContentRoutingInstrumentation extends Instrumentation {
             }
             NetworkClient.initialize(getTargetContext());startServer();
             String base="http://127.0.0.1:"+server.getLocalPort();
+            HttpStreamResolver.Result retried=HttpStreamResolver.resolve(base+"/transient.mp3");
+            if(!retried.directMedia || transientRequests.get()<2)throw new AssertionError("Transient EOF was not retried as audio");
+            evidence.put(new JSONObject().put("transientEofAudio",true).put("attempts",transientRequests.get()));
             for(String path:new String[]{"/page","/wrong.m3u8","/wrong.mp4","/redirect.mp4","/playlist.html"}){
                 HttpStreamResolver.Result r=HttpStreamResolver.resolve(base+path);
                 if(r.webPage==path.equals("/playlist.html"))throw new AssertionError("Classifier: "+path);

@@ -58,45 +58,47 @@ final class SniffedMediaProbe {
             IjkMediaPlayer player = null;
             HlsProxyServer probeProxy = null;
             String probeUrl = url;
+            final boolean hls = HLS_URL.matcher(url).matches();
             try {
-                if (HLS_URL.matcher(url).matches()) {
-                    String target = url;
-                    for (int depth = 0; depth < 3 && expected == generation.get(); depth++) {
-                        String manifest = readManifest(target, pageUrl, agent, cookies, expected, deadline);
-                        inspectManifest(manifest, result);
-                        if (result.variant == null) {
-                            if (result.bitrate <= 0 && result.sampleSegment != null && result.sampleSeconds > 0
-                                    && expected == generation.get() && SystemClock.elapsedRealtime() < deadline) {
-                                result.bitrate = segmentBitrate(HlsUri.resolve(java.net.URI.create(target), result.sampleSegment).toString(),
-                                        pageUrl, agent, cookies, result.sampleSeconds);
-                                result.bitrateEstimated = result.bitrate > 0;
-                            }
-                            break;
-                        }
-                        target = HlsUri.resolve(java.net.URI.create(target), result.variant).toString();
-                        probeUrl = target;
-                        result.variant = null;
+                try {
+                    if (hls || url.regionMatches(true,0,"https://",0,8)) {
+                        probeProxy = new HlsProxyServer(null, false, true, true,
+                                0, true, "high", 1, 0, 0);
+                        probeProxy.setMetadataProbeMode();
+                        probeProxy.setWebRequestHeaders(pageUrl, agent, cookies);
+                        probeProxy.start();
+                        probeUrl = hls ? probeProxy.playerHlsUrl(url) : probeProxy.mediaUrl(url);
                     }
+                    if (hls) {
+                        // Inspect the same selected rendition and cached manifests
+                        // that the native probe will use; avoid a second TLS walk.
+                        String target = probeUrl;
+                        for (int depth = 0; depth < 3 && expected == generation.get(); depth++) {
+                            String manifest = readManifest(target, pageUrl, agent, cookies, expected, deadline);
+                            inspectManifest(manifest, result);
+                            if (result.variant == null) {
+                                if (result.bitrate <= 0 && result.sampleSegment != null && result.sampleSeconds > 0
+                                        && expected == generation.get() && SystemClock.elapsedRealtime() < deadline) {
+                                    String segment=HlsUri.resolve(java.net.URI.create(target), result.sampleSegment).toString();
+                                    if(probeProxy!=null)segment=probeProxy.probeOriginUrl(segment);
+                                    result.bitrate = segmentBitrate(segment,
+                                            pageUrl, agent, cookies, result.sampleSeconds);
+                                    result.bitrateEstimated = result.bitrate > 0;
+                                }
+                                break;
+                            }
+                            target = HlsUri.resolve(java.net.URI.create(target), result.variant).toString();
+                            result.variant = null;
+                        }
+                    }
+                } catch (Exception error) {
+                    result.error = probeFailure(error);
+                    if (error instanceof ManifestFailure) throw error;
+                    // Native HTTP may still support this transport; only a failed native probe blocks opening.
                 }
-            } catch (Exception error) {
-                result.error = probeFailure(error);
-                if (error instanceof ManifestFailure) {
-                    if (expected == generation.get()) callback.complete(result);
-                    return;
-                }
-                // Native HTTP may still support this transport; only a failed native probe blocks opening.
-            }
-            if (expected != generation.get()) return;
-            try {
-                if (HLS_URL.matcher(url).matches()) {
-                    // Match actual playback's TLS, playlist rewriting and HLS decryption.
-                    // A direct native probe cannot open every stream supported by the proxy.
-                    probeProxy = new HlsProxyServer(null, false, true, true,
-                            0, true, "high", 1, 0, 0);
-                    probeProxy.setWebRequestHeaders(pageUrl, agent, cookies);
-                    probeProxy.start();
-                    probeUrl = probeProxy.playerHlsUrl(url);
-                }
+                if (expected != generation.get()) return;
+                if (SystemClock.elapsedRealtime() >= deadline)
+                    throw new java.net.SocketTimeoutException("Media probe deadline exceeded");
                 IjkMediaPlayer.loadLibrariesOnce(null);
                 player = new IjkMediaPlayer();
                 final CountDownLatch ready = new CountDownLatch(1);
@@ -117,12 +119,25 @@ final class SniffedMediaProbe {
                 });
                 player.setVolume(0, 0);
                 player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "start-on-prepared", 0);
+                player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "ntv-metadata-only", 1);
                 player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec", 0);
+                // Header discovery needs no frame-thread pipeline. Bound the
+                // decoder used by find_stream_info on high-resolution sources.
+                player.setOption(IjkMediaPlayer.OPT_CATEGORY_CODEC, "threads", 1);
+                player.setOption(IjkMediaPlayer.OPT_CATEGORY_CODEC, "skip_frame", "all");
+                // The resource card exposes dimensions/tracks, not a frame-rate
+                // sample. The native metadata probe fills missing TS dimensions
+                // from bounded SPS headers without decoding even a UHD keyframe.
+                player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "fpsprobesize", 0);
                 player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "packet-buffering", 0);
                 player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "rw_timeout", 3000000);
                 player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "timeout", 3000000);
-                player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "probesize", 512 * 1024);
-                player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzeduration", 1500000);
+                // A UDP probe can join after the first SPS/keyframe. Allow the
+                // next GOP before concluding that only the early audio is present.
+                boolean rtp = url.regionMatches(true,0,"rtp://",0,6);
+                if (rtp) player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "buffer_size", 1024 * 1024);
+                player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "probesize", rtp ? 4 * 1024 * 1024 : 512 * 1024);
+                player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzeduration", rtp ? 3000000 : 1500000);
                 player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "headers", headers(pageUrl, agent, cookies));
                 player.setDataSource(probeUrl);
                 player.prepareAsync();
@@ -133,6 +148,17 @@ final class SniffedMediaProbe {
                 if (prepared[0]) {
                     IjkMediaMeta meta = IjkMediaMeta.parse(player.getMediaMeta());
                     if (meta != null) applyMeta(result, meta);
+                    // A short-lived live segment can expire before HEAD, or the
+                    // origin can omit Content-Length. Reuse the segment already
+                    // fetched for discovery instead of downloading another one.
+                    if (result.bitrate <= 0 && probeProxy != null) {
+                        long video = Math.max(0, probeProxy.measuredMediaBitrate(true));
+                        long audio = Math.max(0, probeProxy.measuredMediaBitrate(false));
+                        if (video + audio >= 1000) {
+                            result.bitrate = video + audio;
+                            result.bitrateEstimated = true;
+                        }
+                    }
                 }
                 if (!"ready".equals(result.status) && result.error.length() == 0)
                     result.error = prepared[0] ? "资源没有可播放的音视频轨道" : "资源探测超时";
@@ -189,7 +215,10 @@ final class SniffedMediaProbe {
                 Matcher size = RESOLUTION.matcher(variantInfo);
                 if (size.find()) { result.width = Integer.parseInt(size.group(1)); result.height = Integer.parseInt(size.group(2)); }
                 Matcher rate = BANDWIDTH.matcher(variantInfo);
-                if (rate.find()) result.bitrate = Long.parseLong(rate.group(1));
+                if (rate.find()) {
+                    long advertised = Long.parseLong(rate.group(1));
+                    result.bitrate = advertised >= 1000 ? advertised : 0;
+                }
                 return;
             } else if (line.startsWith("#EXTINF:")) {
                 try { segmentSeconds = Double.parseDouble(line.substring(8).split(",", 2)[0]);
@@ -222,6 +251,9 @@ final class SniffedMediaProbe {
 
     private String readManifest(String url, String page, String agent, String cookies, int expected, long deadline) throws Exception {
         HttpURLConnection connection = openConnection(url, page, agent, cookies);
+        // The local proxy owns TLS and bounded upstream retries. A 2-second
+        // client timeout can cancel it before its first HTTP/2 retry completes.
+        connection.setReadTimeout((int)Math.max(1L,Math.min(10000L,deadline-SystemClock.elapsedRealtime())));
         try {
             int status = connection.getResponseCode();
             if (status != 200) throw new IOException(httpFailure(status));

@@ -134,8 +134,10 @@ public final class BrowserPolicyInstrumentation extends Instrumentation {
             check(bar.getChildCount() == 2, "Address row still exists");
             float density = bar.getResources().getDisplayMetrics().density;
             ViewGroup tabStrip = (ViewGroup) get(bar, "tabStrip");
-            check(tabStrip.getChildAt(0).getLayoutParams().height == Math.round(22 * density), "Tab card not compact");
-            check(((View) get(bar, "tabsRow")).getLayoutParams().height == Math.round(26 * density), "Tab row has excess height");
+            float scale=1f;
+            try { scale=((Number)get(bar,"interfaceScale")).floatValue(); } catch(NoSuchFieldException olderVersion) { }
+            check(tabStrip.getChildAt(0).getLayoutParams().height == Math.round(22 * density * scale), "Tab card not compact");
+            check(((View) get(bar, "tabsRow")).getLayoutParams().height == Math.round(26 * density * scale), "Tab row has excess height");
             check(bar.heightDp() == 58, "Toolbar content height not updated");
             View more = (View) get(bar, "moreButton");
             ViewGroup row = (ViewGroup) get(bar, "bookmarkRow");

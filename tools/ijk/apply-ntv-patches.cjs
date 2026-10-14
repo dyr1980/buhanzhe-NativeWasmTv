@@ -366,6 +366,7 @@ edit(player, `            if (ffp && ffp->ntv_live_video && ffp->is && !ffp->is-
                     ? ntv_output_fps(&ffp->ntv_timing, av_gettime_relative() / 1000) : 0;
         case 11001: /* nTv: compressed access-unit timestamp cadence */
             return ffp ? ffp->ntv_timing.source_fps : default_value;`);
+if (!fs.readFileSync(path.join(root,player),'utf8').includes('        case 22001: /* nTv: successful submissions of distinct video frames */'))
 edit(player, '        case FFP_PROP_INT64_SELECTED_VIDEO_STREAM:', `        case 22001: /* nTv: successful submissions of distinct video frames */
             return ffp ? ffp->ntv_timing.output_total : default_value;
         case FFP_PROP_INT64_SELECTED_VIDEO_STREAM:`);
@@ -479,6 +480,9 @@ edit(def, '    ffp->ntv_last_video_output_ms = 0;', `    memset(ffp->ntv_latency
     ffp->ntv_latency_output_us = 0;
     ffp->ntv_latency_ms = 0;
     ffp->ntv_last_video_output_ms = 0;`);
+require('./apply-egl-geometry-patches.cjs')(root);
+require('./apply-mtk-field-patches.cjs')(root);
+require('./apply-software-memory-patches.cjs')(root);
 require('./apply-stream-timing-patches.cjs')(root);
 edit(player, '        ffp->ntv_last_video_output_ms = (uint32_t)(av_gettime_relative() / 1000);', `        if (ntv_display_result >= 0 && ffp->ntv_live_video && !isnan(vp->pts)) {
             int64_t now = av_gettime_relative();
@@ -512,4 +516,8 @@ edit(player, 'int64_t ffp_get_property_int64(FFPlayer *ffp, int id, int64_t defa
             SDL_UnlockMutex(ffp->is->videoq.mutex);
             return value;
         }`);
+require('./apply-payload-metrics-patches.cjs')(root);
+require('./apply-rtp-buffer-patches.cjs')(root);
+require('./apply-annexb-csd-patches.cjs')(root);
+require('./apply-metadata-probe-patches.cjs')(root);
 console.log('Applied nTv native playback overlays to ' + root);

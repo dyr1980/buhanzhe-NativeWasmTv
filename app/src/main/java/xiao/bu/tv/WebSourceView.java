@@ -313,6 +313,13 @@ public final class WebSourceView extends FrameLayout {
             public void onReceivedIcon(WebView view, Bitmap icon) {
                 if (isActiveDocument(view) && icon != null) {
                     tabBar.updateActiveIcon(view.getUrl(), icon);
+                } else if (!destroyed && pageActive && requestId >= 0 && view == webView
+                        && icon != null && sourceClient != null && sourceClient.awaitingDocument
+                        && navigationDocument(view.getUrl()).equals(sourceClient.expectedDocument)) {
+                    // Chromium can deliver a cached icon before onPageStarted.
+                    // Keep it on this navigation's client until that URL commits.
+                    sourceClient.pendingIcon = icon;
+                    sourceClient.pendingIconDocument = sourceClient.expectedDocument;
                 }
             }
 
@@ -2638,6 +2645,25 @@ public final class WebSourceView extends FrameLayout {
         observeResource(origin, client, url, null);
     }
 
+    @TargetApi(19)
+    private void observeDocumentMedia(final WebView origin, final SourceClient client) {
+        if (Build.VERSION.SDK_INT < 19 || client != sourceClient || !isActiveDocument(origin)) return;
+        final long navigation = resourceNavigation;
+        final String document = pageUrl;
+        // Cached media can load without a resource callback after A/B/A navigation.
+        // Read only declared media URLs; the existing filter and dedup still apply.
+        origin.evaluateJavascript("(function(){var n=document.querySelectorAll('video,audio,source'),a=[];"
+                + "for(var i=0;i<n.length&&a.length<30;i++){var u=n[i].currentSrc||n[i].src;if(u)a.push(u);}return a;})()", value -> {
+            if (client != sourceClient || navigation != resourceNavigation
+                    || !isActiveDocument(origin) || !sameDocument(document, pageUrl)) return;
+            try {
+                org.json.JSONArray urls = new org.json.JSONArray(value);
+                for (int i = 0; i < Math.min(30, urls.length()); i++)
+                    observeResource(origin, client, urls.optString(i), document);
+            } catch (org.json.JSONException ignored) { }
+        });
+    }
+
     private void observeResource(final WebView origin, final SourceClient client, String url,
             final String requestReferer) {
         final long observedNavigation = resourceNavigation;
@@ -2773,6 +2799,8 @@ public final class WebSourceView extends FrameLayout {
         private volatile boolean awaitingDocument;
         private String expectedDocument;
         private String replacedDocument;
+        private Bitmap pendingIcon;
+        private String pendingIconDocument;
         private String fallbackDocument;
         private String fallbackCookies;
         private String attemptedFallback;
@@ -2780,6 +2808,8 @@ public final class WebSourceView extends FrameLayout {
         private boolean fallbackExhausted;
 
         void awaitDocument(String url) {
+            pendingIcon = null;
+            pendingIconDocument = null;
             expectedDocument = navigationDocument(url);
             replacedDocument = navigationDocument(webView == null ? null : webView.getUrl());
             mainDocumentUrl = url;
@@ -2880,6 +2910,10 @@ public final class WebSourceView extends FrameLayout {
             tabBar.dismissTransientPanels();
             pageUrl = url;
             tabBar.updateActive(url, null);
+            if (pendingIcon != null && navigationDocument(url).equals(pendingIconDocument))
+                tabBar.updateActiveIcon(url, pendingIcon);
+            pendingIcon = null;
+            pendingIconDocument = null;
             updatePageScripts();
             // Android supplies WebView.getFavicon() here; on a reused instance
             // that can still be the previous site's icon. Never cache it as url.
@@ -2913,6 +2947,7 @@ public final class WebSourceView extends FrameLayout {
             if (!url.equals(view.getUrl())) return;
             if (awaitingDocument) return;
             pageUrl = url;
+            observeDocumentMedia(view, this);
             if (Build.VERSION.SDK_INT < 23) releaseRetiredAfterStablePage(view);
             // onPageFinished does not guarantee that a new favicon arrived.
             // Only onReceivedIcon may publish a new icon to the current tab.

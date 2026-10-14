@@ -9,8 +9,10 @@ final class TsSwitchProfile {
     static final long MASK = (1L << 33) - 1;
     final String signature;
     final long anchor, videoOffsetMs;
-    private TsSwitchProfile(String signature, long anchor, long videoPts) {
+    final boolean hasAudio;
+    private TsSwitchProfile(String signature, long anchor, long videoPts, boolean hasAudio) {
         this.signature=signature; this.anchor=anchor;
+        this.hasAudio=hasAudio;
         videoOffsetMs=Math.max(0, distance(videoPts,anchor)/90);
     }
     static long distance(long a,long b) {
@@ -152,7 +154,7 @@ final class TsSwitchProfile {
             StringBuilder key=new StringBuilder();for(byte v:digest.digest())key.append(String.format(Locale.US,"%02x",v&255));
             long anchor=firstDts;
             if(firstAudio>=0&&distance(firstAudio,anchor)<0)anchor=firstAudio;
-            return new TsSwitchProfile(key.toString(),anchor,firstVideo);
+            return new TsSwitchProfile(key.toString(),anchor,firstVideo,audioConfig!=null);
         } catch(java.security.NoSuchAlgorithmException error){throw new IOException(error);}
     }
     static void rewrite(byte[] p,long delta)throws IOException {
