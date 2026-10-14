@@ -1,9 +1,10 @@
-# 动态电台界面 JAR
+# 经典电台界面 JAR
 
 唱片绘制、旋转、切台动画、手势预览和唱片 PNG 位于独立 DEX JAR。
 宿主保留 `RadioUi` v1 接口、加载器和简单标题界面；播放器、网络请求及封面下载仍由宿主管理。
 JAR 不打包进主 APK。没有本地插件时尝试从默认 URL 下载；没有插件或下载失败时电台仍可播放。
-默认地址：`https://raw.githubusercontent.com/buhanzhe/NativeWasmTv/master/plugins/radio-ui/dist/radio-ui-v1.jar`。此文件需要发布到对应仓库路径。
+经典版地址：`https://raw.githubusercontent.com/buhanzhe/NativeWasmTv/master/plugins/radio-ui/dist/radio-ui-v1.jar`。
+柔光版源码和最新产物独立放在 [`../radio-ui2`](../radio-ui2/README.md)；主应用默认下载柔光版插件，初始选择仍为经典唱片。
 高级设置支持保存自定义 URL、下载更新和手动导入；GitHub URL 使用宿主统一加速设置。
 
 ## 使用
@@ -51,5 +52,5 @@ D8 以 `--min-api 14` 编译并处理 Java 8 语法；JAR 包含 `classes.dex`�
 Android 4.0.4 按 API14 编译，本轮无已连接的 4.0.4 设备，未宣称实机验证通过。
 
 仪器测试：`RadioUiInstrumentation`，参数 `fixtures` 指向同时包含
-`radio-ui-v1.jar`、`radio-ui-v2.jar`、20 秒 WAV 的设备目录。
+`radio-ui-v1.jar`、`radio-ui-v2.jar`、柔光目录的 `radio-ui2.jar` 和 `audio.wav` 的设备目录。
 第二版可用 `python plugins/radio-ui/build.py --version 2` 生成。

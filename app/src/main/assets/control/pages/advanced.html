@@ -147,6 +147,11 @@
           <button type="button" id="radioUiToggle" aria-expanded="false" aria-controls="radioUiOptions" onclick="toggleRadioUiOptions()">设置</button>
         </div>
         <div id="radioUiOptions" style="display:none">
+          <label for="radioUiStyle">唱片样式</label>
+          <select id="radioUiStyle" onchange="saveRadioUiStyle()">
+            <option value="classic">经典唱片（默认）</option>
+            <option value="optical" disabled>柔光唱片</option>
+          </select>
           <input id="radioUiUrl" type="url" aria-label="界面下载地址" placeholder="留空使用默认地址" />
           <div class="radio-ui-actions">
             <button type="button" onclick="saveRadioUiUrl(false)">保存</button>

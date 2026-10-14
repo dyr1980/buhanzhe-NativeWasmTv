@@ -42,10 +42,10 @@ final class AlbumArtLoader {
     private Future<?> pending;
     private Future<?> pendingTag;
     private static AlbumArtCache coverCache;
-    // Decoded covers are small (<=512px). Keep a bounded hot set; never recycle a
+    // Preserve detail for the large optical record (<=1024px). Keep a bounded hot set; never recycle a
     // bitmap here because the record/controller may still be drawing it.
     private static final android.util.LruCache<String, Bitmap> decoded =
-            new android.util.LruCache<String, Bitmap>(2 * 1024 * 1024) {
+            new android.util.LruCache<String, Bitmap>(8 * 1024 * 1024) {
                 @Override protected int sizeOf(String key, Bitmap value) {
                     return value.getRowBytes() * value.getHeight();
                 }
@@ -211,7 +211,7 @@ final class AlbumArtLoader {
         BitmapFactory.decodeByteArray(art, 0, art.length, options);
         if (options.outWidth <= 0 || options.outHeight <= 0) return null;
         options.inSampleSize = 1;
-        while (Math.max(options.outWidth, options.outHeight) / options.inSampleSize > 512) options.inSampleSize *= 2;
+        while (Math.max(options.outWidth, options.outHeight) / options.inSampleSize > 1024) options.inSampleSize *= 2;
         options.inJustDecodeBounds = false;
         return BitmapFactory.decodeByteArray(art, 0, art.length, options);
     }

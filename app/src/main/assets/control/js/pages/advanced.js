@@ -35,7 +35,19 @@ function loadRadioUiUrl() {
     var status = document.getElementById("radioUiStatus");
     if(error){status.textContent=error.message;return;}
     document.getElementById("radioUiUrl").value=result.url || result.defaultUrl || "";
+    var styles = result.styles || ["classic"], select = document.getElementById("radioUiStyle");
+    for(var i=0;i<select.options.length;i++) select.options[i].disabled=styles.indexOf(select.options[i].value)<0;
+    select.value=result.style || "classic";
     status.textContent=(result.loaded ? "已安装 · 版本 " + result.version : "未安装") + (result.error ? " · " + result.error : "");
+  });
+}
+function saveRadioUiStyle() {
+  var select=document.getElementById("radioUiStyle");
+  select.disabled=true;
+  api("/api/radio-ui", {style:select.value}, function(error) {
+    select.disabled=false;
+    if(error)toast(error.message,true);else toast("唱片样式已保存");
+    loadRadioUiUrl();
   });
 }
 function installRadioUi() {

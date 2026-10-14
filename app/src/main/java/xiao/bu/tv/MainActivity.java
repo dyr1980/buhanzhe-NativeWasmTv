@@ -10304,9 +10304,11 @@ public final class MainActivity extends Activity {
         } else {
             if (player.isPlaying()) {
                 player.pause();
+                if (audioOnlyPlayback && audioArtwork != null) audioArtwork.setPlaying(false);
                 showChannelBar(channel.name, "已暂停");
             } else {
                 player.start();
+                if (audioOnlyPlayback && audioArtwork != null) audioArtwork.setPlaying(!buffering);
                 showChannelBar(channel.name, "直播播放中");
             }
         }

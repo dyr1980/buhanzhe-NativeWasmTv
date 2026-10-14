@@ -37,8 +37,19 @@ public final class RadioUiInstrumentation extends Instrumentation {
         }
         throw new AssertionError("Version not active: "+version);
     }
+    private void waitStyle(boolean optical)throws Exception {
+        for(int i=0;i<100;i++) {
+            waitForIdleSync();Object current=delegate();
+            Field field=current.getClass().getDeclaredField("optical");field.setAccessible(true);
+            if(field.getBoolean(current)==optical)return;
+            Thread.sleep(30);
+        }
+        throw new AssertionError("Style not active: "+optical);
+    }
     @Override public void onStart(){Bundle result=new Bundle();int code=1;MediaPlayer audio=null;
         String previous=getTargetContext().getSharedPreferences("radio_ui",0).getString("active","");
+        String previousStyle=RadioUiPlugin.style(getTargetContext());
+        String previousUrl=RadioUiPlugin.sourceUrl(getTargetContext());
         SharedPreferences preferences=getTargetContext().getSharedPreferences(MainActivity.PREFERENCES,0);
         Map<String,?> saved=new java.util.HashMap<String,Object>(preferences.getAll());
         try {
@@ -78,6 +89,24 @@ public final class RadioUiInstrumentation extends Instrumentation {
             try{RadioUiPlugin.install(getTargetContext(),new byte[]{1,2,3});throw new AssertionError("Invalid JAR accepted");}catch(IOException expected){}
             if(!active.equals(new JSONObject(RadioUiPlugin.status(getTargetContext())).getString("sha256")) || delegate()!=next)
                 throw new AssertionError("Failed install replaced working UI");
+            RadioUiPlugin.configure(getTargetContext(),new JSONObject().put("style","classic"));
+            RadioUiPlugin.install(getTargetContext(),read(new File(dir,"radio-ui2.jar")));waitVersion(4);waitStyle(false);
+            before=audio.getCurrentPosition();
+            RadioUiPlugin.configure(getTargetContext(),new JSONObject().put("style","optical"));waitStyle(true);
+            if(view.cover()!=cover)throw new AssertionError("Style switch lost cover");
+            final Object opticalUi=delegate();
+            try {RadioUiPlugin.configure(getTargetContext(),new JSONObject().put("style","unknown"));throw new AssertionError("Unknown style accepted");}
+            catch(IOException expected){}
+            if(delegate()!=opticalUi || !"optical".equals(RadioUiPlugin.style(getTargetContext())))
+                throw new AssertionError("Invalid style replaced working UI");
+            runOnMainSync(new Runnable(){public void run(){view.previewSlide(-45f,true,"neighbor",cover);}});
+            RadioUiPlugin.configure(getTargetContext(),new JSONObject().put("style","classic"));waitForIdleSync();
+            if(delegate()!=opticalUi)throw new AssertionError("Style replaced during gesture");
+            runOnMainSync(new Runnable(){public void run(){view.restoreSlide();}});waitStyle(false);
+            Thread.sleep(100);
+            if(!audio.isPlaying()||audio.getCurrentPosition()<=before)throw new AssertionError("Style switch interrupted audio");
+            if(view.cover()!=cover)throw new AssertionError("Deferred style switch lost cover");
+            RadioUiPlugin.configure(getTargetContext(),new JSONObject().put("style","optical"));waitStyle(true);
             // Forget the process cache, as on a cold start; only the on-disk JAR/pointer remain.
             Field cached=RadioUiPlugin.class.getDeclaredField("active");cached.setAccessible(true);cached.set(null,null);
             Field requested=RadioUiPlugin.class.getDeclaredField("requested");requested.setAccessible(true);requested.setBoolean(null,false);
@@ -85,7 +114,9 @@ public final class RadioUiInstrumentation extends Instrumentation {
             Field content=AudioArtworkView.class.getDeclaredField("ui");content.setAccessible(true);
             for(int i=0;i<100&&content.get(cold)==null;i++){Thread.sleep(30);waitForIdleSync();}
             if(content.get(cold)==null)throw new AssertionError("Cold cached JAR did not load");
-            result.putString("stream","PASS: DEX load, v1->v2 hot replacement, cover preservation, rendering, advancing audio, invalid-JAR rollback and offline cold reload\n");code=-1;
+            Field styleField=content.get(cold).getClass().getDeclaredField("optical");styleField.setAccessible(true);
+            if(!styleField.getBoolean(content.get(cold)))throw new AssertionError("Cold reload lost selected style");
+            result.putString("stream","PASS: classic DEX v1->v2->radio-ui2, classic/optical switching, gesture-deferred replacement, cover/audio preservation, invalid-JAR/style rollback, persisted style and offline cold reload\n");code=-1;
         }catch(Throwable e){result.putString("stream",android.util.Log.getStackTraceString(e));}
         finally {
             if(audio!=null)audio.release();
@@ -104,7 +135,8 @@ public final class RadioUiInstrumentation extends Instrumentation {
                 else if(v instanceof java.util.Set)editor.putStringSet(k,(java.util.Set<String>)v);
             }
             editor.commit();
-            getTargetContext().getSharedPreferences("radio_ui",0).edit().putString("active",previous).commit();
+            getTargetContext().getSharedPreferences("radio_ui",0).edit().putString("active",previous)
+                    .putString("style",previousStyle).putString("url",previousUrl).commit();
         }
         finish(code,result);
     }

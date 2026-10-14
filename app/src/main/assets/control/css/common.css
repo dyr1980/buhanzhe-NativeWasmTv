@@ -2646,5 +2646,6 @@ a.primary {
 .radio-ui-row .hint { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .radio-ui-row button, .radio-ui-actions button { padding: 8px 12px; min-height: 36px; white-space: nowrap; }
 #radioUiOptions { margin-top: 10px; }
+#radioUiStyle { margin: 6px 0 10px; width: 100%; }
 #radioUiUrl { width: 100%; padding: 9px 12px; }
 .radio-ui-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }

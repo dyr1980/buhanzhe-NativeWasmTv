@@ -14,6 +14,7 @@ import xiao.bu.tv.radio.RadioUi;
 public final class AudioArtworkView extends FrameLayout {
     private RadioUi ui;
     private RadioUiPlugin.Factory factory, pendingFactory;
+    private String uiStyle = "";
     private final TextView fallback;
     private String title="", logo="";
     private Bitmap cover;
@@ -32,7 +33,8 @@ public final class AudioArtworkView extends FrameLayout {
         if(ui!=null && ui.view().getVisibility()!=visibility)ui.view().setVisibility(visibility);
     }
     void replacePlugin(RadioUiPlugin.Factory next) {
-        if(factory!=null&&factory.sha.equals(next.sha))return;
+        String style = RadioUiPlugin.style(getContext());
+        if(factory!=null&&factory.sha.equals(next.sha)&&uiStyle.equals(style))return;
         if(ui!=null&&ui.isTransitionRunning()){pendingFactory=next;return;}
         try {
             RadioUi incoming=next.create(getContext());
@@ -47,7 +49,7 @@ public final class AudioArtworkView extends FrameLayout {
                     post(new Runnable(){public void run(){replacePlugin(ready);}});
                 }
             }});
-            RadioUi old=ui;ui=incoming;factory=next;cover=art;revision++;
+            RadioUi old=ui;ui=incoming;factory=next;uiStyle=style;cover=art;revision++;
             removeAllViews();addView(incoming.view(),new LayoutParams(-1,-1));
             if(old!=null)old.dispose();
             setVisibility(visible?VISIBLE:GONE);
