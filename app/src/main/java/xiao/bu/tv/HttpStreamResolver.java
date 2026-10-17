@@ -20,6 +20,7 @@ final class HttpStreamResolver {
     private static final int MAX_TEXT_BYTES = 64 * 1024;
     private static final int MAX_RESOLVE_MS = 12000;
     private static final int PROBE_BYTES = 1024;
+    private static final int MAX_PLAYLIST_BYTES = 128 * 1024;
     private static final Pattern HTML_START = Pattern.compile(
             "(?is)^(?:\\s|\\ufeff|<!--.*?-->|<\\?xml.*?\\?>)*<(?:!doctype\\s+html\\b|html\\b|head\\b|body\\b|script\\b|meta\\b|video\\b|iframe\\b)");
     private static final Pattern HTML_FRAGMENT_START = Pattern.compile(
@@ -38,6 +39,8 @@ final class HttpStreamResolver {
         final boolean directMedia;
         final boolean webPage;
         final boolean htmlMimeOverride;
+        final byte[] playlist;
+        final long playlistReceivedNanos;
 
         Result(String url, boolean directMedia) {
             this(url, directMedia, false);
@@ -48,10 +51,16 @@ final class HttpStreamResolver {
         }
 
         Result(String url, boolean directMedia, boolean webPage, boolean htmlMimeOverride) {
+            this(url, directMedia, webPage, htmlMimeOverride, null);
+        }
+
+        Result(String url, boolean directMedia, boolean webPage, boolean htmlMimeOverride, byte[] playlist) {
             this.url = url;
             this.directMedia = directMedia;
             this.webPage = webPage;
             this.htmlMimeOverride = htmlMimeOverride;
+            this.playlist = playlist;
+            this.playlistReceivedNanos = System.nanoTime();
         }
     }
 
@@ -75,6 +84,25 @@ final class HttpStreamResolver {
     }
 
     private HttpStreamResolver() {
+    }
+
+    /** Only explicit HLS URLs can try native demuxing before content classification. */
+    static boolean isExplicitHlsUrl(String value) {
+        if (value == null) return false;
+        try {
+            URI uri = new URI(value);
+            String scheme = uri.getScheme();
+            if (!("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))
+                    || uri.getHost() == null || uri.getUserInfo() != null) return false;
+            String path = uri.getPath();
+            if (path != null && path.toLowerCase(Locale.US).endsWith(".m3u8")) return true;
+            String query = uri.getRawQuery();
+            if (query != null) for (String parameter : query.split("&")) {
+                if ("format=m3u8".equalsIgnoreCase(parameter)
+                        || "type=m3u8".equalsIgnoreCase(parameter)) return true;
+            }
+        } catch (URISyntaxException invalid) { }
+        return false;
     }
 
     static boolean shouldResolve(String value) {
@@ -202,7 +230,14 @@ final class HttpStreamResolver {
                 if (startsWithMp4(probe) || startsWithOtherMedia(probe)) return new Result(current, true);
                 String body = decodeText(probe);
                 if (startsWithPlaylist(body)) {
-                    return new Result(current, false);
+                    // The player needs this manifest too. Hand off this exact
+                    // response once instead of paying a slow PHP gateway twice.
+                    ByteArrayOutputStream manifest = new ByteArrayOutputStream();
+                    manifest.write(probe);
+                    manifest.write(readAtMost(input, MAX_PLAYLIST_BYTES + 1 - probe.length));
+                    byte[] bytes = manifest.toByteArray();
+                    return new Result(current, false, false, false,
+                            bytes.length <= MAX_PLAYLIST_BYTES ? decodeText(bytes).getBytes("UTF-8") : null);
                 }
                 // SDP describes dynamic RTP payloads; FFmpeg opens its referenced
                 // RTP sockets. Preserve the descriptor instead of treating it as

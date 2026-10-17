@@ -16,6 +16,7 @@ import org.json.JSONObject;
 
 /** Real documents/tabs with deterministic resource events; no external websites required. */
 public final class BrowserMediaStateInstrumentation extends Instrumentation {
+    private final java.util.concurrent.atomic.AtomicInteger fixturePageLoads = new java.util.concurrent.atomic.AtomicInteger();
     private MainActivity activity;
     private WebSourceView source;
     private String mediaFile;
@@ -150,49 +151,17 @@ public final class BrowserMediaStateInstrumentation extends Instrumentation {
             check(!key.equals(firstKey), "Switching sniffed resource reused old control/download identity");
             firstKey = key;
         }
-        long[] focusBeforeDrain = {0};
-        if (audioHandoff) main(() -> focusBeforeDrain[0] = (Long)get(activity, "playbackAudioFocusGeneration"));
-        SystemClock.sleep(1000);
-        main(() -> check(!(Boolean)get(source, "streamPageSuspended"), "Old selection drained the new page before 15s"));
-        long suspendDeadline = SystemClock.elapsedRealtime() + 22000;
-        boolean[] suspended = {false};
-        do {
-            main(() -> suspended[0] = (Boolean)get(source, "streamPageSuspended")
-                    && "about:blank".equals(((WebView)get(source, "webView")).getUrl()));
-            if (!suspended[0]) SystemClock.sleep(100);
-        } while (!suspended[0] && SystemClock.elapsedRealtime() < suspendDeadline);
-        check(suspended[0], "Stable sniffed playback did not unload original document");
-        check("true".equals(evaluate("!window.__ntvSniffMarker&&!document.querySelector('video,audio,iframe')")),
-                "Unloaded document retained media or JS state");
+        SystemClock.sleep(20000);
+        check("true".equals(evaluate("!!window.__ntvSniffMarker&&!!window.__ntvMediaPause&&sniffBackgroundVideo.paused")),
+                "Native playback cleared the document or left web media playing");
         JSONObject stable = state();
-        check(stable.getBoolean("playing") && stable.getBoolean("backExitsApp") && !stable.getBoolean("canReturnToWeb")
-                && "Page B".equals(stable.getString("name")), "Draining WebView disrupted native playback/identity");
-        if (audioHandoff) {
-            SystemClock.sleep(500);
-            main(() -> {
-                check(((java.util.Set<?>)get(source, "pendingShutdowns")).isEmpty(), "Not all WebViews drained");
-                check((Long)get(activity, "playbackAudioFocusGeneration") == focusBeforeDrain[0] + 1,
-                        "Cleanup did not complete exactly one owned-focus handoff");
-                check(!(Boolean)call(activity, "isPlaybackMuted", new Class<?>[0]), "Native audio muted after WebView drain");
-            });
-            checkAudioHandoffGuards();
-        }
-        main(() -> {
-            call(activity, "showChannelBar", new Class<?>[]{String.class, String.class}, ((Channel)entry).name, "播放中");
-            checkSniffedCard("Page B");
-        });
-        main(() -> check(((java.util.Map<?,?>)get(source,"retainedTabWebViews")).isEmpty(), "Background renderer survived native playback"));
+        check(stable.getBoolean("playing") && stable.getBoolean("canReturnToWeb")
+                && "Page B".equals(stable.getString("name")), "Retaining page disrupted native playback/identity");
         checkSniffedBackOverlays();
         main(() -> activity.onBackPressed());
-        check(!activity.isFinishing() && state().getBoolean("playing"), "First BACK stopped playback or exited");
-        check("true".equals(evaluate("location.href==='about:blank'")), "BACK reloaded original page");
-        if (exitOnly) {
-            main(() -> activity.onBackPressed());
-            check(activity.isFinishing(), "Second BACK did not exit");
-            Bundle progress = new Bundle(); progress.putString("stream", "PASS first BACK keeps native playback and blank WebView; second BACK exits without reloading\n");
-            sendStatus(1, progress);
-            return;
-        }
+        check(source.isPageVisible() && get(activity, "player") == null, "BACK did not restore page and stop native playback");
+        check("true".equals(evaluate("!!window.__ntvSniffMarker&&!window.__ntvMediaPause")), "BACK reloaded page or left media paused");
+        if (exitOnly) return;
         // Continue the independent browser lifecycle tests by explicit navigation,
         // not by the removed BACK-to-web behavior.
         main(() -> {
@@ -207,7 +176,7 @@ public final class BrowserMediaStateInstrumentation extends Instrumentation {
             check(get(activity, "playingSniffedResource") == null, "Return retained stale media identity");
             check((base + "/a").equals(call(activity, "currentDebugSourcePath", new Class<?>[0])), "Return kept media debug URL");
         });
-        Bundle progress = new Bundle(); progress.putString("stream", "PASS sniffed native title/URL, source switching, 15s document drain, native playback preserved and page reload\n");
+        Bundle progress = new Bundle(); progress.putString("stream", "PASS sniffed native title/URL, source switching, page retained beyond 15s, background media paused and BACK restores page\n");
         sendStatus(1, progress);
     }
 
@@ -306,119 +275,6 @@ public final class BrowserMediaStateInstrumentation extends Instrumentation {
         }
     }
 
-    private WebViewShutdown.Completion audioCompletion() throws Exception {
-        return (WebViewShutdown.Completion)call(activity, "sniffedWebAudioCompletion", new Class<?>[0]);
-    }
-
-    private void checkAudioHandoffGuards() throws Exception {
-        main(() -> {
-            WebView web = (WebView)get(source, "webView");
-            int[] successes = {0}, failures = {0};
-            WebViewShutdown.Completion observe = stopped -> { if (stopped) successes[0]++; else failures[0]++; };
-            WebViewShutdown cancelled = new WebViewShutdown(web, () -> {}, () -> {});
-            cancelled.whenComplete(observe); cancelled.cancel(); cancelled.cancel();
-            call(cancelled, "finish", new Class<?>[]{boolean.class}, false);
-            check(successes[0] == 0 && failures[0] == 1, "Cancelled drain completed successfully/duplicated");
-            WebViewShutdown timeout = new WebViewShutdown(web, () -> {}, () -> {});
-            timeout.whenComplete(observe);
-            call(timeout, "finish", new Class<?>[]{boolean.class}, true);
-            call(timeout, "finish", new Class<?>[]{boolean.class}, false);
-            check(successes[0] == 0 && failures[0] == 2, "Timeout treated as confirmed audio stop");
-            WebViewShutdown blank = new WebViewShutdown(web, () -> {}, () -> {});
-            blank.whenComplete(observe);
-            call(blank, "finish", new Class<?>[]{boolean.class}, false);
-            blank.cancel();
-            check(successes[0] == 1 && failures[0] == 2, "Blank completion duplicated by later cancellation");
-        });
-        main(() -> {
-            long revision = (Long)get(activity, "playbackAudioFocusGeneration");
-            audioCompletion().onComplete(false);
-            check((Long)get(activity, "playbackAudioFocusGeneration") == revision, "Failed drain requested focus");
-            WebViewShutdown.Completion stale = audioCompletion();
-            Field generation = MainActivity.class.getDeclaredField("sniffedPlaybackGeneration");
-            generation.setAccessible(true); generation.setLong(activity, generation.getLong(activity) + 1);
-            stale.onComplete(true);
-            check((Long)get(activity, "playbackAudioFocusGeneration") == revision, "Old playback callback requested focus");
-            WebViewShutdown.Completion oldPlayer = audioCompletion();
-            Field player = MainActivity.class.getDeclaredField("player"); player.setAccessible(true);
-            Object active = player.get(activity);
-            try { player.set(activity, null); oldPlayer.onComplete(true); }
-            finally { player.set(activity, active); }
-            check((Long)get(activity, "playbackAudioFocusGeneration") == revision, "Old player callback requested focus");
-            WebViewShutdown.Completion oldRequest = audioCompletion();
-            Field request = MainActivity.class.getDeclaredField("playRequestId"); request.setAccessible(true);
-            int original = request.getInt(activity);
-            try { request.setInt(activity, original + 1); oldRequest.onComplete(true); }
-            finally { request.setInt(activity, original); }
-            check((Long)get(activity, "playbackAudioFocusGeneration") == revision, "Old request callback requested focus");
-            WebViewShutdown.Completion success = audioCompletion();
-            success.onComplete(true);
-            check((Long)get(activity, "playbackAudioFocusGeneration") == revision + 1, "Owned focus not renewed after drain");
-            success.onComplete(true);
-            check((Long)get(activity, "playbackAudioFocusGeneration") == revision + 1, "Duplicate callback requested focus");
-        });
-        android.media.AudioManager manager = (android.media.AudioManager)activity.getSystemService(android.content.Context.AUDIO_SERVICE);
-        int originalMode = manager.getMode();
-        check(originalMode == android.media.AudioManager.MODE_NORMAL, "Cannot run call simulation during a real call");
-        WebViewShutdown.Completion[] duringCall = {null};
-        try {
-            main(() -> {
-                WebViewShutdown.Completion beforeCall = audioCompletion();
-                manager.setMode(android.media.AudioManager.MODE_IN_COMMUNICATION);
-                check(manager.getMode() == android.media.AudioManager.MODE_IN_COMMUNICATION, "Call-mode fixture unavailable");
-                long revision = (Long)get(activity, "playbackAudioFocusGeneration");
-                beforeCall.onComplete(true);
-                check((Long)get(activity, "playbackAudioFocusGeneration") == revision, "Cleanup requested focus during call");
-                check((Boolean)get(activity, "mutedByCallMode"), "Call did not keep native muted");
-                duringCall[0] = audioCompletion();
-            });
-        } finally {
-            main(() -> {
-                manager.setMode(originalMode);
-                call(activity, "refreshCallAudioMute", new Class<?>[0]);
-            });
-        }
-        main(() -> {
-            long revision = (Long)get(activity, "playbackAudioFocusGeneration");
-            duringCall[0].onComplete(true);
-            check((Long)get(activity, "playbackAudioFocusGeneration") == revision, "Call-started cleanup reacquired focus later");
-        });
-        final boolean[] competitorLost = {false};
-        android.media.AudioManager.OnAudioFocusChangeListener competitor = change -> {
-            if (change < 0) competitorLost[0] = true;
-        };
-        WebViewShutdown.Completion[] pending = {null};
-        try {
-            main(() -> {
-                pending[0] = audioCompletion();
-                check(manager.requestAudioFocus(competitor, android.media.AudioManager.STREAM_MUSIC,
-                        android.media.AudioManager.AUDIOFOCUS_GAIN) == android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED,
-                        "Competing audio client did not acquire focus");
-            });
-            SystemClock.sleep(300);
-            main(() -> {
-                check((Boolean)get(activity, "mutedByAudioFocus"), "Competing client did not mute native audio");
-                long revision = (Long)get(activity, "playbackAudioFocusGeneration");
-                pending[0].onComplete(true);
-                audioCompletion().onComplete(true); // Loss already existed at cleanup start.
-                check((Long)get(activity, "playbackAudioFocusGeneration") == revision, "Cleanup stole competing focus");
-                check((Boolean)get(activity, "mutedByAudioFocus"), "Cleanup bypassed focus mute");
-            });
-            SystemClock.sleep(200);
-            check(!competitorLost[0], "Competing focus owner was interrupted");
-        } finally {
-            main(() -> {
-                manager.abandonAudioFocus(competitor);
-                // Explicit test playback restart, not the automatic cleanup path.
-                call(activity, "requestPlaybackAudioFocus", new Class<?>[0]);
-                call(activity, "applyPlaybackMuteState", new Class<?>[0]);
-            });
-        }
-        Bundle progress = new Bundle();
-        progress.putString("stream", "PASS unmuted WebView audio drain, native unmuted playback, stale player/request/selection, failed/duplicate completion, communication mode and competing focus owner protection\n");
-        sendStatus(1, progress);
-    }
-
     private View seedOldBrowserOverlays(WebTabBar bar) throws Exception {
         call(bar, "showChannelGroup", new Class<?>[]{View.class, int.class}, bar, 0);
         View layer = (View)get(bar, "folderLayer");
@@ -502,7 +358,40 @@ public final class BrowserMediaStateInstrumentation extends Instrumentation {
         awaitNativePlayback();
     }
 
+    private void checkLegacyRetention(String base) throws Exception {
+        LegacyWebSession session = (LegacyWebSession)get(source, "legacy");
+        SystemClock.sleep(1500);
+        String token = session.token;
+        int pid = session.pid;
+        int loads = fixturePageLoads.get();
+        String url = base + "/codec.mp4?retain";
+        main(() -> {
+            ((WebSourceView.Listener)get(source,"listener")).onStreamDiscovered(
+                    (Integer)get(activity,"playRequestId"), url, base + "/a", "", "");
+            Object resource = call(activity,"findSniffedResource",new Class<?>[]{String.class},url);
+            check(resource != null,"Legacy resource not discovered");
+            call(activity,"startSniffedResource",new Class<?>[]{resource.getClass()},resource);
+        });
+        awaitNativePlayback();
+        long before = state().optLong("positionMs", -1);
+        SystemClock.sleep(20000);
+        check(state().getBoolean("playing") && state().getBoolean("canReturnToWeb"), "Legacy page lost after 20s");
+        main(() -> {
+            check(session.active && !session.visible && session.pid == pid && token.equals(session.token),
+                    "Legacy page process/session replaced");
+            check(session.pid > 0, "Legacy renderer missing");
+            check(((tv.danmaku.ijk.media.player.IMediaPlayer)get(activity,"player")).getCurrentPosition() > before + 15000,
+                    "Native playback did not advance");
+            activity.onBackPressed();
+            check(session.visible && get(activity,"player") == null, "Legacy BACK did not restore page");
+        });
+        SystemClock.sleep(1500);
+        check(token.equals(session.token) && session.pid == pid && fixturePageLoads.get() == loads,
+                "Legacy return reloaded original page");
+    }
+
     private void checkBookmarkRetention(String base) throws Exception {
+        if (get(source,"legacy") != null) { checkLegacyRetention(base); return; }
         WebTabBar bar = (WebTabBar)get(source, "tabBar");
         WebTabBar.Tab previous = bar.active();
         main(() -> {
@@ -530,7 +419,6 @@ public final class BrowserMediaStateInstrumentation extends Instrumentation {
             JSONObject current = new JSONObject((String)call(activity, "buildControlState", new Class<?>[]{String.class}, "home")).getJSONObject("current");
             check("云听".equals(current.getString("name")) && "国内电台".equals(current.getString("group")), "Home did not use bookmark channel");
         });
-        WebViewShutdown.Completion oldCleanup = audioCompletion();
         Object originalPlayer = get(activity,"player");
         ChannelCatalog.Group replacement = new ChannelCatalog.Group("Refresh fixture",ChannelCatalog.SOURCE_CUSTOM,
                 new Channel[]{new Channel("1","Different catalog channel","",base+"/codec.mp4?catalog",null,null)});
@@ -546,9 +434,7 @@ public final class BrowserMediaStateInstrumentation extends Instrumentation {
             activity.onBackPressed();
             check(source.isPageVisible() && get(activity,"player") == null && get(source,"webView") == originalView,
                     "Back did not restore the same retained page and stop native playback");
-            long focus = (Long)get(activity,"playbackAudioFocusGeneration");
-            oldCleanup.onComplete(true);
-            check((Long)get(activity,"playbackAudioFocusGeneration") == focus, "Old cleanup stole focus after return");
+
         });
         check("true".equals(evaluate("window.__returnMarker==='kept'&&!window.__ntvMediaPause")), "Returned page reloaded or stayed paused");
         main(() -> {
@@ -558,32 +444,16 @@ public final class BrowserMediaStateInstrumentation extends Instrumentation {
             check(source.isPageVisible() && get(activity,"player") == null, "Return immediately re-triggered automatic native playback");
             automatic.setBoolean(activity,false);
         });
-        call(activity,"handleWebSettings",new Class<?>[]{JSONObject.class},new JSONObject().put("webViewAutoCloseSniffed",false));
-        check(!activity.getSharedPreferences(MainActivity.PREFERENCES,0).getBoolean("web_view_auto_close_sniffed",true), "Auto-close preference not persisted");
         startRetentionResource(base + "/codec.mp4?keep");
-        SystemClock.sleep(16500);
-        check(state().getBoolean("canReturnToWeb") && state().getBoolean("playing"), "Disabled auto-close did not retain page");
+        SystemClock.sleep(20000);
+        check(state().getBoolean("canReturnToWeb") && state().getBoolean("playing"), "Native playback did not retain page after 20s");
         check("true".equals(evaluate("window.__returnMarker==='kept'&&!!window.__ntvMediaPause&&keptAudio.paused")), "Kept page was cleared or playing background audio");
-        main(() -> activity.onBackPressed());
-        check(source.isPageVisible(), "Disabled auto-close did not allow returning after 15s");
-        call(activity,"handleWebSettings",new Class<?>[]{JSONObject.class},new JSONObject().put("webViewAutoCloseSniffed",true));
-        startRetentionResource(base + "/codec.mp4?close");
-        long started = SystemClock.elapsedRealtime(), deadline = started + 24000;
-        while (state().getBoolean("canReturnToWeb")) {
-            check(SystemClock.elapsedRealtime() < deadline,"Enabled auto-close never cleared page");
-            SystemClock.sleep(150);
-        }
-        check(SystemClock.elapsedRealtime() - started >= 14500, "Cleanup happened before 15 seconds");
-        check(state().getBoolean("playing") && state().getBoolean("backExitsApp")
-                && "云听".equals(state().getString("name")) && "国内电台".equals(state().getString("group")),
-                "Cleanup lost bookmark identity or playback");
-        long blankDeadline = SystemClock.elapsedRealtime() + 4000;
-        while (!"true".equals(evaluate("!window.__returnMarker"))) {
-            check(SystemClock.elapsedRealtime() < blankDeadline, "Document did not drain"); SystemClock.sleep(100);
-        }
-        checkSniffedBackOverlays();
-        main(() -> activity.onBackPressed());check(!activity.isFinishing(),"First Back exited");
-        main(() -> activity.onBackPressed());check(activity.isFinishing(),"Second Back did not exit");
+        main(() -> {
+            check(get(source,"webView") == originalView, "Retained page instance replaced");
+            activity.onBackPressed();
+            check(source.isPageVisible() && get(activity,"player") == null, "BACK did not restore page after 20s");
+        });
+        check("true".equals(evaluate("window.__returnMarker==='kept'&&!window.__ntvMediaPause")), "Return reloaded page or left media paused");
     }
 
     private void checkBrowserSelection() throws Exception {
@@ -1224,6 +1094,7 @@ public final class BrowserMediaStateInstrumentation extends Instrumentation {
                             + "navigator.mediaSession.setActionHandler('pause',function(){inlinePauses++;navigator.mediaSession.playbackState='paused'});"
                             + "navigator.mediaSession.setActionHandler('play',function(){navigator.mediaSession.playbackState='playing'});}</script>";
                     String favicon=request.contains("/icon-") ? "<link rel='icon' href='"+(request.contains("/icon-a")?"/red-icon.png":request.contains("/icon-b")?"/missing.ico":"/blue-icon.png")+"'>" : "";
+                    fixturePageLoads.incrementAndGet();
                     byte[] body = ("<!doctype html><title>" + title + "</title>"+favicon+"<body>" + content + "</body>").getBytes("UTF-8");
                     OutputStream output = socket.getOutputStream();
                     output.write(("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: " + body.length
@@ -1290,7 +1161,7 @@ public final class BrowserMediaStateInstrumentation extends Instrumentation {
             }
             if (retentionOnly) {
                 checkBookmarkRetention(base);
-                result.putString("stream", "PASS bookmark channel identity/record title, 15s cleanup, return without reload, persisted opt-out, paused background media, stale cleanup veto and overlay-first double-back exit\n");
+                result.putString("stream", "PASS bookmark channel identity/record title, page retained beyond 15s, return without reload, paused background media and overlay dismissal\n");
                 finish(-1,result); return;
             }
             if (webMediaOnly) {

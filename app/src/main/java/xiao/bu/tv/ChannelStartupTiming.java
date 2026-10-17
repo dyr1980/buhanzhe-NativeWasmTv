@@ -8,14 +8,14 @@ final class ChannelStartupTiming {
     private int request = -1;
     private long started, resolveStarted, resolved, finished, mediaReady, firstData, webReady;
     private long proxyStarted, proxyReady, opened, prepared, releaseStarted, released, pluginMs;
-    private boolean decrypted, reused;
+    private boolean decrypted;
     private final Map<String, Long> costs = new LinkedHashMap<String, Long>();
 
     synchronized void begin(int id, long now) {
         request = id; started = now;
         resolveStarted = resolved = finished = mediaReady = firstData = webReady = -1;
         proxyStarted = proxyReady = opened = prepared = releaseStarted = released = -1;
-        decrypted = reused = false; pluginMs = 0; costs.clear();
+        decrypted = false; pluginMs = 0; costs.clear();
     }
     synchronized void plugin(int id, long duration) {
         if (id == request) pluginMs = Math.max(0, duration);
@@ -35,7 +35,6 @@ final class ChannelStartupTiming {
         if ("first-data".equals(stage) && firstData < 0) firstData = now;
         if ("player-open-requested".equals(stage) && opened < 0) opened = now;
         if ("player-prepared".equals(stage) && prepared < 0) prepared = now;
-        if ("hot-switch-committed".equals(stage)) reused = true;
         if ("load-ready".equals(stage)) finished = now;
     }
     synchronized void cost(int id, String name, long duration) {
@@ -60,7 +59,7 @@ final class ChannelStartupTiming {
         return id == request && finished >= 0;
     }
     private String playbackTiming() {
-        return " 准备:" + (reused ? "复用" : interval(opened, prepared))
+        return " 准备:" + interval(opened, prepared)
                 + " 出帧:" + interval(prepared, finished)
                 + " 加载:" + (mediaReady >= 0 ? interval(mediaReady, finished)
                         : firstData >= 0 ? "边下边播" : "--")

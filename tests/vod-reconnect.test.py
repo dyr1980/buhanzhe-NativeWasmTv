@@ -13,15 +13,18 @@ public class VodReconnectCheck {
  static class Log {static void i(String t,String s){}static void w(String t,String s,RuntimeException e){}}
  static class Build {static class VERSION {static final int SDK_INT=19;}}
  static class Channel {boolean radio;}
+ static class ITrackInfo {static final int MEDIA_TRACK_TYPE_AUDIO=2,MEDIA_TRACK_TYPE_VIDEO=1,MEDIA_TRACK_TYPE_TIMEDTEXT=3;}
  interface IMediaPlayer {long getDuration();long getCurrentPosition();}
  static class IjkMediaPlayer implements IMediaPlayer {
   long duration,position,seek=-1; boolean paused;
   IjkMediaPlayer(long d,long p){duration=d;position=p;}
   public long getDuration(){return duration;} public long getCurrentPosition(){return position;}
+  int getSelectedTrack(int type){return type+10;}
   void seekTo(long p){seek=p;} void pause(){paused=true;}
  }
  IjkMediaPlayer player;
  String directHttpMediaUrl; boolean fail, deferred;
+ int[] restartedTracks;
  int androidMp3FallbackRequestId=-1,playRequestId=1;
  boolean systemHls,systemMp3,systemDv,systemAtmos;int systemStarts;
  boolean useSystemDolbyVisionPlayer(){return systemDv;}
@@ -32,6 +35,7 @@ public class VodReconnectCheck {
   systemStarts++;player=new IjkMediaPlayer(600000,0);
  }
  void startIjkPlayer(Channel c,String u,boolean s,boolean direct,int[] tracks,long initialPositionMs)throws IOException {
+  restartedTracks=tracks;
   if(fail)throw new IOException("network");
   if(deferred)return;
   player=new IjkMediaPlayer(600000,0);player.seek=initialPositionMs;
@@ -47,6 +51,7 @@ public class VodReconnectCheck {
   VodReconnectCheck c=new VodReconnectCheck();
   c.player=new IjkMediaPlayer(600000,67321);IjkMediaPlayer old=c.player;
   c.restartPlayerPreservingPosition(new Channel(),"url",false);
+  check(java.util.Arrays.equals(c.restartedTracks,new int[]{12,11,13}),"Keep selected audio/video/subtitle on reconnect");
   check(c.player!=old,"Bind to replacement player");
   check(old.seek==-1,"Old player must not receive the new initial seek");
   check(c.player.seek==67321,"VOD must resume beyond minute one");

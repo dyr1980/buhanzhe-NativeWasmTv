@@ -59,7 +59,7 @@ final class EpgListAdapter extends BaseAdapter {
 
     @Override
     public EpgManager.Program getItem(int position) {
-        return programs.get(position);
+        return position >= 0 && position < programs.size() ? programs.get(position) : null;
     }
 
     @Override
@@ -82,6 +82,17 @@ final class EpgListAdapter extends BaseAdapter {
         uiScaleHelper.apply(convertView, uiScale);
         convertView.setMinimumHeight(Math.round(52f * density * uiScale));
         EpgManager.Program program = getItem(position);
+        // A queued ListView bind can outlive the list it was scheduled for.
+        // Clear the recycled content instead of indexing the replacement empty list.
+        if (program == null) {
+            holder.time.setText("");
+            holder.title.setText("");
+            convertView.setBackgroundResource(R.drawable.epg_program_background);
+            convertView.setActivated(false);
+            holder.time.setActivated(false);
+            holder.title.setActivated(false);
+            return convertView;
+        }
         holder.time.setText(timeFormat.format(new Date(program.startMillis)) + "–"
                 + timeFormat.format(new Date(program.stopMillis)));
         holder.title.setText(program.title);

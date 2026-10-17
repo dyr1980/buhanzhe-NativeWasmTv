@@ -4,6 +4,8 @@ NTV_REPO := $(NTV_MAKE_ROOT)/../..
 NTV_IJK := $(NTV_REPO)/.codex-tmp/ijkplayer-0.8.8
 ifeq ($(TARGET_ARCH_ABI),arm64-v8a)
 NTV_FF_ARCH := arm64
+else ifeq ($(TARGET_ARCH_ABI),x86)
+NTV_FF_ARCH := x86
 else
 NTV_FF_ARCH := armv7a
 endif

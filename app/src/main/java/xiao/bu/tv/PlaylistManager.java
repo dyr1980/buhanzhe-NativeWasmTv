@@ -41,6 +41,9 @@ final class PlaylistManager {
     private static final String PLAYLIST_SOURCES = "playlist_sources_v1";
     private static final String DISABLED_GROUPS = "disabled_playlist_groups_v1";
     private static final String COLLAPSED_SOURCES = "collapsed_playlist_sources_v1";
+    private static final String CHANNEL_SETTINGS = "playlist_channel_settings_v1";
+    private static final String MERGED_CHANNEL_SETTINGS = "merged_playlist_channel_settings_v1";
+    private static final String DISABLED_MERGED_GROUPS = "disabled_merged_playlist_groups_v1";
     private static final String EMBEDDED_EPG_URL = "embedded_epg_url";
     private static final String LEGACY_CACHE_FILE = "online-playlist.txt";
     private static final String CACHE_PREFIX = "online-playlist-";
@@ -50,8 +53,9 @@ final class PlaylistManager {
     private static final String IMPORT_DIRECTORY = "imported-playlists";
     private static final String BUILT_IN_PLAYLIST = "builtin_channels.txt";
     private static final int MAX_SOURCES = 20;
-    private static final int PLAYLIST_READ_TIMEOUT_MS = 60000;
+    private static final int PLAYLIST_READ_TIMEOUT_MS = 25000;
     private static final int MOBILE_READ_BUDGET_MS = 6000;
+    private static final int MOBILE_ORIGIN_READ_BUDGET_MS = 25000;
     private static final int MIN_PLAYLIST_BYTES = 8 * 1024 * 1024;
     private static final int MAX_PLAYLIST_BYTES = 64 * 1024 * 1024;
     private static final Pattern CCTV_NAME = Pattern.compile("^cctv([0-9]+)(\\+?)(.*)$");
@@ -67,7 +71,7 @@ final class PlaylistManager {
     private final ChannelCatalogStore catalogStore;
     private ChannelCatalog.Group[] availableGroups = new ChannelCatalog.Group[0];
     private ChannelCatalog.Group[] visibleGroups = new ChannelCatalog.Group[0];
-    private final Map<String, Integer> sourceChannelCounts = new HashMap<String, Integer>();
+    private ChannelCatalog.Group[] managementGroups = new ChannelCatalog.Group[0];
     private volatile ChannelCatalog.Group[] builtInGroups;
     private volatile ChannelCatalog.Group[] catalogMemoryCache;
 
@@ -120,76 +124,34 @@ final class PlaylistManager {
 
     synchronized JSONArray getGroupSettingsJson() {
         Set<String> disabled = getDisabledGroups();
-        Set<String> collapsed = getCollapsedSources();
         JSONArray result = new JSONArray();
-        Set<String> parents = new HashSet<String>();
-        for (ChannelCatalog.Group group : availableGroups) {
+        for (ChannelCatalog.Group group : managementGroups) {
             try {
-                String sourceId = group.playlistSourceId;
-                String key = stateKey(group);
-                if (sourceId.length() > 0 && parents.add(sourceId)) {
-                    result.put(new JSONObject().put("id", "source:" + sourceId)
-                            .put("name", group.playlistSourceName).put("channelCount", sourceChannelCounts.get(sourceId))
-                            .put("sourceId", sourceId).put("parent", true)
-                            .put("enabled", collapsed.contains(sourceId)));
-                }
-                result.put(new JSONObject()
-                        .put("id", key)
-                        .put("sourceId", sourceId)
-                        .put("parent", false)
-                        .put("name", group.title)
-                        .put("channelCount", group.channels.length)
-                        .put("enabled", !collapsed.contains(sourceId)
-                                && !disabled.contains(key)));
-            } catch (JSONException impossible) {
-            }
+                result.put(new JSONObject().put("id", mergedGroupId(group))
+                        .put("name", group.title).put("channelCount", group.channels.length)
+                        .put("enabled", !disabled.contains(mergedGroupId(group))));
+            } catch (JSONException impossible) { }
         }
         return result;
     }
 
-    synchronized ChannelCatalog.Group[] updateGroupStates(JSONArray states)
-            throws IOException {
-        if (states == null) {
-            throw new IOException("频道分组设置无效");
-        }
-        Map<String, ChannelCatalog.Group> available = new HashMap<String, ChannelCatalog.Group>();
-        for (ChannelCatalog.Group group : availableGroups) {
-            available.put(stateKey(group), group);
-            if (group.playlistSourceId.length() > 0)
-                available.put("source:" + group.playlistSourceId, group);
-        }
+    synchronized ChannelCatalog.Group[] updateGroupStates(JSONArray states) throws IOException {
+        if (states == null) throw new IOException("频道分组设置无效");
+        Set<String> available = new HashSet<String>();
+        for (ChannelCatalog.Group group : managementGroups) available.add(mergedGroupId(group));
         Set<String> disabled = getDisabledGroups();
-        Set<String> collapsed = getCollapsedSources();
-        for (int index = 0; index < states.length(); index++) {
-            JSONObject state = states.optJSONObject(index);
-            if (state == null) {
-                continue;
-            }
-            String key = state.optString("id", groupKey(state.optString("name", "")));
-            if (!available.containsKey(key)) {
-                continue;
-            }
-            if (key.startsWith("source:")) {
-                String sourceId = key.substring(7);
-                if (state.optBoolean("enabled", true)) collapsed.add(sourceId);
-                else {
-                    collapsed.remove(sourceId);
-                    for (ChannelCatalog.Group group : availableGroups)
-                        if (sourceId.equals(group.playlistSourceId)) disabled.remove(stateKey(group));
-                }
-            } else if (state.optBoolean("enabled", true)) {
-                collapsed.remove(available.get(key).playlistSourceId);
-                disabled.remove(key);
-            } else {
-                disabled.add(key);
-            }
+        for (int i = 0; i < states.length(); i++) {
+            JSONObject state = states.optJSONObject(i);
+            if (state == null) continue;
+            String id = state.optString("id");
+            if (!available.contains(id)) throw new IOException("频道分组已变化，请刷新后重试");
+            if (state.optBoolean("enabled", true)) disabled.remove(id);
+            else disabled.add(id);
         }
-        ChannelCatalog.Group[] visible = filterGroups(availableGroups, disabled, collapsed);
-        if (availableGroups.length > 0 && visible.length == 0) {
-            throw new IOException("至少保留一个频道分组");
-        }
-        saveDisabledGroups(disabled);
-        preferences.edit().putString(COLLAPSED_SOURCES, new JSONArray(collapsed).toString()).commit();
+        ChannelCatalog.Group[] visible = filterGroups(disabled, readChannelSettings());
+        if (managementGroups.length > 0 && visible.length == 0) throw new IOException("至少保留一个可见频道分组");
+        if (!preferences.edit().putString(DISABLED_MERGED_GROUPS, new JSONArray(disabled).toString()).commit())
+            throw new IOException("频道分组保存失败，请重试");
         visibleGroups = visible;
         return visible;
     }
@@ -551,7 +513,9 @@ final class PlaylistManager {
             source = new Source(mobileCacheId(value), "手机频道源", value, true);
         }
         SourceRead read = readSource(source,
-                android.os.SystemClock.elapsedRealtime() + MOBILE_READ_BUDGET_MS);
+                android.os.SystemClock.elapsedRealtime()
+                        + (GithubProxy.githubSource(value) != null
+                        ? MOBILE_READ_BUDGET_MS : MOBILE_ORIGIN_READ_BUDGET_MS));
         if (read.cacheChanged) writeCache(source, read.bytes);
         if (read.metadata != null) saveCacheMetadata(source, read.metadata);
         rememberMobileCache(source);
@@ -563,37 +527,16 @@ final class PlaylistManager {
         if (groups == availableGroups) return visibleGroups;
         catalogMemoryCache = groups;
         availableGroups = groups;
-        Map<String, ChannelBucket> sources = new HashMap<String, ChannelBucket>();
-        for (ChannelCatalog.Group group : groups) {
-            if (group.playlistSourceId.length() == 0) continue;
-            ChannelBucket bucket = sources.get(group.playlistSourceId);
-            if (bucket == null) {
-                bucket = new ChannelBucket(); sources.put(group.playlistSourceId, bucket);
-            }
-            for (Channel channel : group.channels) bucket.add(channel);
-        }
-        sourceChannelCounts.clear();
-        for (Map.Entry<String, ChannelBucket> entry : sources.entrySet())
-            sourceChannelCounts.put(entry.getKey(), entry.getValue().channels.size());
+        List<ChannelCatalog.Group[]> all = new ArrayList<ChannelCatalog.Group[]>();
+        all.add(groups);
+        managementGroups = mergeVisible(all);
+        migrateMergedSettings();
         Set<String> disabled = getDisabledGroups();
-        Set<String> legacy = new HashSet<String>(disabled);
-        for (String key : legacy) {
-            if (key.startsWith("child:")) continue;
-            boolean builtIn = false, migrated = false;
-            for (ChannelCatalog.Group group : groups) {
-                if (!key.equals(groupKey(group.title))) continue;
-                if (group.playlistSourceId.length() == 0) builtIn = true;
-                else { disabled.add(stateKey(group)); migrated = true; }
-            }
-            if (migrated && !builtIn) disabled.remove(key);
-        }
-        if (!legacy.equals(disabled)) saveDisabledGroups(disabled);
-        Set<String> collapsed = getCollapsedSources();
-        ChannelCatalog.Group[] visible = filterGroups(groups, disabled, collapsed);
-        if (visible.length == 0 && groups.length > 0) {
-            disabled.remove(stateKey(groups[0]));
+        ChannelCatalog.Group[] visible = filterGroups(disabled, readChannelSettings());
+        if (visible.length == 0 && managementGroups.length > 0) {
+            disabled.remove(mergedGroupId(managementGroups[0]));
             saveDisabledGroups(disabled);
-            visible = filterGroups(groups, disabled, collapsed);
+            visible = filterGroups(disabled, readChannelSettings());
         }
         visibleGroups = visible;
         return visible;
@@ -614,18 +557,141 @@ final class PlaylistManager {
         return rememberAndFilterGroups(groups);
     }
 
-    private static ChannelCatalog.Group[] filterGroups(ChannelCatalog.Group[] groups,
-            Set<String> disabled, Set<String> collapsed) {
-        List<ChannelCatalog.Group[]> visible = new ArrayList<ChannelCatalog.Group[]>();
-        for (ChannelCatalog.Group group : groups) {
-            if (collapsed.contains(group.playlistSourceId)) {
-                visible.add(new ChannelCatalog.Group[] { new ChannelCatalog.Group(
-                        group.playlistSourceName, group.source, group.channels) });
-            } else if (!disabled.contains(stateKey(group))) {
-                visible.add(new ChannelCatalog.Group[] { group });
-            }
+    private static String mergedGroupId(ChannelCatalog.Group group) {
+        return "group:" + groupKey(group.title);
+    }
+
+    private ChannelCatalog.Group[] filterGroups(Set<String> disabled, JSONObject settings) {
+        List<ChannelCatalog.Group> visible = new ArrayList<ChannelCatalog.Group>();
+        for (ChannelCatalog.Group group : managementGroups) {
+            String id = mergedGroupId(group);
+            if (disabled.contains(id)) continue;
+            Channel[] channels = configuredChannels(group.channels, settings.optJSONObject(id), false);
+            if (channels.length > 0) visible.add(new ChannelCatalog.Group(group.title, group.source, channels));
         }
-        return mergeVisible(visible);
+        return visible.toArray(new ChannelCatalog.Group[visible.size()]);
+    }
+
+    private JSONObject readChannelSettings() {
+        try { return new JSONObject(preferences.getString(MERGED_CHANNEL_SETTINGS, "{}")); }
+        catch (JSONException ignored) { return new JSONObject(); }
+    }
+
+    // One-time migration: only hide a merged channel/group if every contributing
+    // source hid it. A visible copy in another source must remain manageable.
+    private void migrateMergedSettings() {
+        if (preferences.contains(MERGED_CHANNEL_SETTINGS)) return;
+        Set<String> legacyDisabled = getLegacyDisabledGroups(), disabled = new HashSet<String>();
+        Set<String> collapsed = getCollapsedSources();
+        JSONObject legacy;
+        try { legacy = new JSONObject(preferences.getString(CHANNEL_SETTINGS, "{}")); }
+        catch (JSONException ignored) { legacy = new JSONObject(); }
+        JSONObject settings = new JSONObject();
+        for (ChannelCatalog.Group group : managementGroups) {
+            ChannelBucket full = new ChannelBucket(), ordered = new ChannelBucket(), shown = new ChannelBucket();
+            for (Channel channel : group.channels) full.add(channel);
+            boolean enabled = false, edited = false;
+            for (ChannelCatalog.Group raw : availableGroups) {
+                if (!groupKey(raw.title).equals(groupKey(group.title))) continue;
+                if (collapsed.contains(raw.playlistSourceId) || (!legacyDisabled.contains(stateKey(raw))
+                        && !legacyDisabled.contains(groupKey(raw.title)))) enabled = true;
+                JSONObject setting = legacy.optJSONObject(collapsed.contains(raw.playlistSourceId)
+                        ? "source:" + raw.playlistSourceId : stateKey(raw));
+                if (setting != null) edited = true;
+                for (Channel channel : configuredChannels(raw.channels, setting, true)) ordered.add(channel);
+                for (Channel channel : configuredChannels(raw.channels, setting, false)) shown.add(channel);
+            }
+            if (!enabled) disabled.add(mergedGroupId(group));
+            if (!edited) continue;
+            JSONArray order = new JSONArray(), hidden = new JSONArray();
+            for (Channel channel : ordered.channels) {
+                int index = full.find(channel);
+                if (index >= 0) order.put(channelSettingKey(full.channels.get(index)));
+            }
+            for (Channel channel : full.channels) if (shown.find(channel) < 0) hidden.put(channelSettingKey(channel));
+            try { settings.put(mergedGroupId(group), new JSONObject().put("order", order).put("hidden", hidden)); }
+            catch (JSONException impossible) { }
+        }
+        preferences.edit().putString(MERGED_CHANNEL_SETTINGS, settings.toString())
+                .putString(DISABLED_MERGED_GROUPS, new JSONArray(disabled).toString()).commit();
+    }
+
+    private static String channelSettingKey(Channel channel) {
+        // The parser already merges duplicate names. Stream URLs and channel numbers
+        // can change on a source refresh, so neither belongs in the saved identity.
+        return channel.name.toLowerCase(Locale.US);
+    }
+
+    private Channel[] managementChannels(String groupId) throws IOException {
+        for (ChannelCatalog.Group group : managementGroups)
+            if (mergedGroupId(group).equals(groupId)) return group.channels;
+        throw new IOException("频道分组已变化，请刷新后重试");
+    }
+
+    private static Set<String> stringSet(JSONArray values) {
+        Set<String> result = new HashSet<String>();
+        if (values != null) for (int i = 0; i < values.length(); i++) result.add(values.optString(i));
+        return result;
+    }
+
+    private static Channel[] configuredChannels(Channel[] channels, JSONObject setting, boolean includeHidden) {
+        if (setting == null) return channels;
+        Set<String> hidden = stringSet(setting.optJSONArray("hidden"));
+        Map<String, Channel> remaining = new LinkedHashMap<String, Channel>();
+        for (Channel channel : channels) remaining.put(channelSettingKey(channel), channel);
+        List<Channel> ordered = new ArrayList<Channel>();
+        JSONArray order = setting.optJSONArray("order");
+        if (order != null) for (int i = 0; i < order.length(); i++) {
+            String key = order.optString(i);
+            Channel channel = remaining.remove(key);
+            if (channel != null && (includeHidden || !hidden.contains(key))) ordered.add(channel);
+        }
+        for (Map.Entry<String, Channel> entry : remaining.entrySet())
+            if (includeHidden || !hidden.contains(entry.getKey())) ordered.add(entry.getValue());
+        return ordered.toArray(new Channel[0]);
+    }
+
+    private static String channelRevision(Channel[] channels, JSONObject setting) throws IOException {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            for (Channel channel : channels) updateDigest(digest, channelSettingKey(channel));
+            updateDigest(digest, setting == null ? "" : setting.toString());
+            return encodeHex(digest.digest());
+        } catch (NoSuchAlgorithmException impossible) { throw new IOException(impossible); }
+    }
+
+    synchronized JSONObject getChannelSettingsJson(String groupId) throws IOException, JSONException {
+        Channel[] raw = managementChannels(groupId);
+        JSONObject setting = readChannelSettings().optJSONObject(groupId);
+        Set<String> hidden = setting == null ? new HashSet<String>() : stringSet(setting.optJSONArray("hidden"));
+        JSONArray channels = new JSONArray();
+        for (Channel channel : configuredChannels(raw, setting, true)) channels.put(new JSONObject()
+                .put("id", channelSettingKey(channel)).put("name", channel.name)
+                .put("enabled", !hidden.contains(channelSettingKey(channel))));
+        return new JSONObject().put("ok", true).put("channels", channels)
+                .put("revision", channelRevision(raw, setting));
+    }
+
+    synchronized ChannelCatalog.Group[] updateChannelSettings(JSONObject request) throws IOException, JSONException {
+        if (request == null) throw new IOException("频道设置无效");
+        String groupId = request.optString("groupId");
+        Channel[] raw = managementChannels(groupId);
+        JSONObject settings = readChannelSettings();
+        if (!channelRevision(raw, settings.optJSONObject(groupId)).equals(request.optString("revision")))
+            throw new IOException("频道列表或设置已变化，请重新展开分组后重试");
+        Set<String> available = new HashSet<String>();
+        for (Channel channel : raw) available.add(channelSettingKey(channel));
+        JSONArray order = request.optJSONArray("order"), hidden = request.optJSONArray("hidden");
+        if (order == null || hidden == null || order.length() != available.size()
+                || stringSet(order).size() != available.size() || !available.containsAll(stringSet(order))
+                || !available.containsAll(stringSet(hidden))) throw new IOException("频道列表已变化，请重新展开分组后重试");
+        settings.put(groupId, new JSONObject().put("order", order).put("hidden", hidden));
+        ChannelCatalog.Group[] visible = filterGroups(getDisabledGroups(), settings);
+        if (availableGroups.length > 0 && visible.length == 0) throw new IOException("至少保留一个可见频道");
+        if (!preferences.edit().putString(MERGED_CHANNEL_SETTINGS, settings.toString()).commit())
+            throw new IOException("频道设置保存失败，请重试");
+        visibleGroups = visible;
+        return visible;
     }
 
     private Set<String> getCollapsedSources() {
@@ -653,17 +719,63 @@ final class PlaylistManager {
     }
 
     private static ChannelCatalog.Group[] mergeVisible(List<ChannelCatalog.Group[]> sources) {
-        List<ChannelCatalog.Group[]> flat = new ArrayList<ChannelCatalog.Group[]>();
-        for (ChannelCatalog.Group[] groups : sources) {
-            ChannelCatalog.Group[] copy = new ChannelCatalog.Group[groups.length];
-            for (int i = 0; i < groups.length; i++) copy[i] = new ChannelCatalog.Group(
-                    groups[i].title, groups[i].source, groups[i].channels);
-            flat.add(copy);
+        Map<String, ChannelBucket> buckets = new LinkedHashMap<String, ChannelBucket>();
+        Map<String, String> titles = new HashMap<String, String>();
+        for (ChannelCatalog.Group[] groups : sources) for (ChannelCatalog.Group group : groups) {
+            String key = groupKey(group.title);
+            ChannelBucket bucket = buckets.get(key);
+            if (bucket == null) {
+                bucket = new ChannelBucket(); buckets.put(key, bucket);
+                titles.put(key, normalizeGroupTitle(group.title));
+            }
+            for (Channel channel : group.channels) bucket.add(channel);
         }
-        return merge(flat);
+        List<ChannelCatalog.Group> result = new ArrayList<ChannelCatalog.Group>();
+        for (Map.Entry<String, ChannelBucket> entry : buckets.entrySet()) result.add(new ChannelCatalog.Group(
+                titles.get(entry.getKey()), ChannelCatalog.SOURCE_CUSTOM,
+                defaultChannelOrder(titles.get(entry.getKey()), entry.getValue().channels.toArray(new Channel[0]))));
+        return result.toArray(new ChannelCatalog.Group[result.size()]);
+    }
+
+    // Apply the legacy default before saved user order/visibility. Reordering in
+    // ChannelCatalog after configuredChannels() would override the user's edits.
+    private static Channel[] defaultChannelOrder(String title, Channel[] channels) {
+        if (!"央视频道".equals(title) || channels == null || channels.length < 18) {
+            return channels;
+        }
+        int sourceIndex = -1;
+        for (int index = 0; index < channels.length; index++) {
+            String name = channels[index].name == null ? ""
+                    : channels[index].name.toUpperCase(java.util.Locale.US)
+                            .replace("-", "").replace(" ", "");
+            if (name.startsWith("CCTV5+")) {
+                sourceIndex = index;
+                break;
+            }
+        }
+        int targetIndex = 17;
+        if (sourceIndex < 0 || sourceIndex == targetIndex) {
+            return channels;
+        }
+        Channel[] reordered = channels.clone();
+        Channel moved = reordered[sourceIndex];
+        if (sourceIndex < targetIndex) {
+            System.arraycopy(reordered, sourceIndex + 1, reordered, sourceIndex,
+                    targetIndex - sourceIndex);
+        } else {
+            System.arraycopy(reordered, targetIndex, reordered, targetIndex + 1,
+                    sourceIndex - targetIndex);
+        }
+        reordered[targetIndex] = moved;
+        return reordered;
     }
 
     private Set<String> getDisabledGroups() {
+        try { return stringSet(new JSONArray(preferences.getString(DISABLED_MERGED_GROUPS, "[]"))); }
+        catch (JSONException ignored) { return new HashSet<String>(); }
+    }
+
+    private Set<String> getLegacyDisabledGroups() {
         Set<String> result = new HashSet<String>();
         String saved = preferences.getString(DISABLED_GROUPS, "");
         if (saved.length() == 0) {
@@ -690,7 +802,7 @@ final class PlaylistManager {
         // Group switches are saved from the control server thread. Commit before
         // replying so an immediate app restart cannot lose the user's selection.
         //noinspection ApplySharedPref
-        preferences.edit().putString(DISABLED_GROUPS, values.toString()).commit();
+        preferences.edit().putString(DISABLED_MERGED_GROUPS, values.toString()).commit();
     }
 
     private static String groupKey(String title) {
@@ -818,7 +930,7 @@ final class PlaylistManager {
     }
 
     private SourceRead readSource(Source source) throws IOException {
-        return readSource(source, 0L);
+        return readSource(source, android.os.SystemClock.elapsedRealtime() + PLAYLIST_READ_TIMEOUT_MS);
     }
 
     private SourceRead readSource(Source source, long deadline) throws IOException {
@@ -902,6 +1014,12 @@ final class PlaylistManager {
     private RemoteDownload download(String sourceUrl, String cookie, String referer,
             int challengeCount, RemoteFileMetadata previous, File cachedFile, long deadline)
             throws IOException {
+        return download(sourceUrl, cookie, referer, challengeCount, previous, cachedFile, deadline, false);
+    }
+
+    private RemoteDownload download(String sourceUrl, String cookie, String referer,
+            int challengeCount, RemoteFileMetadata previous, File cachedFile, long deadline,
+            boolean forceIdentity) throws IOException {
         String requestUrl = GithubProxy.apply(context, sourceUrl);
         URL url = new URL(requestUrl);
         boolean reusableCache = previous != null && previous.matchesLocal(cachedFile);
@@ -913,11 +1031,14 @@ final class PlaylistManager {
             return RemoteDownload.notModified();
         }
         HttpURLConnection connection = openPlaylistConnection(url, deadline);
-        connection.setConnectTimeout(deadline == 0L ? 12000 : Math.min(2000, remainingMobileTime(deadline)));
-        connection.setReadTimeout(deadline == 0L ? PLAYLIST_READ_TIMEOUT_MS : Math.min(4000, remainingMobileTime(deadline)));
+        connection.setConnectTimeout(deadline == 0L ? 12000 : Math.min(12000, remainingMobileTime(deadline)));
+        connection.setReadTimeout(deadline == 0L ? PLAYLIST_READ_TIMEOUT_MS : Math.min(PLAYLIST_READ_TIMEOUT_MS, remainingMobileTime(deadline)));
         connection.setInstanceFollowRedirects(true);
         connection.setRequestProperty("User-Agent", "nTv/1.5");
-        connection.setRequestProperty("Accept-Encoding", "identity");
+        // OkHttp transparently decodes gzip and removes the wire Content-Length.
+        // Preserve identity when validating a server's representation MD5.
+        boolean identity = forceIdentity || previous != null && previous.serverMd5.length() > 0;
+        if (identity) connection.setRequestProperty("Accept-Encoding", "identity");
         if (cookie != null) {
             connection.setRequestProperty("Cookie", cookie);
         }
@@ -927,10 +1048,13 @@ final class PlaylistManager {
         if (reusableCache) {
             previous.applyConditionalHeaders(connection, sourceUrl);
         }
+        boolean responseConsumed = false;
         try {
             int status = connection.getResponseCode();
             if (status == HttpURLConnection.HTTP_NOT_MODIFIED
                     && reusableCache && previous.appliesTo(sourceUrl)) {
+                connection.getInputStream().close();
+                responseConsumed = true;
                 return RemoteDownload.notModified();
             }
             if (status < 200 || status >= 300) {
@@ -941,8 +1065,18 @@ final class PlaylistManager {
             if (response.contentLength > playlistByteLimit()) {
                 throw new IOException("频道文件超过设备可安全处理的大小");
             }
-            byte[] body = readAll(connection.getInputStream());
-            response = response.verify(body, "频道源");
+            byte[] body;
+            try (InputStream input = connection.getInputStream()) { body = readAll(input); }
+            responseConsumed = true;
+            try { response = response.verify(body, "频道源"); }
+            catch (IOException invalid) {
+                // A first gzip response may carry a digest of the encoded entity.
+                // Retry identity once, within the same total deadline, to verify it.
+                if (!identity && response.serverMd5.length() > 0)
+                    return download(sourceUrl, cookie, referer, challengeCount,
+                            previous, cachedFile, deadline, true);
+                throw invalid;
+            }
             AesCookieChallenge challenge = parseAesCookieChallenge(body, url);
             if (challenge == null) {
                 return new RemoteDownload(body, response, false);
@@ -951,9 +1085,19 @@ final class PlaylistManager {
                 throw new IOException("频道源的网页验证未通过");
             }
             return download(challenge.location, "__test=" + challenge.cookie,
-                    sourceUrl, challengeCount + 1, previous, cachedFile, deadline);
+                    sourceUrl, challengeCount + 1, previous, cachedFile, deadline, forceIdentity);
+        } catch (IOException failure) {
+            // OkHttp may surface a call deadline as HTTP/2 CANCEL rather than
+            // SocketTimeoutException. Report the exhausted budget consistently.
+            if (deadline != 0L && android.os.SystemClock.elapsedRealtime() >= deadline) {
+                java.net.SocketTimeoutException timeout = new java.net.SocketTimeoutException(
+                        "频道源读取超时，已放弃此来源，请稍后重试");
+                timeout.initCause(failure);
+                throw timeout;
+            }
+            throw failure;
         } finally {
-            connection.disconnect();
+            if (!responseConsumed) connection.disconnect();
         }
     }
 
@@ -1420,7 +1564,7 @@ final class PlaylistManager {
                 String value = line.substring(comma + 1).trim();
                 // Accept empty CSV fields produced by PHP/TXT playlist generators.
                 // Preserve every character inside a real URL (including query commas).
-                value = value.replaceFirst("(?i)^(?:,\\s*)+(?=(?:https?|rtmps?|rtmpt|rtsp|webview)://)", "");
+                value = value.replaceFirst("(?i)^(?:,\\s*)+(?=(?:https?|rtmps?|rtmpt|rtsp|rtp|udp|webview)://)", "");
                 if (value.matches("(?i)#genre#(?:\\s*,\\s*)*")) {
                     currentGroup = name.length() == 0 ? "在线频道" : name;
                 } else if (isStreamUrl(value)) {
@@ -1432,7 +1576,7 @@ final class PlaylistManager {
             }
         }
         if (count == 0) {
-            throw new IOException("频道源中没有找到可播放的 HTTP 或 WebView 地址");
+            throw new IOException("频道源中没有找到可播放的 HTTP、RTP、UDP、RTSP、RTMP 或 WebView 地址");
         }
         ChannelCatalog.Group[] result = new ChannelCatalog.Group[groups.size()];
         int index = 0;

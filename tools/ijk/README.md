@@ -491,3 +491,18 @@ downloads would otherwise consume its deadline. Playback proxies keep every
 referenced rendition and refresh manifests normally. Local instrumentation
 verifies both behaviours in `probe-manifest-reuse-checks.json` without external
 network access.
+
+
+HTTP playback enables `ntv-adaptive-fps-probe` for direct media and the TLS
+proxy's plaintext output. IJK marks its format discovery context; the FFmpeg
+overlay accepts parsed H.264/HEVC timing only after at least four DTS intervals
+agree within 1%. This bypasses only the initial FPS sampling gate. Missing PMTs,
+codec headers or audio parameters still retain normal discovery, as do unknown
+or inconsistent codec clocks and explicit `fpsprobesize` overrides. The probe
+neither drops packets nor changes playback decoder settings. Apply
+`apply-adaptive-probe-patches.cjs` when rebuilding each FFmpeg ABI (the build
+script does this), then rebuild IJK for its new player option. The pure timing
+checks are in `tests/adaptive-probe.test.c`; overlay rerun checks are in
+`tests/adaptive-probe.test.cjs`. TLS streaming checks in
+`tests/hls-stream-failure.test.py` verify first-body-byte delivery, short-read
+flushing, exact ranges, bounded retry and encrypted-media path separation.

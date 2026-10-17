@@ -14,11 +14,12 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /** Real HTTP cache validation and total deadlines; keeps user channels/prefs untouched. */
-public final class PlaylistRefreshInstrumentation extends Instrumentation {
+public class PlaylistRefreshInstrumentation extends Instrumentation {
     private Bundle args;
     private ServerSocket server;
     private final CopyOnWriteArrayList<Socket> clients=new CopyOnWriteArrayList<>();
     private final AtomicInteger notModified=new AtomicInteger();
+    private final AtomicInteger compressedReplies=new AtomicInteger();
     private volatile int version=1;
     private volatile boolean slow;
 
@@ -31,11 +32,22 @@ public final class PlaylistRefreshInstrumentation extends Instrumentation {
         try(Socket client=socket) {
             client.setSoTimeout(3000);
             BufferedReader reader=new BufferedReader(new InputStreamReader(client.getInputStream(),"US-ASCII"));
-            String request=reader.readLine(),line;boolean conditional=false;
-            while((line=reader.readLine())!=null && !line.isEmpty())
+            String request=reader.readLine(),line;boolean conditional=false,gzip=false;
+            while((line=reader.readLine())!=null && !line.isEmpty()) {
                 if(line.equalsIgnoreCase("If-None-Match: \"v"+version+"\""))conditional=true;
-            boolean md5=request.contains("/md5") || request.contains("/bad-md5");
+                if(line.toLowerCase(java.util.Locale.US).startsWith("accept-encoding:")
+                        && line.contains("gzip"))gzip=true;
+            }
+            if(request.contains("/stalled")){SystemClock.sleep(35000);return;}
+            if(request.contains("/delayed.php"))SystemClock.sleep(21000);
+            boolean md5=request.contains("md5");
             OutputStream output=client.getOutputStream();byte[] bytes=body();
+            boolean compressed=request.contains("/gzip") && gzip;
+            if(compressed) {
+                ByteArrayOutputStream encoded=new ByteArrayOutputStream();
+                try(java.util.zip.GZIPOutputStream stream=new java.util.zip.GZIPOutputStream(encoded)){stream.write(bytes);}
+                bytes=encoded.toByteArray();compressedReplies.incrementAndGet();
+            }
             if(slow && md5)SystemClock.sleep(8000);
             if(conditional && !slow) {
                 notModified.incrementAndGet();
@@ -43,12 +55,12 @@ public final class PlaylistRefreshInstrumentation extends Instrumentation {
                 return;
             }
             boolean opaque=request.contains("/opaque");
-            boolean badMd5=request.contains("/bad-md5");
+            boolean badMd5=request.contains("bad-md5");
             String validator=md5 ? "Content-MD5: "+android.util.Base64.encodeToString(
                     java.security.MessageDigest.getInstance("MD5").digest(badMd5 ? new byte[]{0} : bytes),android.util.Base64.NO_WRAP)
                     : opaque ? "ETag: \"d94ef5027c44800b94eb6f405a984b15\"" : "ETag: \"v"+version+"\"";
             output.write(("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: "+bytes.length
-                    +"\r\n"+validator+"\r\nConnection: close\r\n\r\n").getBytes("US-ASCII"));
+                    +"\r\n"+(compressed?"Content-Encoding: gzip\r\n":"")+validator+"\r\nConnection: close\r\n\r\n").getBytes("US-ASCII"));
             if(request.startsWith("HEAD "))return;
             int offset=0;
             if(slow && !md5)for(;offset<12;offset++) {
@@ -59,8 +71,8 @@ public final class PlaylistRefreshInstrumentation extends Instrumentation {
             // An intentional timeout cancels the fixture socket.
         }finally {clients.remove(socket);}
     }
-    private Context isolated() {
-        final String prefix="refresh-test-"+System.currentTimeMillis();
+    protected Context isolated() {
+        final String prefix="refresh-test-"+java.util.UUID.randomUUID();
         return new ContextWrapper(getTargetContext()) {
             @Override public Context getApplicationContext(){return this;}
             @Override public SharedPreferences getSharedPreferences(String name,int mode){
@@ -114,23 +126,31 @@ public final class PlaylistRefreshInstrumentation extends Instrumentation {
             catch(IOException error){rejected=error.getMessage().contains("MD5");}
             if(!rejected)throw new AssertionError("explicit invalid MD5 accepted");
             report.append("opaqueHexEtagAccepted=true explicitBadMd5Rejected=true\n");
+            equal(body(),manager.readForMobile(url.replace("/list.txt","/gzip.txt")),"gzip source decoding");
+            equal(body(),manager.readForMobile(url.replace("/list.txt","/gzip-md5.txt")),"encoded MD5 identity retry");
+            if(compressedReplies.get()!=2)throw new AssertionError("gzip negotiation missing or identity retry repeated");
+            rejected=false;
+            try {manager.readForMobile(url.replace("/list.txt","/gzip-bad-md5.txt"));}
+            catch(IOException error){rejected=error.getMessage().contains("MD5");}
+            if(!rejected)throw new AssertionError("gzip digest corruption accepted");
+            report.append("gzipDecoded=true wireMd5Retry=true corruptMd5Rejected=true\n");
             if(args.containsKey("sourceUrl")) {
                 byte[] online=manager.readForMobile(args.getString("sourceUrl"));
                 java.lang.reflect.Method parse=PlaylistManager.class.getDeclaredMethod("parse",byte[].class,String.class);
                 parse.setAccessible(true);
                 ChannelCatalog.Group[] groups=(ChannelCatalog.Group[])parse.invoke(null,online,args.getString("sourceUrl"));
                 int channels=0;for(ChannelCatalog.Group group:groups)channels+=group.channels.length;
-                if(channels!=Integer.parseInt(args.getString("expectedChannels","210")))
+                int expectedChannels=Integer.parseInt(args.getString("expectedChannels","210"));
+                if(channels<=0 || expectedChannels>=0 && channels!=expectedChannels)
                     throw new AssertionError("online playlist channel count: "+channels);
                 equal(online,manager.readForMobile(args.getString("sourceUrl")),"real source repeat/cache download");
                 report.append("onlinePlaylistChannels=").append(channels).append(" bytes=").append(online.length).append('\n');
             }
-            slow=true;boolean bounded=!"false".equals(args.getString("expectBounded"));
+            slow=true;
             begin=SystemClock.elapsedRealtime();boolean timedOut=false;
             try {manager.readForMobile(url);}catch(IOException error){timedOut=true;}
             long elapsed=SystemClock.elapsedRealtime()-begin;
-            if(bounded && (!timedOut || elapsed>7500))throw new AssertionError("unbounded body read: "+elapsed);
-            if(!bounded && timedOut)throw new AssertionError("baseline unexpectedly failed");
+            if(timedOut || elapsed>27000)throw new AssertionError("slow ordinary body rejected: "+elapsed);
             report.append("trickleMs=").append(elapsed).append(" timedOut=").append(timedOut).append('\n');
             slow=false;equal(body(),manager.readForMobile(url),"partial download overwrote valid cache");
             for(File file:context.getFilesDir().listFiles())if(file.getName().startsWith("online-playlist-"))
@@ -141,11 +161,19 @@ public final class PlaylistRefreshInstrumentation extends Instrumentation {
             slow=true;begin=SystemClock.elapsedRealtime();timedOut=false;
             try {manager.readForMobile(md5);}catch(IOException error){timedOut=true;}
             elapsed=SystemClock.elapsedRealtime()-begin;
-            if(bounded && (!timedOut || elapsed>7500))throw new AssertionError("HEAD + GET budget reset: "+elapsed);
+            if(timedOut || elapsed>27000)throw new AssertionError("slow PHP HEAD + GET rejected: "+elapsed);
             report.append("headAndGetMs=").append(elapsed).append(" timedOut=").append(timedOut).append('\n');
             slow=false;equal(body(),manager.readForMobile(md5),"MD5 cache recovery");
+            begin=SystemClock.elapsedRealtime();
+            equal(body(),manager.readForMobile(url.replace("/list.txt","/delayed.php")),"21-second source rejected before new deadline");
+            report.append("delayedMs=").append(SystemClock.elapsedRealtime()-begin).append(" accepted=true\n");
+            begin=SystemClock.elapsedRealtime();timedOut=false;
+            try {manager.readForMobile(url.replace("/list.txt","/stalled.php"));}catch(IOException error){timedOut=true;}
+            elapsed=SystemClock.elapsedRealtime()-begin;
+            if(!timedOut || elapsed<24000 || elapsed>27000)throw new AssertionError("stalled PHP not bounded at 25 seconds: "+elapsed);
+            report.append("stalledMs=").append(elapsed).append(" timedOut=true\n");
             report.append("PASS conditional freshness, updated content, corrupt-cache recovery and bounded reads\n");
-        }catch(Throwable error){code=1;report.append(android.util.Log.getStackTraceString(error));}
+        }catch(Throwable error){code=1;report.append(error).append('\n').append(android.util.Log.getStackTraceString(error));}
         finally {
             if(server!=null)try{server.close();}catch(IOException ignored){}
             for(Socket client:clients)try{client.close();}catch(IOException ignored){}

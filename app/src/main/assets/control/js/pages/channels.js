@@ -544,7 +544,7 @@ function playlistAddressProblem(value, sourceLocation) {
   if (/%(?![0-9a-f]{2})/i.test(text)) return "百分号后需要两位十六进制编码，例如空格应写为 %20";
   if (text.indexOf("#") !== text.lastIndexOf("#")) return "网址中包含重复的 # 分隔符";
   if (/^webview:\/\//i.test(text) && !sourceLocation) text = text.replace(/^webview:\/\//i, "");
-  var absolute = /^(https?|rtmps?|rtmpt|rtsp):\/\/([^/?#]+)/i.exec(text);
+  var absolute = /^(https?|rtmps?|rtmpt|rtsp|rtp|udp):\/\/([^/?#]+)/i.exec(text);
   if (absolute) {
     if (sourceLocation && !/^https?:/i.test(text)) return "频道列表来源需要 HTTP/HTTPS 地址，或选择本地文件";
     if (typeof URL === "function") {
@@ -594,11 +594,14 @@ function githubProxySourceUrl(value) {
 }
 
 function requestPlaylistText(source, done) {
-  var routes = githubSourceRoutes(source.location), index = 0, settled = false,
+  var routes = githubSourceRoutes(source.location),
+    githubSource = routes.length > 1 || routes.length && (routes[0].prefix ||
+      /^https?:\/\/(github\.com|raw\.githubusercontent\.com|objects\.githubusercontent\.com|release-assets\.githubusercontent\.com)\//i.test(routes[0].url)),
+    index = 0, settled = false, nativeError = null, deadline = Date.now() + 25000,
     activeRequest = null,
     deadlineTimer = setTimeout(function () {
-      finish(new Error("频道源读取超时，已跳过此来源，请稍后重试"));
-    }, 30000);
+      finish(new Error("频道源读取超过25秒，已放弃此来源，请稍后重试"));
+    }, 25000);
   function finish(error, text) {
     if (settled) return;
     settled = true;
@@ -607,6 +610,10 @@ function requestPlaylistText(source, done) {
     done(error, text || "");
   }
   function nextRemote(lastError) {
+    if (Date.now() >= deadline) {
+      finish(new Error("频道源读取超过25秒，已放弃此来源，请稍后重试"));
+      return;
+    }
     while (index < routes.length) {
       var route = routes[index++];
       if (!isLocalPlaylistLocation(route.url) && /^https?:\/\//i.test(route.url)) {
@@ -640,13 +647,14 @@ function requestPlaylistText(source, done) {
     try {
       activeRequest = request;
       request.open("GET", route.url, true);
-      request.timeout = 8000;
+      request.timeout = Math.max(1, Math.min(githubSource ? 8000 : 25000, deadline - Date.now()));
       request.onreadystatechange = function () {
         if (request.readyState !== 4 || request.status === 0) return;
         complete(request.status >= 200 && request.status < 300
           ? null : new Error("读取失败：HTTP " + request.status));
       };
-      request.onerror = function () { complete(new Error("无法读取频道源")); };
+      request.onerror = function () { complete(new Error((nativeError ? "电视读取失败：" + nativeError.message + "；" : "")
+        + "手机直连失败，可能受到跨域限制或网络连接异常，请稍后重试")); };
       request.ontimeout = function () { complete(new Error("读取频道源超时，请检查连接")); };
       request.onabort = function () { complete(new Error("频道源读取已取消")); };
       request.send();
@@ -656,19 +664,23 @@ function requestPlaylistText(source, done) {
   function cachedFailed(error) {
     if (cachedCompleted || settled) return;
     cachedCompleted = true;
+    nativeError = error;
     nextRemote(error);
   }
   cached.open("GET", "/api/playlist/source?location="
     + encodeURIComponent(source.location), true);
-  // Native validation has a six-second budget, including mirror retries.
-  // Leave transport slack without blocking phone fallback for a full minute.
-  cached.timeout = 8000;
+  // All routes share one 25-second deadline, including phone fallback.
+  cached.timeout = githubSource ? 8000 : 25000;
   cached.onreadystatechange = function () {
     if (cached.readyState !== 4 || cached.status === 0) return;
     if (cached.status >= 200 && cached.status < 300) {
       cachedCompleted = true;
       finish(null, cached.responseText || "");
-    } else cachedFailed(new Error("读取失败：HTTP " + cached.status));
+    } else {
+      var message = "读取失败：HTTP " + cached.status;
+      try { message = JSON.parse(cached.responseText).message || message; } catch (ignored) {}
+      cachedFailed(new Error(message));
+    }
   };
   cached.onerror = function () { cachedFailed(new Error("无法读取频道源")); };
   cached.ontimeout = function () { cachedFailed(new Error("读取频道源超时，请检查连接")); };
@@ -684,7 +696,7 @@ function playlistAttribute(line, name) {
 
 function playlistStreamUrl(value, base) {
   var text = String(value || "").replace(/^\s+|\s+$/g, "");
-  if (/^(https?|rtmps?|rtmpt|rtsp|webview):\/\//i.test(text)) return text;
+  if (/^(https?|rtmps?|rtmpt|rtsp|rtp|udp|webview):\/\//i.test(text)) return text;
   if (!/^https?:\/\//i.test(base)) return "";
   try {
     return new URL(text, base).href;
@@ -776,7 +788,7 @@ function parsePlaylistOnPhone(text, source) {
       continue;
     }
     // Ignore empty columns before an explicit URL, never commas inside its query.
-    value = value.replace(/^(?:,\s*)+(?=(?:https?|rtmps?|rtmpt|rtsp|webview):\/\/)/i, "");
+    value = value.replace(/^(?:,\s*)+(?=(?:https?|rtmps?|rtmpt|rtsp|rtp|udp|webview):\/\/)/i, "");
     url = stream(value, i + 1, lines[i]);
     if (url)
       entries.push({

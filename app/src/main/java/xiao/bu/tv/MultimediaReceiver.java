@@ -16,6 +16,8 @@ final class MultimediaReceiver implements Closeable {
     private final MainActivity host;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private volatile String receiverToken = "";
+    private CastCursorChannel.Receiver cursor;
+    boolean acceptsCursor(String token) { return !receiverToken.isEmpty() && receiverToken.equals(token); }
     private long receiverBeat;
     private boolean destroyed;
     MultimediaReceiver(MainActivity host) { this.host = host; }
@@ -27,6 +29,18 @@ final class MultimediaReceiver implements Closeable {
     }
 
     String control(JSONObject request) throws Exception {
+        // Control requests arrive on the HTTP worker; resolve before taking over the UI.
+        final URI stream;
+        final java.net.InetAddress peer;
+        if ("start".equals(request.optString("action"))) {
+            stream = new URI(request.optString("url"));
+            if (!"rtsp".equals(stream.getScheme()) || stream.getHost() == null || !"/cast".equals(stream.getPath()))
+                throw new IOException("无效的 RTSP 地址");
+            peer = java.net.InetAddress.getByName(stream.getHost());
+        } else {
+            stream = null;
+            peer = null;
+        }
         return onUi(() -> {
             if (destroyed) throw new IOException("接收器已关闭");
             String action = request.optString("action");
@@ -38,12 +52,11 @@ final class MultimediaReceiver implements Closeable {
             if ("start".equals(action)) {
                 host.checkMultimediaReceiver(request.optString("takeoverSession"));
                 if (active()) throw new IOException("当前已有接收会话");
-                URI stream = new URI(request.optString("url"));
-                if (!"rtsp".equals(stream.getScheme()) || stream.getHost() == null || !"/cast".equals(stream.getPath()))
-                    throw new IOException("无效的 RTSP 地址");
                 receiverToken = token; receiverBeat = SystemClock.elapsedRealtime();
                 host.suspendForMultimedia();
                 try {
+                    cursor=new CastCursorChannel.Receiver(peer,
+                            token,host::receiveCastCursor);
                     host.startMultimediaReceiver(stream.toString(), request.optString("transport", "tcp"), request.optString("title", "多媒体投屏"));
                     ui.post(watchdog);
                 } catch (Exception error) { endReceiver(); throw error; }
@@ -52,7 +65,8 @@ final class MultimediaReceiver implements Closeable {
                 else if ("stop".equals(action)) endReceiver();
                 else throw new IOException("未知接收指令");
             }
-            return result.put("active", token.equals(receiverToken)).toString();
+            return result.put("active", token.equals(receiverToken))
+                    .put("cursorPort",token.equals(receiverToken) && cursor!=null ? cursor.port() : 0).toString();
         });
     }
     private final Runnable watchdog = new Runnable() {
@@ -65,6 +79,7 @@ final class MultimediaReceiver implements Closeable {
     private void endReceiver() {
         if (!active()) return;
         receiverToken = ""; ui.removeCallbacks(watchdog);
+        if(cursor!=null){cursor.close();cursor=null;}
         if (!destroyed) host.restoreAfterMultimedia();
     }
     void returnToPrevious() { endReceiver(); }

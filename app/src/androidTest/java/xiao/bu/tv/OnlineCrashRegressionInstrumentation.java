@@ -34,6 +34,17 @@ public final class OnlineCrashRegressionInstrumentation extends Instrumentation 
                 row.setTag(null);
                 row = epg.getView(0, row, parent);
                 check("节目".contentEquals(((TextView) row.findViewById(R.id.epg_program_title)).getText()), "EPG row lost title");
+                epg.showPrograms(Collections.emptyList());
+                check(epg.getItem(0) == null && epg.getItem(-1) == null, "Stale EPG position was not rejected");
+                row = epg.getView(0, row, parent);
+                check(((TextView)row.findViewById(R.id.epg_program_title)).getText().length() == 0
+                        && ((TextView)row.findViewById(R.id.epg_program_time)).getText().length() == 0
+                        && !row.isActivated(), "Empty EPG retained recycled content");
+                epg.getView(-1, row, parent);
+                epg.showPrograms(Collections.singletonList(new EpgManager.Program(now - 1000, now + 60000, "恢复节目")));
+                row = epg.getView(0, row, parent);
+                check("恢复节目".contentEquals(((TextView)row.findViewById(R.id.epg_program_title)).getText()), "EPG failed to recover after empty refresh");
+                epg.getView(1, row, parent);
                 ChannelListAdapter channels = new ChannelListAdapter(getTargetContext(), scale);
                 View group = channels.getView(0, null, parent);
                 channels.showChannels(0, ChannelCatalog.CCTV_CHANNELS, 0, 0, 0);
@@ -98,7 +109,7 @@ public final class OnlineCrashRegressionInstrumentation extends Instrumentation 
                     check(expected.getCause() instanceof java.io.IOException, "Missing plugin escaped as fatal Error: " + expected.getCause());
                 }
             } finally { proxy.close(); }
-            result.putString("stream", "PASS recycled EPG/channel rows and nonblocking TLS finalizer\n");
+            result.putString("stream", "PASS recycled EPG/channel rows, stale/empty EPG positions, refresh recovery and nonblocking TLS finalizer\n");
             finish(-1, result);
         } catch (Throwable error) {
             result.putString("stream", "FAIL " + android.util.Log.getStackTraceString(error));

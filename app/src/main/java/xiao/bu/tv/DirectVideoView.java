@@ -14,7 +14,7 @@ public final class DirectVideoView extends FrameLayout implements SurfaceHolder.
     private SurfaceCallback callback;
     private SurfaceHolder activeHolder;
     private int videoWidth, videoHeight, sarNum = 1, sarDen = 1;
-    private boolean stretchVideo, legacySurfaceMode, viewportBufferMode;
+    private boolean stretchVideo, legacySurfaceMode, viewportBufferMode, appliedViewportBufferMode;
 
     public DirectVideoView(Context context) { this(context, null); }
 
@@ -65,10 +65,20 @@ public final class DirectVideoView extends FrameLayout implements SurfaceHolder.
     }
 
     void setVideoSize(int width, int height, int sarNum, int sarDen) {
-        videoWidth = Math.max(0, width);
-        videoHeight = Math.max(0, height);
-        this.sarNum = sarNum > 0 ? sarNum : 1;
-        this.sarDen = sarDen > 0 ? sarDen : 1;
+        width = Math.max(0, width);
+        height = Math.max(0, height);
+        sarNum = sarNum > 0 ? sarNum : 1;
+        sarDen = sarDen > 0 ? sarDen : 1;
+        // Size and SAR often arrive separately, followed by onPrepared. Avoid
+        // repeating the same native-window resize and layout before first frame.
+        if (videoWidth == width && videoHeight == height
+                && this.sarNum == sarNum && this.sarDen == sarDen
+                && appliedViewportBufferMode == viewportBufferMode) return;
+        videoWidth = width;
+        videoHeight = height;
+        this.sarNum = sarNum;
+        this.sarDen = sarDen;
+        appliedViewportBufferMode = viewportBufferMode;
         if (surfaceView != null) {
             if (!viewportBufferMode && videoWidth > 0 && videoHeight > 0)
                 surfaceView.getHolder().setFixedSize(videoWidth, videoHeight);
@@ -78,11 +88,6 @@ public final class DirectVideoView extends FrameLayout implements SurfaceHolder.
     }
 
     void setViewportBufferMode(boolean enabled) { viewportBufferMode = enabled; }
-
-    void resetSurfaceBufferSizePreservingAspect() {
-        if (surfaceView != null) surfaceView.getHolder().setSizeFromLayout();
-        requestLayout();
-    }
 
     @Override protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         int availableWidth = MeasureSpec.getSize(widthMeasureSpec);

@@ -128,7 +128,6 @@ public final class WebSourceView extends FrameLayout {
     private volatile long resourceNavigation;
     private String resourcePageKey = "";
     private String controllerPageTitle = "";
-    private boolean streamPageSuspended;
     private final java.util.Set<String> discoveredStreamUrls =
             java.util.Collections.synchronizedSet(new LinkedHashSet<String>());
     // Both interception and onLoadResource report the same requests. Cache misses
@@ -1504,15 +1503,13 @@ public final class WebSourceView extends FrameLayout {
         if (destroyed) return;
         tabBar.dismissTransientPanels();
         dismissSmartContextPopup();
-        boolean wasStreamSuspended = streamPageSuspended;
-        streamPageSuspended = false;
         WebTabBar.Tab targetTab = tabBar.active();
         boolean switchingTabs = pageActive && loadedTab != null
                 && loadedTab != targetTab && webView != null;
         boolean needsMemoryDecision = switchingTabs || !retainedTabWebViews.isEmpty();
         boolean allowMultipleInstances = needsMemoryDecision && hasMemoryForAdditionalWebView();
         boolean keepCurrentInstance = switchingTabs && allowMultipleInstances
-                && !wasStreamSuspended && !loadedTab.sleeping;
+                && !loadedTab.sleeping;
         if (needsMemoryDecision && !allowMultipleInstances) {
             // Reclaim previously retained renderers before starting another one.
             // Their navigation state remains available through saveState().
@@ -1521,8 +1518,8 @@ public final class WebSourceView extends FrameLayout {
         if (switchingTabs) {
             String currentUrl = webView.getUrl();
             if (isWebPage(currentUrl)) loadedTab.url = currentUrl;
-            if (!wasStreamSuspended) loadedTab.title = webView.getTitle();
-            if (wasStreamSuspended || loadedTab.sleeping) {
+            loadedTab.title = webView.getTitle();
+            if (loadedTab.sleeping) {
                 loadedTab.state = null;
             } else if (keepCurrentInstance) {
                 loadedTab.state = null;
@@ -1811,7 +1808,6 @@ public final class WebSourceView extends FrameLayout {
     void closePage() {
         if (legacy != null) { legacy.close(); setVisibility(View.GONE); return; }
         releaseRetiredWebViews();
-        streamPageSuspended = false;
         tabBar.dismissTransientPanels();
         dismissSmartContextPopup();
         channelPageScript = "";
@@ -1893,57 +1889,9 @@ public final class WebSourceView extends FrameLayout {
         updatePageLifecycle();
     }
 
-    void suspendForStreamPlayback(WebViewShutdown.Completion completion) {
-        if (legacy != null) { legacy.suspend(completion); return; }
-        if (!hasRetainedPage() || isPageVisible() || streamPageSuspended) {
-            completion.onComplete(false);
-            return;
-        }
-        streamPageSuspended = true;
-        ++resetGeneration;
-        sourceClient = null; // Reject late resources/navigation from the drained document.
-        if (renderDiagnostics != null) renderDiagnostics.stop("native-playback-stable");
-        // Other retained renderers must not keep media/decoders running either.
-        releaseRetainedWebViews(true);
-        if (loadedTab != null) loadedTab.state = null;
-        final BrowserWebView idle = (BrowserWebView) webView;
-        cancelShutdown(idle);
-        idle.shutdown = new WebViewShutdown(idle, () -> {
-            idle.shutdown = null;
-            if (idle == webView && streamPageSuspended && !destroyed) {
-                idle.pageResumed = null;
-                updatePageLifecycle();
-            }
-        }, () -> {
-            idle.shutdown = null;
-            if (idle == webView) onRendererGone(idle, false);
-        });
-        startShutdown(idle.shutdown);
-        // Include background tabs and previously closed tabs still draining. One
-        // about:blank callback is not proof that every WebView has stopped audio.
-        WebViewShutdown[] pending = pendingShutdowns.toArray(new WebViewShutdown[0]);
-        final int[] remaining = {pending.length};
-        final boolean[] stopped = {true};
-        final int generation = resetGeneration;
-        if (pending.length == 0) {
-            completion.onComplete(false);
-            return;
-        }
-        for (WebViewShutdown shutdown : pending) shutdown.whenComplete(success -> {
-            stopped[0] &= success;
-            if (--remaining[0] == 0) completion.onComplete(stopped[0]
-                    && generation == resetGeneration && streamPageSuspended
-                    && !destroyed && !isPageVisible());
-        });
-    }
-
     boolean restoreAfterStreamPlayback() {
         if (legacy != null) return legacy.restore();
         if (!hasRetainedPage()) {
-            return false;
-        }
-        if (streamPageSuspended) {
-            // A drained page is never automatically reloaded on BACK.
             return false;
         }
         setVisibility(View.VISIBLE);
@@ -1959,8 +1907,8 @@ public final class WebSourceView extends FrameLayout {
     }
 
     boolean canRestoreAfterStreamPlayback() {
-        if (legacy != null) return legacy.active && !legacy.visible && !legacy.suspended;
-        return hasRetainedPage() && !isPageVisible() && !streamPageSuspended;
+        if (legacy != null) return legacy.active && !legacy.visible;
+        return hasRetainedPage() && !isPageVisible();
     }
 
     private String userAgentForMode(String mode, String versionMode) {
@@ -2566,7 +2514,7 @@ public final class WebSourceView extends FrameLayout {
 
     private boolean canReadWebMedia() {
         return Build.VERSION.SDK_INT >= 19 && hasRetainedPage() && isPageVisible()
-                && !streamPageSuspended && sourceClient != null && !sourceClient.awaitingDocument;
+                && sourceClient != null && !sourceClient.awaitingDocument;
     }
 
     JSONObject currentWebMediaState() {

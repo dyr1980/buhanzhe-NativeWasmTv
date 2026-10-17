@@ -22,6 +22,18 @@ public final class NetworkCrashInstrumentation extends Instrumentation {
         return max;
     }
     private static int fdCount() { return new File("/proc/self/fd").list().length; }
+    private static int fdSoftLimit() throws IOException {
+        try (BufferedReader reader = new BufferedReader(new FileReader("/proc/self/limits"))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (line.startsWith("Max open files")) {
+                    String value = line.trim().split("\\s+")[3];
+                    return "unlimited".equals(value) ? Integer.MAX_VALUE : Integer.parseInt(value);
+                }
+            }
+        }
+        throw new IOException("Cannot determine descriptor limit");
+    }
     private static void cancellation() throws Exception {
         final ServerSocket server=new ServerSocket(0,4,InetAddress.getByName("127.0.0.1"));
         final CountDownLatch accepted=new CountDownLatch(1),release=new CountDownLatch(1);
@@ -56,8 +68,12 @@ public final class NetworkCrashInstrumentation extends Instrumentation {
             int before=fdCount();for(int i=0;i<5;i++)cancellation();SystemClock.sleep(300);
             int warm=fdCount();for(int i=5;i<30;i++)cancellation();SystemClock.sleep(1000);
             int after=fdCount();check(after<=warm+4,"Proxy switches accumulated descriptors after warmup: "+warm+" -> "+after);
-            while(maxFd()<1100&&held.size()<4096)held.add(new FileInputStream("/dev/null"));
-            check(maxFd()>=1100,"Could not create high-FD TLS regression condition");
+            // Old app processes often have a 1024 descriptor soft limit. Keep
+            // headroom for directory enumeration, TLS sockets and test logging.
+            int limit=fdSoftLimit(), target=Math.min(1100,limit-64);
+            check(target>maxFd(),"Insufficient descriptor headroom");
+            while(maxFd()<target&&held.size()<4096)held.add(new FileInputStream("/dev/null"));
+            check(maxFd()>=target,"Could not create descriptor pressure condition");
             long started=SystemClock.elapsedRealtime();int peak=maxFd();
             URL endpoint=new URL(args.getString("endpoint","https://raw.githubusercontent.com/TvWasm/cjs/main/README.md"));
             // Explicit factory exercises the exact transport used on Android 4-6,
@@ -77,7 +93,7 @@ public final class NetworkCrashInstrumentation extends Instrumentation {
             for(FileInputStream file:held)file.close();held.clear();SystemClock.sleep(300);
             JSONObject report=new JSONObject().put("abi",BuildConfig.CJS_PLUGIN_ABI).put("sdk",android.os.Build.VERSION.SDK_INT)
                 .put("proxyCloseCycles",30).put("fdBefore",before).put("fdAfterWarmup",warm).put("fdAfterCycles",after).put("peakFd",peak)
-                .put("highFdHttpsRequests",3).put("tlsMs",SystemClock.elapsedRealtime()-started).put("fdFinal",fdCount());
+                .put("fdSoftLimit",limit).put("aboveFdSetSize",peak>=1024).put("highFdHttpsRequests",3).put("tlsMs",SystemClock.elapsedRealtime()-started).put("fdFinal",fdCount());
             report.put("endpoint",endpoint.toString());
             try(FileOutputStream file=new FileOutputStream(new File(getTargetContext().getExternalFilesDir(null),"network-crash-1040.json"))){file.write(report.toString(2).getBytes("UTF-8"));}
             result.putString("stream","PASS Bugly 1040 regression "+report+"\n");finish(-1,result);

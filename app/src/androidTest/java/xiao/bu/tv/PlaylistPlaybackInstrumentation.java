@@ -26,6 +26,11 @@ public final class PlaylistPlaybackInstrumentation extends Instrumentation {
     private static final class CapabilityLimit extends Exception {}
     private Bundle args;
     private MainActivity activity;
+    private volatile MainActivity resumedActivity;
+    @Override public void callActivityOnResume(android.app.Activity resumed) {
+        super.callActivityOnResume(resumed);
+        if(resumed instanceof MainActivity)resumedActivity=(MainActivity)resumed;
+    }
     private final JSONArray results=new JSONArray();
 
     private void verifyLiveDelayPreferences(File directory) throws Exception {
@@ -269,7 +274,11 @@ public final class PlaylistPlaybackInstrumentation extends Instrumentation {
         tv.danmaku.ijk.media.player.IMediaPlayer player=(tv.danmaku.ijk.media.player.IMediaPlayer)field("player").get(activity);
         long began=SystemClock.elapsedRealtime(),lastPosition=player.getCurrentPosition(),advanced=0;
         while(SystemClock.elapsedRealtime()-began<item.optLong("sampleMs",5500)) {
-            if(field("player").get(activity)!=player || !player.isPlaying())throw new AssertionError("System playback stopped or replaced");
+            if(field("player").get(activity)!=player || !player.isPlaying()) {
+                String failure=(String)field("lastSystemPlaybackError").get(activity);
+                row.put("systemPlaybackError",failure);
+                throw new AssertionError(failure.isEmpty()?"System playback stopped or replaced without an error callback":failure);
+            }
             if(!activity.hasWindowFocus())throw new AssertionError("Lost foreground");
             long position=player.getCurrentPosition();advanced+=Math.max(0,position-lastPosition);lastPosition=position;
             SystemClock.sleep(100);
@@ -323,12 +332,42 @@ public final class PlaylistPlaybackInstrumentation extends Instrumentation {
         SharedPreferences prefs=getTargetContext().getSharedPreferences(MainActivity.PREFERENCES,0);
         Map<String,?> saved=prefs.getAll();ChannelCatalog.Group[] savedGroups=ChannelCatalog.GROUPS;
         File report=new File(getTargetContext().getExternalFilesDir(null),args.getString("reportName","playlist-playback.json"));
+        UsbLoopbackBridge usbBridge=null;
         try {
+            if("true".equals(args.getString("usbBridge"))) usbBridge=new UsbLoopbackBridge();
+            if("true".equals(args.getString("verifyDecodeHintsCache"))) {
+                result.putString("stream",ChannelDecodeHintsInstrumentation.verify(getTargetContext()));
+                finish(0,result);return;
+            }
             saveCodecCapabilities(report.getParentFile());
             verifyLiveDelayPreferences(report.getParentFile());
             verifyHttp2Fallback(report.getParentFile());
             verifyProbeManifestReuse(report.getParentFile());
+            if ("true".equals(args.getString("prepareProviderPlugins"))) {
+                CjsPluginRuntime.initialize(getTargetContext());
+                CjsPluginRuntime.ensureCatalog();
+                for(String id:new String[]{"tv.cctv.com","yangshipin.cn"})
+                    if(!CjsPluginRuntime.isInstalled(id))CjsPluginRuntime.installOrUpdate(id);
+            }
             JSONArray manifest=new JSONArray(readUrl(args.getString("manifest")));
+            if(args.containsKey("importCheck")) {
+                Method parser=PlaylistManager.class.getDeclaredMethod("parse",byte[].class);parser.setAccessible(true);
+                ChannelCatalog.Group[] imported=(ChannelCatalog.Group[])parser.invoke(null,
+                        (Object)readUrl(args.getString("importCheck")).getBytes("UTF-8"));
+                int channels=0,sources=0;
+                for(ChannelCatalog.Group group:imported)for(Channel channel:group.channels) {
+                    channels++;
+                    for(String source:channel.urls) {
+                        if(!source.startsWith("rtp://"))throw new AssertionError("RTP import changed address: "+source);
+                        sources++;
+                    }
+                }
+                if(sources!=Integer.parseInt(args.getString("expectedImportedSources")))throw new AssertionError("Lost RTP sources: "+sources);
+                try(FileOutputStream output=new FileOutputStream(new File(report.getParentFile(),"rtp-import-check.json"))) {
+                    output.write(new JSONObject().put("status","passed").put("groups",imported.length)
+                            .put("channels",channels).put("sources",sources).toString(2).getBytes("UTF-8"));
+                }
+            }
             if(args.containsKey("playlist")) {
                 Method parse=PlaylistManager.class.getDeclaredMethod("parse",byte[].class);parse.setAccessible(true);
                 String controls="#EXTM3U\n"
@@ -357,8 +396,14 @@ public final class PlaylistPlaybackInstrumentation extends Instrumentation {
                 Bundle progress=new Bundle();progress.putString("stream","playlistParsed="+count+" names/URLs matched\n");
                 sendStatus(0,progress);
             }
-            activity=(MainActivity)startActivitySync(new Intent(getTargetContext(),MainActivity.class)
+            // singleTask can resume an existing instance via onNewIntent.
+            // startActivitySync would then wait forever for a new instance.
+            if(resumedActivity==null)getTargetContext().startActivity(new Intent(getTargetContext(),MainActivity.class)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            long launchDeadline=SystemClock.elapsedRealtime()+15000;
+            while(resumedActivity==null && SystemClock.elapsedRealtime()<launchDeadline)SystemClock.sleep(50);
+            if(resumedActivity==null)throw new AssertionError("Player activity did not resume");
+            activity=resumedActivity;
             SystemClock.sleep(2000);
             if(!saved.containsKey("live_delay_mode") && !saved.containsKey("live_delay_mode_v2")
                     && !"stable".equals(field("liveDelayMode").get(activity)))
@@ -429,7 +474,14 @@ public final class PlaylistPlaybackInstrumentation extends Instrumentation {
                         start=SystemClock.elapsedRealtime();
                     }
                     savePending(report,row);
-                    Channel channel=new Channel(String.valueOf(index),item.getString("name"),"playlist-test",url,null,null);
+                    org.json.JSONArray sourceUrls=item.optJSONArray("sourceUrls");
+                    String[] fixtureUrls=new String[sourceUrls==null?1:sourceUrls.length()];
+                    if(sourceUrls==null)fixtureUrls[0]=url;
+                    else for(int n=0;n<fixtureUrls.length;n++)fixtureUrls[n]=sourceUrls.getString(n);
+                    int builtInProvider=item.optInt("builtInProvider",-1);
+                    Channel channel=builtInProvider<0
+                            ? new Channel(String.valueOf(index),item.getString("name"),"playlist-test",fixtureUrls,null,null,null,null)
+                            : (builtInProvider==0?ChannelCatalog.YANGSHIPIN_CCTV_CHANNELS:ChannelCatalog.CCTV_CHANNELS)[item.getInt("builtInChannel")];
                     final java.util.concurrent.CountDownLatch lockHeld=new java.util.concurrent.CountDownLatch(1);
                     final java.util.concurrent.CountDownLatch unlock=new java.util.concurrent.CountDownLatch(1);
                     if(item.optBoolean("checkUiResponsiveness")) {
@@ -442,7 +494,28 @@ public final class PlaylistPlaybackInstrumentation extends Instrumentation {
                         }},"test-busy-old-decrypt").start();
                         if(!lockHeld.await(2,java.util.concurrent.TimeUnit.SECONDS))throw new AssertionError("No held decrypt lock");
                     }
+                    if(item.optBoolean("seedStaleHint")) {
+                        ChannelDecodeHints seed=new ChannelDecodeHints(activity);
+                        seed.remember(url,1920,1080,"H.264",new VideoStreamDescription(8L|(1L<<24)|(2L<<27)),25f);
+                        Field hintWorker=ChannelDecodeHints.class.getDeclaredField("worker");hintWorker.setAccessible(true);
+                        java.util.concurrent.CountDownLatch savedHint=new java.util.concurrent.CountDownLatch(1);
+                        ((android.os.Handler)hintWorker.get(seed)).post(savedHint::countDown);
+                        if(!savedHint.await(10,java.util.concurrent.TimeUnit.SECONDS))throw new AssertionError("No seeded hint");
+                        runOnMainSync(() -> {try {
+                            ChannelDecodeHints old=(ChannelDecodeHints)field("channelDecodeHints").get(activity);
+                            if(old!=null)old.close();field("channelDecodeHints").set(activity,seed);
+                        }catch(Exception error){throw new RuntimeException(error);}});
+                    }
+                    final Object previousPlayer=field("player").get(activity);
+                    long neighborProbesBefore=0;
+                    Object hintCacheBefore=field("channelDecodeHints").get(activity);
+                    if(hintCacheBefore!=null) {
+                        Field probeField=ChannelDecodeHints.class.getDeclaredField("probe");probeField.setAccessible(true);
+                        Field workerField=SniffedMediaProbe.class.getDeclaredField("worker");workerField.setAccessible(true);
+                        neighborProbesBefore=((java.util.concurrent.ThreadPoolExecutor)workerField.get(probeField.get(hintCacheBefore))).getTaskCount();
+                    }
                     long selectionStarted=SystemClock.elapsedRealtime();
+                    final String[] backendSetupFailure={null};
                     runOnMainSync(() -> {try {
                         ((java.util.concurrent.atomic.AtomicInteger)field("catalogLoadGeneration").get(activity)).incrementAndGet();
                         // Invalidate the Activity's asynchronous startup resolver before
@@ -451,10 +524,45 @@ public final class PlaylistPlaybackInstrumentation extends Instrumentation {
                         field("autoSwitchSource").setBoolean(activity,false);
                         field("hdrMode").set(activity,item.optString("hdrMode","hardware"));
                         field("decodeMode").set(activity,item.optString("decodeMode","hardware"));
+                        if(item.optBoolean("seedKnownInterlacedType")) {
+                            String selected=(String)field("hardwareDecoder").get(activity);
+                            String decoder="auto".equals(selected)
+                                    ? IjkMediaPlayer.DefaultMediaCodecSelector.sInstance.onMediaCodecSelect(null,"video/avc",0,0):selected;
+                            if(decoder==null)throw new AssertionError("No AVC decoder to seed");
+                            String key=MediaTrackSelection.urlKey("interlaced_class_v2",android.os.Build.FINGERPRINT
+                                    +"\n"+selected+"\n"+decoder+"\nH.264\n8\n1080i50");
+                            activity.getSharedPreferences(MainActivity.PREFERENCES,0).edit().putFloat(key,25f).commit();
+                        }
+                        if(item.has("h264SpsCompatibility"))
+                            field("h264SpsCompatibility").setBoolean(activity,item.getBoolean("h264SpsCompatibility"));
+                        if(item.optBoolean("resetInterlacedMemory")) {
+                            // Resolve the actual production preference name rather than guessing it.
+                            Field preferenceName=MainActivity.class.getDeclaredField("PREFERENCES");preferenceName.setAccessible(true);
+                            android.content.SharedPreferences interlacePrefs=activity.getSharedPreferences((String)preferenceName.get(null),0);
+                            android.content.SharedPreferences.Editor editor=interlacePrefs.edit();
+                            for(String key:interlacePrefs.getAll().keySet())
+                                if(key.startsWith("media_interlaced_class_v2_url_"))editor.remove(key);
+                            editor.commit();
+                        }
+                        if(item.has("debugMetadataEnabled")) {
+                            field("showDebugInfo").setBoolean(activity,item.getBoolean("debugMetadataEnabled"));
+                            field("showColorDebugInfo").setBoolean(activity,item.getBoolean("debugMetadataEnabled"));
+                            field("showLoadTiming").setBoolean(activity,true);
+                        }
                         ChannelCatalog.GROUPS=new ChannelCatalog.Group[]{new ChannelCatalog.Group("PLAYLIST_TEST",
-                                ChannelCatalog.SOURCE_CUSTOM,new Channel[]{channel})};
+                                builtInProvider==0?ChannelCatalog.SOURCE_YSP_CCTV:builtInProvider==1?ChannelCatalog.SOURCE_CCTV_WEB:ChannelCatalog.SOURCE_CUSTOM,new Channel[]{channel})};
                         field("currentGroupIndex").setInt(activity,0);field("currentChannelIndex").setInt(activity,0);
                         field("currentSourceIndex").setInt(activity,0);
+                        if(item.has("neighborUrls")) {
+                            org.json.JSONArray neighbors=item.getJSONArray("neighborUrls");
+                            Channel[] nearby=new Channel[neighbors.length()];
+                            for(int n=0;n<nearby.length;n++)nearby[n]=n==5?channel:
+                                    new Channel("hint"+n,"Hint "+n,"",neighbors.getString(n),null,null);
+                            ChannelCatalog.GROUPS=new ChannelCatalog.Group[]{new ChannelCatalog.Group("PREPARSE_TEST",ChannelCatalog.SOURCE_CUSTOM,nearby)};
+                            field("currentChannelIndex").setInt(activity,5);
+                        }
+                        Method beginTiming=MainActivity.class.getDeclaredMethod("beginChannelSwitchTiming",int.class,long.class);
+                        beginTiming.setAccessible(true);beginTiming.invoke(activity,field("playRequestId").getInt(activity),SystemClock.elapsedRealtime());
                         if(item.optBoolean("checkUiResponsiveness")) {
                             field("proxyStatefulCmgSource").setBoolean(activity,true);
                             field("browsingGroupIndex").setInt(activity,0);
@@ -463,17 +571,58 @@ public final class PlaylistPlaybackInstrumentation extends Instrumentation {
                             select.invoke(activity,0);
                             if(((android.view.View)field("channelListPanel").get(activity)).getVisibility()!=android.view.View.GONE)
                                 throw new AssertionError("Channel list still visible after selection");
-                        } else if(resolve)startChannel.invoke(activity,0);
-                        else play.invoke(activity,channel,url,"software".equals(item.optString("decodeMode")),true,null,0L);
+                        } else if(resolve) {
+                            startChannel.invoke(activity,field("currentChannelIndex").getInt(activity));
+                            if(item.optBoolean("forceProxyHls"))field("directHlsFallbackRequestId").setInt(activity,field("playRequestId").getInt(activity));
+                        }
+                        else {
+                            // Direct backend fixtures still need the selected channel's
+                            // resolver flags, rather than those of the startup channel.
+                            Method configure=MainActivity.class.getDeclaredMethod("configureEmbeddedResolverMode",ChannelCatalog.Group.class,Channel.class);
+                            configure.setAccessible(true);configure.invoke(activity,ChannelCatalog.GROUPS[0],channel);
+                            if(item.optBoolean("systemBackend")) {
+                                Method system=MainActivity.class.getDeclaredMethod("startAndroidMediaPlayer",Channel.class,String.class,boolean.class,boolean.class);
+                                system.setAccessible(true);
+                                Object savedProxy=field("proxy").get(activity);
+                                if(item.optBoolean("directSystemBackend"))field("proxy").set(activity,null);
+                                try{system.invoke(activity,channel,url,false,true);}
+                                catch(java.lang.reflect.InvocationTargetException failure){backendSetupFailure[0]=String.valueOf(failure.getCause());}
+                                finally{field("proxy").set(activity,savedProxy);}
+                            } else play.invoke(activity,channel,url,"software".equals(item.optString("decodeMode")),!url.contains(".m3u8"),null,0L);
+                        }
                     }catch(Exception error){throw new RuntimeException(error);}});
+                    if(backendSetupFailure[0]!=null)throw new java.io.IOException(backendSetupFailure[0]);
+                    org.json.JSONArray rapidUrls = item.optJSONArray("rapidSwitchUrls");
+                    if (rapidUrls != null && rapidUrls.length() > 0) {
+                        Channel[] burst = new Channel[rapidUrls.length() + 1];
+                        burst[0] = channel;
+                        for (int n = 0; n < rapidUrls.length(); n++)
+                            burst[n + 1] = new Channel("burst" + n, "Rapid " + n, "", rapidUrls.getString(n), null, null);
+                        runOnMainSync(() -> {try {
+                            ChannelCatalog.GROUPS = new ChannelCatalog.Group[]{new ChannelCatalog.Group(
+                                    "RAPID_SWITCH_TEST", ChannelCatalog.SOURCE_CUSTOM, burst)};
+                            field("currentGroupIndex").setInt(activity, 0);
+                        } catch(Exception error) {throw new RuntimeException(error);}});
+                        int count = item.optInt("rapidSwitchCount", 24);
+                        for (int n = 0; n < count; n++) {
+                            final int target = 1 + n % rapidUrls.length();
+                            runOnMainSync(() -> {try {startChannel.invoke(activity, target);}
+                                catch(Exception error) {throw new RuntimeException(error);}});
+                            SystemClock.sleep(item.optLong("rapidSwitchIntervalMs", 60));
+                        }
+                        start = SystemClock.elapsedRealtime();
+                        runOnMainSync(() -> {try {startChannel.invoke(activity, 0);}
+                            catch(Exception error) {throw new RuntimeException(error);}});
+                        row.put("rapidSwitchCount", count);
+                    }
                     unlock.countDown();
                     if(item.optBoolean("checkUiResponsiveness")) {
                         long latency=SystemClock.elapsedRealtime()-selectionStarted;row.put("uiSwitchMs",latency);
                         if(latency>500)throw new AssertionError("UI selection blocked behind decrypt lock: "+latency+"ms");
                     }
-                    deadline=SystemClock.elapsedRealtime()+(android.os.Build.VERSION.SDK_INT<=15?50000:20000);
+                    deadline=SystemClock.elapsedRealtime()+item.optLong("firstFrameTimeoutMs",android.os.Build.VERSION.SDK_INT<=15?50000:20000);
+                    long focusLostAt=0;
                     while(!field("videoRenderingStarted").getBoolean(activity)
-                            || field("preparingChannelSwitch").getBoolean(activity)
                             || (resolve ? field("activePlayerChannel").get(activity)!=channel
                                     : !url.equals(field("activePlayerStreamUrl").get(activity)))) {
                         final String[] playbackMessage = {""};
@@ -489,17 +638,96 @@ public final class PlaylistPlaybackInstrumentation extends Instrumentation {
                                     .put("rejectionMs",SystemClock.elapsedRealtime()-start);
                             throw new CapabilityLimit();
                         }
-                        if(field("player").get(activity)==null && playbackMessage[0].startsWith("系统播放器出错"))
-                            throw new AssertionError(playbackMessage[0]);
-                        if(!activity.hasWindowFocus())throw new AssertionError("Lost foreground before first frame");
+                        String systemError=(String)field("lastSystemPlaybackError").get(activity);
+                        if(field("player").get(activity)==null && !systemError.isEmpty() && !systemError.contains("服务崩溃")) {
+                            row.put("systemPlaybackError",systemError);
+                            throw new AssertionError(systemError);
+                        }
+                        // API14-25 webpage sources own a separate browser Activity
+                        // during sniffing. Its expected foreground is not an interruption.
+                        WebSourceView openingWeb = (WebSourceView)field("webSourceView").get(activity);
+                        boolean openingPage = url.startsWith("webview://") && openingWeb != null
+                                && openingWeb.isPageVisible();
+                        if(!activity.hasWindowFocus() && !openingPage) {
+                            if(focusLostAt==0)focusLostAt=SystemClock.elapsedRealtime();
+                            if(SystemClock.elapsedRealtime()-focusLostAt>=item.optLong("transientFocusMs",0))
+                                throw new AssertionError("Lost foreground before first frame");
+                        } else focusLostAt=0;
                         if(SystemClock.elapsedRealtime()>deadline)throw new AssertionError("First frame timeout");
                         SystemClock.sleep(100);
                     }
                     row.put("firstFrameMs",SystemClock.elapsedRealtime()-start);
+                    Object timing=field("channelStartupTiming").get(activity);
+                    Field opened=ChannelStartupTiming.class.getDeclaredField("opened"),readyAt=ChannelStartupTiming.class.getDeclaredField("prepared");
+                    opened.setAccessible(true);readyAt.setAccessible(true);
+                    long openAt=opened.getLong(timing),preparedAt=readyAt.getLong(timing);
+                    row.put("prepareMs",openAt>=0 && preparedAt>=openAt?preparedAt-openAt:-1L);
+                    if(item.has("expectedInitialDecoder")) {
+                        Object firstPlayer=field("player").get(activity);
+                        String actual=firstPlayer instanceof IjkMediaPlayer
+                                ? (((IjkMediaPlayer)firstPlayer).getVideoDecoder()==IjkMediaPlayer.FFP_PROPV_DECODER_AVCODEC?"software":"hardware"):"system";
+                        row.put("initialDecoder",actual);
+                        if(!item.getString("expectedInitialDecoder").equals(actual))throw new AssertionError("Wrong initial decoder "+actual);
+                    }
+                    row.put("playerReused",previousPlayer!=null && previousPlayer==field("player").get(activity));
+                    if(item.optBoolean("seekRegression"))SeekRegressionChecks.run(this,activity,row);
+                    if(item.has("expectedSourceIndex")) {
+                        int selectedSource=field("currentSourceIndex").getInt(activity);
+                        row.put("selectedSourceIndex",selectedSource);
+                        if(selectedSource!=item.getInt("expectedSourceIndex"))throw new AssertionError("Wrong fallback source: "+selectedSource);
+                    }
+                    if(item.optBoolean("expectedStaleHintGone")) {
+                        ChannelDecodeHints hints=(ChannelDecodeHints)field("channelDecodeHints").get(activity);
+                        ChannelDecodeHints.Hint old=hints.get(url);
+                        if(old!=null && old.interlaced50())throw new AssertionError("Stale source type not invalidated");
+                        row.put("staleHintRejected",true);
+                    }
+                    if(item.optBoolean("expectedReadyHint")) {
+                        ChannelDecodeHints hints=(ChannelDecodeHints)field("channelDecodeHints").get(activity);
+                        ChannelDecodeHints.Hint hint=hints==null?null:hints.get(url);
+                        row.put("hintReadyAtFirstFrame",hint!=null && hint.interlaced50() && hint.depth>0);
+                        if(hint==null || !hint.interlaced50() || hint.depth<=0)throw new AssertionError("Neighbor metadata not ready before channel playback");
+                    }
+                    row.put("processId",android.os.Process.myPid());
+                    if(item.has("injectSystemError")) {
+                        final Object failedPlayer=field("player").get(activity);
+                        runOnMainSync(()->{try {
+                            Class<?> type=failedPlayer.getClass();Method notify=null;
+                            while(type!=null && notify==null) {
+                                try{notify=type.getDeclaredMethod("notifyOnError",int.class,int.class);}
+                                catch(NoSuchMethodException ignored){type=type.getSuperclass();}
+                            }
+                            if(notify==null)throw new AssertionError("No player error callback");
+                            notify.setAccessible(true);notify.invoke(failedPlayer,item.optInt("injectSystemWhat",1),item.getInt("injectSystemError"));
+                        }catch(Exception error){throw new RuntimeException(error);}});
+                        long errorDeadline=SystemClock.elapsedRealtime()+20000;
+                        boolean crash=item.optInt("injectSystemWhat",1)==100;
+                        while(crash ? field("player").get(activity)==null || field("player").get(activity)==failedPlayer || !field("videoRenderingStarted").getBoolean(activity)
+                                : field("player").get(activity)!=null) {
+                            if(SystemClock.elapsedRealtime()>errorDeadline)throw new AssertionError("Error handling did not finish");
+                            SystemClock.sleep(100);
+                        }
+                        String handled=(String)field("lastSystemPlaybackError").get(activity);
+                        if(!handled.contains(item.getString("expectedErrorText")))throw new AssertionError("Wrong error classification: "+handled);
+                        if(!crash)runOnMainSync(()->{try {
+                            String visible=((android.widget.TextView)field("statusText").get(activity)).getText().toString();
+                            if(!visible.contains(item.getString("expectedErrorText")))throw new AssertionError("Missing user error prompt: "+visible);
+                            row.put("errorPrompt",visible);
+                        }catch(Exception error){throw new RuntimeException(error);}});
+                        row.put("systemPlaybackError",handled).put("status","errorHandled").put("recoveryVerified",crash);
+                        results.put(row);save(report);continue;
+                    }
                     savePending(report,row);
                     if(resolve ? field("activePlayerChannel").get(activity)!=channel
                             : !url.equals(field("activePlayerStreamUrl").get(activity)))
                         throw new AssertionError("Startup request replaced the fixture URL");
+                    if (item.has("expectedDirectHls")) {
+                        tv.danmaku.ijk.media.player.IMediaPlayer current=(tv.danmaku.ijk.media.player.IMediaPlayer)field("player").get(activity);
+                        String source=current.getDataSource();
+                        row.put("playerDataSource",source).put("resolvedUrl",field("activePlayerStreamUrl").get(activity));
+                        boolean nativeSource=source.equals(field("activePlayerStreamUrl").get(activity));
+                        if(nativeSource!=item.getBoolean("expectedDirectHls"))throw new AssertionError("Unexpected HLS transport: "+source);
+                    }
                     if(item.optBoolean("availabilityOnly") || field("player").get(activity) instanceof tv.danmaku.ijk.media.player.AndroidMediaPlayer) {
                         checkSystemPlayer(row,item,report,index);
                         row.put("elapsedMs",SystemClock.elapsedRealtime()-start);results.put(row);save(report);
@@ -508,11 +736,13 @@ public final class PlaylistPlaybackInstrumentation extends Instrumentation {
                         continue;
                     }
                     IjkMediaPlayer player=(IjkMediaPlayer)field("player").get(activity);
+                    int softwareFallbacks = 0;
                     long beginPosition=player.getCurrentPosition();
                     deadline=SystemClock.elapsedRealtime()+Math.max(10000,item.optLong("sampleMs",2000)+5000);
                     // TS audio can advance before enough video has arrived to
                     // publish the first cadence sample. Require both signals.
                     long samplingStart=SystemClock.elapsedRealtime();
+                    long samplingCpuStart=android.os.Process.getElapsedCpuTime();
                     long lastSample=samplingStart,lastPosition=beginPosition;
                     long lastProgressAt=samplingStart,progressPosition=beginPosition,maxProgressGap=0;
                     org.json.JSONArray progressSamples=new org.json.JSONArray();
@@ -520,7 +750,26 @@ public final class PlaylistPlaybackInstrumentation extends Instrumentation {
                     while(player.getCurrentPosition()-beginPosition<1000
                             || SystemClock.elapsedRealtime()-samplingStart<item.optLong("sampleMs",2000)
                             || !(IjkStreamMetrics.outputFrameRate(player)>0)) {
-                        if(field("player").get(activity)!=player)throw new AssertionError("Player replaced");
+                        if(field("player").get(activity)!=player) {
+                            final Object[] currentPlayer = new Object[1];
+                            runOnMainSync(() -> {try {currentPlayer[0]=field("player").get(activity);}
+                                catch(Exception e){throw new RuntimeException(e);}});
+                            Object replacement=currentPlayer[0];
+                            if(!item.optBoolean("expectedSoftwareFallback") || softwareFallbacks >= (item.optBoolean("expectedHardwareRestore") ? 2 : 1)
+                                    || !(replacement instanceof IjkMediaPlayer)) throw new AssertionError("Player replaced");
+                            player=(IjkMediaPlayer)replacement;
+                            softwareFallbacks++;
+                            long readyDeadline=SystemClock.elapsedRealtime()+10000L;
+                            while(!field("prepared").getBoolean(activity) && SystemClock.elapsedRealtime()<readyDeadline)
+                                SystemClock.sleep(100);
+                            if(!field("prepared").getBoolean(activity)
+                                    || player.getVideoDecoder()!=(softwareFallbacks==1 ? IjkMediaPlayer.FFP_PROPV_DECODER_AVCODEC : IjkMediaPlayer.FFP_PROPV_DECODER_MEDIACODEC))
+                                throw new AssertionError("Software fallback failed");
+                            beginPosition=player.getCurrentPosition();
+                            lastPosition=beginPosition;progressPosition=beginPosition;
+                            lastProgressAt=SystemClock.elapsedRealtime();lastSample=lastProgressAt;
+                            deadline+=10000L;
+                        }
                         if(!activity.hasWindowFocus())throw new AssertionError("Lost foreground");
                         if(SystemClock.elapsedRealtime()>deadline)throw new AssertionError("Playback stalled");
                         long sampleTime=SystemClock.elapsedRealtime();
@@ -540,6 +789,69 @@ public final class PlaylistPlaybackInstrumentation extends Instrumentation {
                         }
                         SystemClock.sleep(100);
                     }
+                    if(item.optBoolean("expectedRememberedType")
+                            && player.getVideoDecoder()!=IjkMediaPlayer.FFP_PROPV_DECODER_AVCODEC)
+                        throw new AssertionError("Remembered video type did not select software");
+                    row.put("softwareFallbacks",softwareFallbacks);
+                    if(item.has("expectedNeighborProbeJobs")) {
+                        Object hintCache=field("channelDecodeHints").get(activity);
+                        Field probeField=ChannelDecodeHints.class.getDeclaredField("probe");probeField.setAccessible(true);
+                        Field workerField=SniffedMediaProbe.class.getDeclaredField("worker");workerField.setAccessible(true);
+                        long jobs=hintCache==null?0:((java.util.concurrent.ThreadPoolExecutor)workerField.get(probeField.get(hintCache))).getTaskCount();
+                        long added=jobs-(hintCache==hintCacheBefore?neighborProbesBefore:0);
+                        row.put("newNeighborProbeJobs",added);
+                        if(added!=item.getLong("expectedNeighborProbeJobs"))throw new AssertionError("Unexpected extra neighbor probes: "+added);
+                    }
+                    if(item.has("expectedFinalHint")) {
+                        ChannelDecodeHints hints=(ChannelDecodeHints)field("channelDecodeHints").get(activity);
+                        ChannelDecodeHints.Hint hint=hints==null?null:hints.get(url);
+                        JSONObject expected=item.getJSONObject("expectedFinalHint");
+                        if(hint==null || hint.width!=expected.getInt("width") || hint.height!=expected.getInt("height")
+                                || !hint.scan.equals(expected.getString("scan")) || hint.origin!=1)
+                            throw new AssertionError("IJK did not update durable hint");
+                        row.put("currentIjkHintUpdated",true);
+                    }
+                    long samplingWallMs=SystemClock.elapsedRealtime()-samplingStart;
+                    long samplingCpuMs=android.os.Process.getElapsedCpuTime()-samplingCpuStart;
+                    row.put("playbackCpuMs",samplingCpuMs).put("sampleWallMs",samplingWallMs)
+                            .put("appCpuPercent",samplingWallMs>0?100.0*samplingCpuMs/samplingWallMs:0);
+                    if(item.has("h264SpsCompatibility")) {
+                        row.put("h264SpsCompatibility",item.getBoolean("h264SpsCompatibility"));
+                        HlsProxyServer selectedProxy=(HlsProxyServer)field("proxy").get(activity);
+                        if(selectedProxy!=null) {
+                            Field owned=HlsProxyServer.class.getDeclaredField("ownsH5eWork");owned.setAccessible(true);
+                            Field cmgRequests=HlsProxyServer.class.getDeclaredField("cmgTsRequestIndex");cmgRequests.setAccessible(true);
+                            boolean h5e=owned.getBoolean(selectedProxy);
+                            int cmg=((java.util.concurrent.atomic.AtomicInteger)cmgRequests.get(selectedProxy)).get();
+                            row.put("h5eDecryptActive",h5e).put("cmgDecryptRequests",cmg);
+                            if(item.optBoolean("expectNoSpecialDecrypt") && (h5e || cmg!=0))
+                                throw new AssertionError("Clear media entered a proprietary decrypt path");
+                        }
+                    }
+                    if(item.has("expectNeighborPreparse")) {
+                        boolean active=field("channelDecodeHints").get(activity)!=null
+                                && field("channelPreparseRequest").getInt(activity)>=0;
+                        row.put("neighborPreparseActive",active);
+                        if(active!=item.getBoolean("expectNeighborPreparse"))
+                            throw new AssertionError("Unexpected neighbor preparse policy");
+                    }
+                    if(item.optBoolean("verifySpsToggleWithoutRestart")) {
+                        final Object selectedPlayer=field("player").get(activity);
+                        final int selectedRequest=field("playRequestId").getInt(activity);
+                        final boolean setting=field("h264SpsCompatibility").getBoolean(activity);
+                        Method settings=MainActivity.class.getDeclaredMethod("handleWebSettings",JSONObject.class);
+                        settings.setAccessible(true);
+                        for(boolean next:new boolean[]{!setting,setting}) {
+                            settings.invoke(activity,new JSONObject().put("h264SpsCompatibility",next));
+                            runOnMainSync(()->{});SystemClock.sleep(300);
+                            if(field("player").get(activity)!=selectedPlayer
+                                    || field("playRequestId").getInt(activity)!=selectedRequest)
+                                throw new AssertionError("SPS setting restarted clear playback");
+                        }
+                        row.put("spsTogglePreservedPlayer",true);
+                    }
+                    if(item.optBoolean("expectedSoftwareFallback") && !item.optBoolean("expectedRememberedType") && softwareFallbacks!=(item.optBoolean("expectedHardwareRestore") ? 2 : 1))
+                        throw new AssertionError("Expected exactly one software fallback");
                     row.put("maxProgressGapMs",Math.max(maxProgressGap,SystemClock.elapsedRealtime()-lastProgressAt));
                     float fps=IjkStreamMetrics.outputFrameRate(player);
                     if(!(fps>0))throw new AssertionError("No advancing output frames");
@@ -560,6 +872,14 @@ public final class PlaylistPlaybackInstrumentation extends Instrumentation {
                     float sourceFps=IjkStreamMetrics.sourceFrameRate(player);
                     Method collect=MainActivity.class.getDeclaredMethod("collectPlaybackStreamStats",float.class);
                     collect.setAccessible(true);Object debugStats=collect.invoke(activity,fps);
+                    if(item.has("debugMetadataEnabled") && !item.getBoolean("debugMetadataEnabled")) {
+                        Object activeProxy=field("proxy").get(activity);
+                        java.lang.reflect.Field enabled=HlsProxyServer.class.getDeclaredField("sourceVideoProbeEnabled");
+                        enabled.setAccessible(true);
+                        boolean extraProbe=activeProxy!=null && enabled.getBoolean(activeProxy);
+                        row.put("extraMetadataProbeEnabled",extraProbe);
+                        if(extraProbe)throw new AssertionError("Hidden debug metadata enabled an extra source probe");
+                    }
                     Method format=MainActivity.class.getDeclaredMethod("formatDebugFrameRate",debugStats.getClass());
                     format.setAccessible(true);String fpsLabel=(String)format.invoke(null,debugStats);
                     if(item.optBoolean("checkDebugInfo")) {
@@ -700,6 +1020,12 @@ public final class PlaylistPlaybackInstrumentation extends Instrumentation {
                 sendStatus(0,progress);
                 if(foregroundInterrupted)break;
             }
+            File hintDatabase=activity.getDatabasePath("channel_decode_hints.db");
+            if(hintDatabase.isFile())try(java.io.FileInputStream input=new java.io.FileInputStream(hintDatabase);
+                    FileOutputStream output=new FileOutputStream(new File(report.getParentFile(),"channel_decode_hints.db"))) {
+                byte[] bytes=new byte[32768];int count;
+                while((count=input.read(bytes))>=0)output.write(bytes,0,count);
+            }
             result.putString("stream","channels="+results.length()+" appFailures="+failures
                     +" probeFailures="+probeFailures
                     +" sourceUnavailable="+unavailable+" report="+report+"\n");
@@ -718,6 +1044,7 @@ public final class PlaylistPlaybackInstrumentation extends Instrumentation {
                 else if(value instanceof Set)editor.putStringSet(key,(Set<String>)value);
             }
             editor.commit();
+            if(usbBridge!=null)usbBridge.close();
             if(activity!=null)runOnMainSync(activity::finish);
         }
     }

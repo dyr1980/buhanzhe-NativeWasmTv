@@ -1,0 +1,31 @@
+const fs=require('fs'),os=require('os'),path=require('path'),assert=require('assert');
+const apply=require('../tools/ijk/apply-metadata-probe-patches.cjs');
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'ntv-metadata-overlay-'));
+try {
+ const dir=path.join(root,'ijkmedia/ijkplayer');fs.mkdirSync(dir,{recursive:true});
+ fs.writeFileSync(path.join(dir,'ff_ffplay_def.h'),'#include "ntv_stream_timing.h"\n    int ntv_source_avc_header;\n    int ntv_frame_sync;');
+ fs.copyFileSync(path.join(__dirname,'../tools/ijk/ntv_video_description.h'),path.join(dir,'ntv_video_description.h'));
+ fs.copyFileSync(path.join(__dirname,'../tools/ijk/ntv_stream_probe.h'),path.join(dir,'ntv_stream_probe.h'));
+ fs.appendFileSync(path.join(dir,'ff_ffplay_def.h'),'\n    int ntv_source_parser_serial;');
+ fs.writeFileSync(path.join(dir,'ff_ffplay_options.h'),'    { "ntv-frame-sync",');
+ const player=path.join(dir,'ff_ffplay.c');
+ fs.writeFileSync(player,'    av_format_inject_global_side_data(ic);\n        int orig_nb_streams = ic->nb_streams;\n\n        do {\n            if (av_stristart(is->filename, "data:", NULL) && orig_nb_streams > 0) {\n    /* open the streams */');
+ apply(root);const once=fs.readFileSync(player,'utf8');
+ assert(once.includes('__atomic_store_n(&ffp->ntv_video_description'));
+ assert(once.includes('ntv_h264_extradata_color'));
+ assert(once.includes('av_dict_set(&opts[n], "skip_loop_filter", "all", 0)'));
+ assert(!once.includes('av_dict_set(&ffp->codec_opts, "skip_loop_filter"'));
+ apply(root);assert.strictEqual(fs.readFileSync(player,'utf8'),once);
+ const header=fs.readFileSync(path.join(dir,'ntv_video_description.h'),'utf8');
+ assert(header.includes('if (old & NTV_DESCRIPTION_FRAME) return;'));
+ assert(header.includes('&ffp->ntv_source_header_cache'));
+ assert(header.includes('ffp->first_video_frame_rendered ? &ffp->ntv_source_header_cache : NULL'));
+ apply(root);assert.strictEqual(fs.readFileSync(path.join(dir,'ntv_video_description.h'),'utf8'),header);
+ const probe=fs.readFileSync(path.join(dir,'ntv_stream_probe.h'),'utf8');
+ assert(probe.includes('h264 && scan != 1 && ffp->ntv_source_parser'));
+ assert(probe.includes('structure == AV_PICTURE_STRUCTURE_BOTTOM_FIELD'));
+ assert(probe.includes('ffp->ntv_source_avc_scan = color.scan;'));
+ apply(root);assert.strictEqual(fs.readFileSync(path.join(dir,'ntv_stream_probe.h'),'utf8'),probe);
+ assert.strictEqual(once.split('return 0; /* stream_close owns ic;').length,2);
+ console.log('PASS metadata-only SPS publication, fresh overlay and idempotent rerun');
+} finally {fs.rmSync(root,{recursive:true,force:true});}

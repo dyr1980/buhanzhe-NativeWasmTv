@@ -752,9 +752,7 @@ details[open] summary:after {
   margin: 0;
   padding: 8px 4px;
   transform: translateX(-50%);
-  background: rgba(247, 247, 248, 0.94);
-  -webkit-backdrop-filter: blur(18px);
-  backdrop-filter: blur(18px);
+  background: #f7f7f8;
 }
 .channel-config-page .back-button,
 .media-page-shell .back-button {
@@ -1599,7 +1597,54 @@ a.settings-entry {
   flex: 1;
   min-width: 0;
 }
-.group-item.group-child { margin-left: 24px; border-left: 2px solid var(--border, #e5e5ed); }
+#groupManagerPage > section { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.group-manager-intro { margin: 2px 4px 12px; color: #8a8a8f; font-size: 11px; }
+.group-card { min-width: 0; overflow: hidden; border: 1px solid #e2e2e6; border-radius: 14px; background: #fff; }
+.group-card > .group-item { min-height: 64px; border: 0; border-radius: 0; background: transparent; }
+.group-card.group-editing > .group-item { min-height: 54px; padding-top: 8px; padding-bottom: 8px; }
+.group-card.group-editing .group-copy span { display: none; }
+.group-manage { flex: 0 0 auto; min-height: 36px; padding: 6px 8px; color: #007aff; border: 0; background: transparent; box-shadow: none; font-size: 12px; }
+.group-channel-panel { padding: 0 0 6px; background: #fff; }
+.channel-editor-hint { margin: 0; padding: 8px 12px; color: #8a8a8f; background: #f7f8fa; font-size: 11px; line-height: 1.6; }
+.channel-editor-hint[hidden] { display: none; }
+.channel-editor-tools { display: flex; align-items: center; gap: 6px; min-height: 52px; padding: 8px 10px; border-top: 1px solid #eeeff2; border-bottom: 1px solid #eeeff2; }
+.channel-editor-identity { flex: 1; min-width: 0; }
+.channel-editor-title { display: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 600; }
+.channel-editor-summary { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: #8a8a8f; }
+.channel-editor-tools button { flex: 0 0 auto; min-height: 34px; padding: 6px 9px; font-size: 12px; box-shadow: none; }
+.channel-editor-tools .channel-editor-full { color: #007aff; background: transparent; border: 0; padding: 6px 0; }
+.channel-editor-tools .channel-editor-help { width: 26px; min-height: 28px; height: 28px; border: 1px solid #e5e5ea; border-radius: 50%; padding: 0; color: #8a8a8f; background: transparent; font-size: 12px; font-weight: 500; }
+.channel-editor-tools .channel-editor-cancel { color: #6e6e73; border: 0; background: transparent; padding: 6px 2px; }
+.channel-editor-viewport { height: 480px; max-height: 65vh; min-height: 180px; margin: 0 10px; overflow-y: auto; position: relative; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; contain: layout paint; overflow-anchor: none; }
+.channel-editor-open { overflow: hidden; }
+.channel-editor-open .message { z-index: 120; }
+.channel-editor-fullscreen { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 100; display: flex; flex-direction: column; width: 100%; padding: 0; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); border: 0; border-radius: 0; background: #fff; }
+.channel-editor-fullscreen .channel-editor-tools { flex: 0 0 auto; min-height: 64px; padding: 8px 12px; border-top: 0; }
+.channel-editor-fullscreen:focus { outline: none; }
+.channel-editor-fullscreen .channel-editor-title { display: block; }
+.channel-editor-fullscreen .channel-editor-summary { margin-top: 3px; }
+.channel-editor-fullscreen .channel-editor-full { width: 28px; min-height: 40px; padding: 0; text-align: left; font-size: 30px; line-height: 1; font-weight: 400; }
+.channel-editor-fullscreen .channel-editor-viewport { flex: 1 1 0; height: auto; min-height: 0; max-height: none; margin: 0 12px; }
+.channel-editor-fullscreen .channel-editor-hint { flex: 0 0 auto; }
+.channel-editor-space { position: relative; }
+.managed-channel-row { position: absolute; left: 0; right: 0; height: 60px; display: flex; align-items: center; gap: 8px; padding: 0 4px 0 0; border-bottom: 1px solid #eeeff2; background: #fff; }
+.managed-channel-copy { flex: 1; min-width: 0; }
+.managed-channel-copy b { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; font-weight: 600; }
+.managed-channel-copy span { display: block; margin-top: 4px; color: #98989e; font-size: 10px; }
+.channel-drag-handle { width: 28px; height: 44px; min-height: 44px; flex: 0 0 28px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 8px; color: #a1a5ae; background: transparent; box-shadow: none; cursor: grab; touch-action: none; }
+.channel-drag-handle svg { display: block; width: 17px; height: 21px; fill: currentColor; pointer-events: none; }
+.channel-order-controls { display: flex; flex: 0 0 auto; padding: 1px; border: 1px solid #e9ebef; border-radius: 9px; background: #f6f7f9; }
+.channel-order-controls button { display: flex; align-items: center; justify-content: center; width: 29px; height: 34px; min-height: 34px; padding: 0; border: 0; border-radius: 7px; color: #677587; background: transparent; box-shadow: none; }
+.channel-order-controls button + button { border-left: 1px solid #e9ebef; border-radius: 0 7px 7px 0; }
+.channel-order-controls svg { display: block; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.channel-drag-handle:active, .channel-order-controls button:active { color: #007aff; background: #e9eef6; }
+.managed-channel-row .source-toggle { width: 40px; height: 24px; min-height: 24px; flex: 0 0 40px; margin: 0 2px 0 0; }
+.managed-channel-row .source-toggle:before { width: 20px; height: 20px; }
+.managed-channel-row .source-toggle:checked:before { transform: translateX(16px); }
+.channel-hidden .managed-channel-copy { opacity: 0.55; }
+.channel-drop-target { background: #eaf3ff; box-shadow: inset 0 2px #007aff; }
+.channel-dragging { user-select: none; -webkit-user-select: none; cursor: grabbing; }
+.channel-dragging button:active { transform: none; }
 .group-copy b {
   display: block;
   overflow: hidden;

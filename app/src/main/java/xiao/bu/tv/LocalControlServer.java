@@ -46,6 +46,7 @@ final class LocalControlServer implements Closeable {
         void takeoverSessionMessage(JSONObject request) throws Exception;
         void takeoverSessionClosed(String sessionId);
         String settings(JSONObject request) throws Exception;
+        String playlistChannels(String groupId) throws Exception;
         String importUserScript(JSONObject request) throws Exception;
         String checkUpdate() throws Exception;
         String installUpdate() throws Exception;
@@ -531,6 +532,9 @@ final class LocalControlServer implements Closeable {
             Resource resource = listener.playlistSource(
                     queryParameter(requestTarget, "location"));
             send(socket, 200, resource.contentType, resource.body);
+        } else if ("GET".equals(method) && "/api/playlist/channels".equals(path)) {
+            send(socket, 200, "application/json; charset=utf-8",
+                    listener.playlistChannels(queryParameter(requestTarget, "group")).getBytes("UTF-8"));
         } else if ("POST".equals(method) && "/api/playlist/merge".equals(path)) {
             send(socket, 200, "application/json; charset=utf-8",
                     listener.mergePlaylist(new JSONObject(new String(body, "UTF-8")))

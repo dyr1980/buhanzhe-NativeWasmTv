@@ -75,7 +75,7 @@ public final class ProviderLiveInstrumentation extends Instrumentation {
         main(()->{
             set("playRequestId",(Integer)get("playRequestId")+1);
             ((java.util.concurrent.atomic.AtomicInteger)get("catalogLoadGeneration")).incrementAndGet();
-            call("cancelPendingChannelListSelection");call("cancelHttpResolve");call("cancelChannelWarmup");
+            call("cancelPendingChannelListSelection");call("cancelHttpResolve");call("cancelChannelManifest");
             call("closeWebSource");call("releasePlayer");
         });
         SystemClock.sleep(250);

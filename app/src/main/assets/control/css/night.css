@@ -1,6 +1,24 @@
 html[data-theme="dark"], html[data-theme="dark"] body { background: #111113; color: #f2f2f7; }
 html[data-theme="dark"] .phone-keyboard { background: #19191b; }
 html[data-theme="dark"] .channel-config-page .top { background: #111113; color: #f2f2f7; }
+html[data-theme="dark"] .group-channel-panel,
+html[data-theme="dark"] .channel-editor-viewport,
+html[data-theme="dark"] .managed-channel-row { background: #1c1c1e; border-color: #38383a; }
+html[data-theme="dark"] .channel-editor-summary { color: #aeaeb2; }
+html[data-theme="dark"] .group-card { background: #1c1c1e; border-color: #38383a; }
+html[data-theme="dark"] .group-card > .group-item { background: transparent; border: 0; }
+html[data-theme="dark"] .channel-editor-tools { border-color: #38383a; }
+html[data-theme="dark"] .channel-editor-tools .channel-editor-full { color: #64adff; background: transparent; }
+html[data-theme="dark"] .channel-editor-tools .channel-editor-cancel { color: #aeaeb2; background: transparent; }
+html[data-theme="dark"] .channel-editor-tools .channel-editor-help { color: #aeaeb2; background: transparent; border-color: #48484a; }
+html[data-theme="dark"] .channel-editor-hint { background: #252528; color: #aeaeb2; }
+html[data-theme="dark"] .group-manage { color: #64adff; background: transparent; }
+html[data-theme="dark"] .channel-order-controls { background: #2c2c2e; border-color: #3a3a3e; }
+html[data-theme="dark"] .channel-order-controls button { color: #b1bdcf; background: transparent; border-color: #3a3a3e; }
+html[data-theme="dark"] .channel-order-controls button:active,
+html[data-theme="dark"] .channel-drag-handle:active { color: #64adff; background: #18314f; }
+html[data-theme="dark"] .channel-drag-handle { color: #aeaeb2; background: transparent; }
+html[data-theme="dark"] .channel-drop-target { background: #18314f; }
 html[data-theme="dark"] .channel-config-page section:not(.config-hero),
 html[data-theme="dark"] .switch-row { border-color: #38383a; }
 html[data-theme="dark"] section,

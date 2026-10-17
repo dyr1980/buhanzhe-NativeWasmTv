@@ -155,10 +155,11 @@ public final class ManagementActivity extends Activity {
         }
         webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
         webView.setBackgroundColor(systemDark ? Color.rgb(17, 17, 19) : Color.rgb(247, 247, 248));
-        // Several Android TV/tablet WebView implementations render a black frame when
-        // a hardware-decoded Surface is paused underneath. The local control page is
-        // lightweight, so software composition is more reliable here.
-        webView.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+        // Retain the decoder-overlay workaround on TVs/tablets and legacy WebViews.
+        // Phones show an opaque page: use the normal GPU compositor
+        // there so scrolling does not repaint the entire WebView in software.
+        webView.setLayerType(Build.VERSION.SDK_INT >= 21 && !sidebarDevice
+                ? View.LAYER_TYPE_NONE : View.LAYER_TYPE_SOFTWARE, null);
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);

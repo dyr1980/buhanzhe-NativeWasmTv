@@ -68,6 +68,7 @@ final class CachedVideoMetadataProbe {
             probe.setOnPreparedListener(player -> { prepared[0] = true; ready.countDown(); });
             probe.setOnErrorListener((player, what, extra) -> { ready.countDown(); return true; });
             probe.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "start-on-prepared", 0);
+            probe.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "ntv-metadata-only", 1);
             probe.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec", 0);
             probe.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "an", 1);
             probe.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "packet-buffering", 0);

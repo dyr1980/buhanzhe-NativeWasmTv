@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
     <title>高级设置 · nTv</title>
     <script src="/js/theme.js"></script>
-    <link rel="stylesheet" href="/css/common.css" />
-    <link rel="stylesheet" href="/css/night.css" />
+    <link rel="stylesheet" href="/css/common.css?v=20261016" />
+    <link rel="stylesheet" href="/css/night.css?v=20261016" />
   </head>
   <body data-parent="/index.html">
     <main class="secondary-page channel-config-page">
@@ -122,7 +122,7 @@
             </select>
           </div>
           <div class="field">
-            <label for="spsCompatibility">H.264 SPS 兼容清理</label>
+            <label for="spsCompatibility">加密码流 H.264 SPS 兼容清理</label>
             <select id="spsCompatibility" onchange="saveDecoder()">
               <option value="true">开启（修复）</option>
               <option value="false">关闭（原始码流 A/B）</option>
@@ -132,6 +132,7 @@
         <p class="hint">
           播放器固定使用定制 IJK，支持 RTSP 与 MP2 音频。RTSP 默认走 TCP；局域网低延迟场景可切换 UDP。
         </p>
+        <p class="hint">SPS 兼容清理仅用于央视频、央视网专用解密流程；普通未加密码流不做清理，也无需因此重新播放。</p>
         <p class="hint">隔行视频追求画质可选软解：自动使用 BWDIF 逐场去隔行，1080i50 输出目标为 50fps；逐行视频直接播放。处理速度取决于 CPU 性能。硬解由系统处理去隔行，应用无法统一保证其算法与输出场率。</p>
         <p class="hint">自动：屏幕支持对应 HDR 格式且系统为 Android 8.0 及以上时直出，否则转为 SDR。转为 SDR：Android 12 及以上优先使用解码器映射，旧系统使用 GPU。GPU 转为 SDR：硬解时固定使用 GPU 映射，适合解码器映射颜色异常的设备。强制 BT.709：仅用于源色彩标记异常，不做 HDR 亮度映射。解码方式仍由解码设置控制；切换后重新播放当前频道。</p>
       </section>

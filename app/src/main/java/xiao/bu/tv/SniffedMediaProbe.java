@@ -29,6 +29,9 @@ final class SniffedMediaProbe {
         String error = "";
         long durationMs, bitrate;
         int width, height;
+        String videoCodec = "--";
+        float frameRate;
+        VideoStreamDescription videoDescription = VideoStreamDescription.UNKNOWN;
         boolean manifestKnown, live, bitrateEstimated;
         String variant, sampleSegment;
         double sampleSeconds;
@@ -50,11 +53,18 @@ final class SniffedMediaProbe {
     void clear() { generation.incrementAndGet(); worker.getQueue().clear(); }
     void close() { clear(); worker.shutdownNow(); }
     void submit(String url, String pageUrl, String agent, String cookies, Callback callback) {
+        submit(url, pageUrl, agent, cookies, false, callback);
+    }
+    void submitLightweight(String url, Callback callback) {
+        submit(url, null, HlsProxyServer.DEFAULT_USER_AGENT, null, true, callback);
+    }
+    private void submit(String url, String pageUrl, String agent, String cookies,
+            boolean lightweight, Callback callback) {
         final int expected = generation.get();
         worker.execute(() -> {
             if (expected != generation.get()) return;
             Result result = new Result();
-            long deadline = SystemClock.elapsedRealtime() + 10000;
+            long deadline = SystemClock.elapsedRealtime() + (lightweight ? 4000 : 10000);
             IjkMediaPlayer player = null;
             HlsProxyServer probeProxy = null;
             String probeUrl = url;
@@ -77,7 +87,7 @@ final class SniffedMediaProbe {
                             String manifest = readManifest(target, pageUrl, agent, cookies, expected, deadline);
                             inspectManifest(manifest, result);
                             if (result.variant == null) {
-                                if (result.bitrate <= 0 && result.sampleSegment != null && result.sampleSeconds > 0
+                                if (!lightweight && result.bitrate <= 0 && result.sampleSegment != null && result.sampleSeconds > 0
                                         && expected == generation.get() && SystemClock.elapsedRealtime() < deadline) {
                                     String segment=HlsUri.resolve(java.net.URI.create(target), result.sampleSegment).toString();
                                     if(probeProxy!=null)segment=probeProxy.probeOriginUrl(segment);
@@ -148,6 +158,7 @@ final class SniffedMediaProbe {
                 if (prepared[0]) {
                     IjkMediaMeta meta = IjkMediaMeta.parse(player.getMediaMeta());
                     if (meta != null) applyMeta(result, meta);
+                    result.videoDescription = IjkStreamMetrics.videoDescription(player);
                     // A short-lived live segment can expire before HEAD, or the
                     // origin can omit Content-Length. Reuse the segment already
                     // fetched for discovery instead of downloading another one.
@@ -174,7 +185,9 @@ final class SniffedMediaProbe {
                 }
                 if (probeProxy != null) probeProxy.close();
             }
-            if (expected == generation.get()) callback.complete(result);
+            // Only the advisory cache can retain a completed result after cancellation.
+            // Resource-card callers still discard obsolete page/media results.
+            if (expected == generation.get() || lightweight && "ready".equals(result.status)) callback.complete(result);
         });
     }
 
@@ -184,6 +197,10 @@ final class SniffedMediaProbe {
         result.error = "";
         if (!result.manifestKnown) result.durationMs = Math.max(0, meta.mDurationUS / 1000);
         if (meta.mVideoStream != null) {
+            String codec = meta.mVideoStream.mCodecName;
+            result.videoCodec = "h264".equals(codec) ? "H.264" : "hevc".equals(codec) ? "H.265" : codec;
+            if (meta.mVideoStream.mFpsDen > 0)
+                result.frameRate = (float) meta.mVideoStream.mFpsNum / meta.mVideoStream.mFpsDen;
             if (meta.mVideoStream.mWidth > 0) result.width = meta.mVideoStream.mWidth;
             if (meta.mVideoStream.mHeight > 0) result.height = meta.mVideoStream.mHeight;
             result.type = result.manifestKnown ? (result.live ? "live" : "video")

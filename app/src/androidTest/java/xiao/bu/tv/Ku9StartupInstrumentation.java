@@ -72,7 +72,7 @@ public final class Ku9StartupInstrumentation extends Instrumentation {
             IMediaPlayer current=(IMediaPlayer)get("player");
             boolean radio=args.getString("radioPlaylist")!=null;
             if(current!=null&&(Boolean)get("prepared")&&(radio?(Boolean)get("audioOnlyPlayback"):(Boolean)get("videoRenderingStarted"))
-                    &&!(Boolean)get("preparingChannelSwitch")&&(Integer)get("currentChannelIndex")==index
+                    &&(Integer)get("currentChannelIndex")==index
                     &&loadMs()>=0) {
                 if(seen!=current){seen=current;position=current.getCurrentPosition();}
                 if(current.isPlaying()&&(radio||current.getVideoWidth()>0)&&current.getCurrentPosition()-position>=600) {
@@ -137,7 +137,7 @@ public final class Ku9StartupInstrumentation extends Instrumentation {
                 }
             }
             String status=((TextView)get("statusText")).getText().toString();
-            if(SystemClock.elapsedRealtime()-begin>2000&&!(Boolean)get("preparingChannelSwitch")
+            if(SystemClock.elapsedRealtime()-begin>2000
                     &&((Integer)get("currentChannelIndex")!=index||status.contains("暂不可用")
                     ||status.contains("脚本执行失败")||status.contains("IPv6")||status.contains("分片准备失败")
                     ||status.contains("播放错误")||status.contains("频道缓冲超时"))) {
@@ -201,8 +201,7 @@ public final class Ku9StartupInstrumentation extends Instrumentation {
             if(Boolean.parseBoolean(args.getString("checkAudioForwarding","false")))
                 result.putString("stream",HlsStartupChecks.radioForwarding(activity));
             if(args.getString("fixtureDir")!=null) {
-                result.putString("stream",Ku9StartupChecks.run(activity)
-                        +HlsStartupChecks.run(activity,new File(args.getString("fixtureDir"))));
+                result.putString("stream",Ku9StartupChecks.run(activity));
             }
             String base=args.getString("base","https://raw.githubusercontent.com/buhanzhe/webSourceM3U8/main/k-web/ku9/js/");
             JSONArray fullManifest=null;

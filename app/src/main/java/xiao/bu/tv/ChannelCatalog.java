@@ -249,46 +249,10 @@ final class ChannelCatalog {
         int index = 0;
         for (Group group : groups) {
             if (group == null) continue;
-            Channel[] channels = group.channels;
-            if ("央视频道".equals(group.title)) {
-                channels = moveCctv5PlusToPosition18(channels);
-            }
-            normalized[index++] = new Group(group.title, group.source, channels);
+            normalized[index++] = new Group(group.title, group.source, group.channels);
         }
         return normalized;
     }
-
-    private static Channel[] moveCctv5PlusToPosition18(Channel[] channels) {
-        if (channels == null || channels.length < 18) {
-            return channels;
-        }
-        int sourceIndex = -1;
-        for (int index = 0; index < channels.length; index++) {
-            String name = channels[index].name == null ? ""
-                    : channels[index].name.toUpperCase(java.util.Locale.US)
-                            .replace("-", "").replace(" ", "");
-            if (name.startsWith("CCTV5+")) {
-                sourceIndex = index;
-                break;
-            }
-        }
-        int targetIndex = 17;
-        if (sourceIndex < 0 || sourceIndex == targetIndex) {
-            return channels;
-        }
-        Channel[] reordered = channels.clone();
-        Channel moved = reordered[sourceIndex];
-        if (sourceIndex < targetIndex) {
-            System.arraycopy(reordered, sourceIndex + 1, reordered, sourceIndex,
-                    targetIndex - sourceIndex);
-        } else {
-            System.arraycopy(reordered, targetIndex, reordered, targetIndex + 1,
-                    sourceIndex - targetIndex);
-        }
-        reordered[targetIndex] = moved;
-        return reordered;
-    }
-
     static String displayNumber(int groupIndex, int channelIndex) {
         int number = globalNumber(groupIndex, channelIndex);
         if (number > 0) {

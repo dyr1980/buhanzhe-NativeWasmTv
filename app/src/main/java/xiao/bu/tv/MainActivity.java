@@ -148,7 +148,6 @@ public final class MainActivity extends Activity {
     private static final String WEB_VIEW_LOAD_IMAGES = "web_view_load_images";
     private static final String WEB_VIEW_AUTO_PLAY_SNIFFED =
             "web_view_auto_play_sniffed";
-    private static final String WEB_VIEW_AUTO_CLOSE_SNIFFED = "web_view_auto_close_sniffed";
     private static final String WEB_VIEW_USER_AGENT = "web_view_user_agent";
     private static final String WEB_VIEW_USER_AGENT_WINDOWS = "windows";
     private static final String WEB_VIEW_USER_AGENT_MACOS = "macos";
@@ -236,7 +235,6 @@ public final class MainActivity extends Activity {
     private static final long VIDEO_RENDER_START_TIMEOUT_MS = 10000L;
     private static final long LEGACY_HLS_STARTUP_GRACE_MS = 25000L;
     private static final long LEGACY_HLS_MAX_STARTUP_MS = 45000L;
-    private static final long GESTURE_SWITCH_ANIMATION_MS = 220L;
     private static final long GESTURE_REBOUND_ANIMATION_MS = 230L;
     private static final long GESTURE_REBOUND_FINISH_MS = 240L;
     private static final DecelerateInterpolator GESTURE_SWITCH_EASING =
@@ -371,6 +369,7 @@ public final class MainActivity extends Activity {
     private WebSourceView webSourceView;
     private FlyMouseCursorView flyMouseCursor;
     private volatile boolean receiverCursorActive;
+    private volatile boolean receiverRenderOnly;
     private volatile float receiverCursorX, receiverCursorY;
     private long receiverCursorClick = -1L;
     private String receiverCursorStream = "";
@@ -392,10 +391,12 @@ public final class MainActivity extends Activity {
                 pendingReceiverCursor = null;
                 receiverCursorPosted = false;
             }
-            if (state == null || !state.optString("sessionId").equals(remoteTakeoverSessionId)
+            boolean streamCursor=state!=null && receiverRenderOnly && multimedia!=null
+                    && multimedia.acceptsCursor(state.optString("sessionId"));
+            if (state == null || !prepared || !streamCursor && (!state.optString("sessionId").equals(remoteTakeoverSessionId)
                     || remoteCatalogUrl.length() == 0 || !prepared
                     || receiverStreamSessionId.length() == 0
-                    || !receiverStreamSessionId.equals(state.optString("stream"))) {
+                    || !receiverStreamSessionId.equals(state.optString("stream")))) {
                 clearReceiverCursor();
                 return;
             }
@@ -431,9 +432,11 @@ public final class MainActivity extends Activity {
         }
     };
 
-    private void receiveCastCursor(JSONObject state) {
-        if (!state.optString("sessionId").equals(remoteTakeoverSessionId)
-                || remoteCatalogUrl.length() == 0 || root == null) return;
+    void receiveCastCursor(JSONObject state) {
+        boolean streamCursor=receiverRenderOnly && multimedia!=null
+                && multimedia.acceptsCursor(state.optString("sessionId"));
+        if (root==null || !streamCursor && (!state.optString("sessionId").equals(remoteTakeoverSessionId)
+                || remoteCatalogUrl.length() == 0)) return;
         synchronized (receiverCursorLock) {
             pendingReceiverCursor = state;
             if (receiverCursorPosted) return;
@@ -577,6 +580,7 @@ public final class MainActivity extends Activity {
     private int userScriptInstallGeneration;
 
     private String directHttpMediaUrl;
+    private int directHlsFallbackRequestId = -1;
     private boolean activeEmbeddedCctvResolver;
     private boolean activeEmbeddedYangshipinResolver;
     private boolean activeEmbeddedCjsResolver;
@@ -604,7 +608,6 @@ public final class MainActivity extends Activity {
     private String playingSniffedGroup = "";
     private String playingSniffedPageUrl = "";
     private long sniffedPlaybackGeneration;
-    private final SniffedPlaybackWarmup sniffedPlaybackWarmup = new SniffedPlaybackWarmup();
     private int manualWebPlaybackRequestId = -1;
     private String manualWebPlaybackPageKey = "";
     private final LinkedHashMap<String, SniffedResource> sniffedResources =
@@ -678,14 +681,8 @@ public final class MainActivity extends Activity {
     private String systemCpuMetricSource = "";
     private boolean buffering;
     private boolean bufferingStatusVisible;
-    private boolean preparingChannelSwitch;
-    private HlsProxyServer outgoingPlaybackProxy;
-    private boolean outgoingProxyStateful;
-    private Channel outgoingReopenChannel;
-    private String outgoingReopenUrl;
-    private Thread channelWarmupThread;
+    private Thread channelManifestThread;
     private int activePlayerGroupIndex=-1,activePlayerChannelIndex=-1,activePlayerSourceIndex;
-    private int disableHotSwitchRequestId=-1;
     private String channelPlaybackStatus = "";
     private int channelPlaybackStatusRequestId = -1;
     private boolean playbackProgressObserved;
@@ -723,6 +720,8 @@ public final class MainActivity extends Activity {
     private volatile boolean autoStart;
     private volatile String decodeMode;
     private volatile String hdrMode;
+    private Runnable pendingIjkPrepareAfterRelease;
+    private Runnable pendingSystemPrepareAfterRelease;
     private java.util.concurrent.CountDownLatch playerReleaseComplete =
             new java.util.concurrent.CountDownLatch(0);
     private volatile String hardwareDecoder;
@@ -738,7 +737,6 @@ public final class MainActivity extends Activity {
     private volatile boolean webViewLoadImages;
     private volatile boolean webViewMinimalMode;
     private volatile boolean webViewAutoPlaySniffed;
-    private volatile boolean webViewAutoCloseSniffed = true;
     private volatile String webViewUserAgent;
     private volatile String webViewBrowserVersion;
     private volatile boolean webViewAdBlock;
@@ -752,6 +750,7 @@ public final class MainActivity extends Activity {
 
     private volatile String clockLocation;
     private volatile boolean showDebugInfo;
+    private String lastSystemPlaybackError = "";
     private volatile boolean showLoadTiming;
     private volatile boolean showColorDebugInfo;
     private volatile boolean showNetworkSpeed;
@@ -838,7 +837,6 @@ public final class MainActivity extends Activity {
     private AudioManager playbackAudioManager;
     private ChannelMediaSession channelMediaSession;
     private boolean mutedByAudioFocus;
-    private long playbackAudioFocusGeneration;
     private boolean mutedByCallMode;
     private ServiceConnection crashRecoveryConnection;
     private boolean crashRecoveryBound;
@@ -888,7 +886,6 @@ public final class MainActivity extends Activity {
             new AudioManager.OnAudioFocusChangeListener() {
         @Override
         public void onAudioFocusChange(int focusChange) {
-            playbackAudioFocusGeneration++;
             mutedByAudioFocus = focusChange != AudioManager.AUDIOFOCUS_GAIN;
             refreshCallAudioMute();
             applyPlaybackMuteState();
@@ -1098,6 +1095,8 @@ public final class MainActivity extends Activity {
         reverseUpDown = preferences.getBoolean(REVERSE_UP_DOWN, false);
         autoStart = preferences.getBoolean(AUTO_START, false);
         decodeMode = sanitizeDecodeMode(preferences.getString(DECODE_MODE, DECODE_MODE_AUTO));
+        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.KITKAT && DECODE_MODE_AUTO.equals(decodeMode))
+            channelDecodeHints = new ChannelDecodeHints(this); // Async disk warmup; never gates prepare.
         hdrMode = HdrMode.sanitize(preferences.getString(HDR_MODE, HdrMode.DEFAULT));
         hardwareDecoder = sanitizeHardwareDecoder(preferences.getString(
                 HARDWARE_DECODER, detectedDefaultDecoder));
@@ -1124,7 +1123,6 @@ public final class MainActivity extends Activity {
                 preferences.getFloat(WEB_VIEW_PAGE_SCALE, 1f));
         webViewAutoPlaySniffed = preferences.getBoolean(
                 WEB_VIEW_AUTO_PLAY_SNIFFED, true);
-        webViewAutoCloseSniffed = preferences.getBoolean(WEB_VIEW_AUTO_CLOSE_SNIFFED, true);
         webViewUserAgent = sanitizeWebViewUserAgent(preferences.getString(
                 WEB_VIEW_USER_AGENT, WEB_VIEW_USER_AGENT_WINDOWS));
         String storedBrowserVersion = preferences.getString(WEB_VIEW_BROWSER_VERSION,
@@ -1809,7 +1807,6 @@ public final class MainActivity extends Activity {
                     resource.userAgent, resource.cookies);
         }
         playingSniffedResource = resource;
-        sniffedPlaybackWarmup.reset();
         lastBackPressedAt = 0L;
         playingSniffedTitle = webSourceView.currentChannelTitle();
         playingSniffedChannelUrl = webSourceView.currentChannelUrl();
@@ -1831,10 +1828,8 @@ public final class MainActivity extends Activity {
         webSourceView.hideForStreamPlayback();
         videoView.setVisibility(View.VISIBLE);
         showLoading(channel.name, "正在打开所选嗅探资源");
-        showChannelBar(channel.name, webViewAutoCloseSniffed
-                ? "已打开网页资源 · 成功播放 15 秒后关闭网页，清理前可返回"
-                : "已打开网页资源 · 返回可回到原网页");
-        startResolvedPlayer(channel, resource.url);
+        showChannelBar(channel.name, "已打开网页资源 · 返回可回到原网页");
+        startResolvedPlayer(channel, resource.url, isDirectHttpMediaSource(resource.url));
     }
 
     private void openWebSource(Channel channel, String configuredUrl, int requestId) {
@@ -2059,6 +2054,10 @@ public final class MainActivity extends Activity {
     }
 
     void startMultimediaReceiver(String url, String transport, String title) {
+        receiverRenderOnly=true;
+        ((PlayerRootLayout)root).setReceiverLayers(videoView,flyMouseCursor);
+        clearReceiverCursor();
+        audioArtwork.clear();
         multimediaReceiverChannel = new Channel("", title, "multimedia", url, null, null);
         beginChannelSwitchTiming(playRequestId, SystemClock.elapsedRealtime());
         videoView.setVisibility(View.VISIBLE);
@@ -2066,6 +2065,9 @@ public final class MainActivity extends Activity {
     }
 
     void restoreAfterMultimedia() {
+        receiverRenderOnly=false;
+        ((PlayerRootLayout)root).setReceiverLayers(null,null);
+        clearReceiverCursor();
 
         if (!multimediaSuspended) return;
         multimediaSuspended = false;
@@ -2152,6 +2154,11 @@ public final class MainActivity extends Activity {
                 @Override
                 public String settings(JSONObject request) throws Exception {
                     return handleWebSettings(request);
+                }
+
+                @Override
+                public String playlistChannels(String groupId) throws Exception {
+                    return playlistManager.getChannelSettingsJson(groupId).toString();
                 }
 
                 @Override
@@ -2698,7 +2705,6 @@ public final class MainActivity extends Activity {
                     .put("webViewMinimalMode", webViewMinimalMode)
                     .put("webViewLoadImages", webViewLoadImages)
                     .put("webViewAutoPlaySniffed", webViewAutoPlaySniffed)
-                    .put("webViewAutoCloseSniffed", webViewAutoCloseSniffed)
                     .put("webViewUserAgent", webViewUserAgent)
                     .put("webViewBrowserVersion", webViewBrowserVersion)
                     .put("webViewAdBlock", webViewAdBlock)
@@ -2754,6 +2760,7 @@ public final class MainActivity extends Activity {
     }
 
     private String handleWebControl(JSONObject request) throws JSONException {
+        if(receiverRenderOnly)throw new JSONException("电视只渲染投屏，请在手机操作");
         final String action = request.optString("action", "");
         if ("volume".equals(action)) {
             final int direction = request.optInt("direction", 0);
@@ -3167,8 +3174,6 @@ public final class MainActivity extends Activity {
                 .put("outputFps", Math.round(outputFps * 10f) / 10.0d)
                 .put("videoCachedDurationMs", videoCachedDurationMs)
                 .put("receiverDelayMs", receiverDelayMs)
-                .put("hlsDiskCacheBytes", proxy == null ? 0 : proxy.vodDiskCachedBytes())
-                .put("hlsDiskCachePreparing", proxy != null && proxy.isVodCachePreparing())
                 .put("seekable", prepared && duration > 0L)
                 .put("speedAvailable", prepared && playbackSpeedAvailable(activePlayer))
                 .put("speed", Math.round(playbackSpeed * 100f) / 100.0d)
@@ -3369,6 +3374,7 @@ public final class MainActivity extends Activity {
     }
 
     private String handleMediaControl(final JSONObject request) throws Exception {
+        if(receiverRenderOnly)throw new IOException("请在发送手机操作媒体");
 
         final String action = request.optString("action", "");
         if (!"seek".equals(action) && !"speed".equals(action)
@@ -3482,14 +3488,13 @@ public final class MainActivity extends Activity {
             throw new IOException("当前节目尚未准备完成");
         }
         if ("seek".equals(action)) {
-            mediaTrackChangeGeneration++;
             long duration = Math.max(0L, activePlayer.getDuration());
             if (duration <= 0L) {
                 throw new IOException("当前直播节目不支持进度拖动");
             }
             long position = Math.max(0L, Math.min(duration,
                     request.optLong("positionMs", 0L)));
-            activePlayer.seekTo(position);
+            seekPlayback(position);
             showPlaybackProgress(position);
         } else if ("speed".equals(action)) {
             if (!playbackSpeedAvailable(activePlayer)) {
@@ -3695,6 +3700,7 @@ public final class MainActivity extends Activity {
     }
 
     private String dispatchWebPointer(JSONObject request) throws Exception {
+        if(receiverRenderOnly)throw new IOException("投屏鼠标只用于渲染");
         // Receiver-side management pages must not relay input back to the owner.
         // Cursor state arrives separately on the authenticated cast channel.
         if (remoteCatalogUrl.length() > 0) {
@@ -4372,7 +4378,10 @@ public final class MainActivity extends Activity {
         if (request.has("h264SpsCompatibility")) {
             boolean requestedCompatibility = request.optBoolean(
                     "h264SpsCompatibility", true);
-            restartPlayback |= requestedCompatibility != h264SpsCompatibility;
+            restartPlayback |= requestedCompatibility != h264SpsCompatibility
+                    && (activeEmbeddedYangshipinResolver || isActiveCctvWebSource()
+                        || HlsProxyServer.needsSpecialDecrypt(
+                                activePlayerStreamUrl == null ? "" : activePlayerStreamUrl));
             h264SpsCompatibility = requestedCompatibility;
             getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit()
                     .putBoolean(H264_SPS_COMPATIBILITY, h264SpsCompatibility).apply();
@@ -4520,15 +4529,7 @@ public final class MainActivity extends Activity {
                     .putBoolean(WEB_VIEW_AUTO_PLAY_SNIFFED,
                             webViewAutoPlaySniffed).apply();
         }
-        if (request.has("webViewAutoCloseSniffed")) {
-            final boolean autoClose = request.optBoolean("webViewAutoCloseSniffed", true);
-            runOnMainThreadAndWait(() -> {
-                if (webViewAutoCloseSniffed != autoClose) sniffedPlaybackWarmup.reset();
-                webViewAutoCloseSniffed = autoClose;
-            });
-            getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit()
-                    .putBoolean(WEB_VIEW_AUTO_CLOSE_SNIFFED, autoClose).apply();
-        }
+
         if (request.has("webViewUserAgent")) {
             String rawUserAgent = request.optString(
                     "webViewUserAgent", WEB_VIEW_USER_AGENT_WINDOWS);
@@ -4850,6 +4851,12 @@ public final class MainActivity extends Activity {
                     request.optJSONArray("playlistGroupStates"));
             applyPlaylistGroupVisibility(customGroups);
             message = "频道分组设置已保存";
+        }
+        if (request.has("playlistChannelSettings")) {
+            final ChannelCatalog.Group[] customGroups = playlistManager.updateChannelSettings(
+                    request.optJSONObject("playlistChannelSettings"));
+            applyPlaylistGroupVisibility(customGroups);
+            message = "频道顺序与显示设置已保存";
         }
         if (request.has("playlistSources")) {
             JSONArray sources = request.optJSONArray("playlistSources");
@@ -5673,23 +5680,26 @@ public final class MainActivity extends Activity {
     }
 
     private void startChannel(int index) {
+        if (channelDecodeHints != null) channelDecodeHints.cancel();
+        channelPreparseHealthySince = 0L;
+        channelPreparseRequest = -1;
+        lastSystemPlaybackError = "";
         cancelPendingChannelListSelection();
         final long switchStartedAt = SystemClock.elapsedRealtime();
         if (multimediaSuspended) return;
-        cancelChannelWarmup();
+        cancelChannelManifest();
         cancelHttpResolve();
         cancelCustomSourceTimeout();
         multimediaReceiverChannel = null;
         pendingCjsChannelIndex = -1;
         armCrashRecovery();
         if (navigateReceivedCastPage(index, switchStartedAt)) return;
-        final boolean committedGestureSwitch = channelSwitchAnimating
-                && (channelSwitchDirectionY != 0f || channelSwitchDirectionX != 0f);
         closeWebSource();
         webStreamHeaders = null;
         final ChannelCatalog.Group group = currentGroup();
         currentChannelIndex = ChannelCatalog.wrapIndex(group.channels, index);
         final Channel channel = group.channels[currentChannelIndex];
+        if (channelDecodeHints != null) channelDecodeHints.get(channel.sourceUrl(currentSourceIndex));
         String timingTarget = currentGroupIndex + ":" + currentChannelIndex + ":" + currentSourceIndex
                 + ":" + channel.sourceUrl(currentSourceIndex);
         if (!timingTarget.equals(pendingPluginTimingTarget)) {
@@ -5718,15 +5728,6 @@ public final class MainActivity extends Activity {
         artworkChannelIndex = currentChannelIndex;
 
         final int source = catalogSource(group, channel);
-        String nextSource=channel.sourceUrl(currentSourceIndex);
-        boolean retainPlayback=(player!=null&&prepared&&videoRenderingStarted&&!audioOnlyPlayback
-                || player==null&&outgoingPlaybackProxy!=null)
-                && source==ChannelCatalog.SOURCE_CUSTOM && nextSource!=null
-                && (nextSource.startsWith("http://")||nextSource.startsWith("https://"))
-                && !HlsProxyServer.needsSpecialDecrypt(nextSource) && !isCctvDirectStream(nextSource)
-                && !isNtVCastSource(activePlayerStreamUrl);
-        preparingChannelSwitch=retainPlayback;
-        if(retainPlayback)abortChannelSwitchAnimation();
         activeCjsSource = null;
         try {
             if (source == ChannelCatalog.SOURCE_CUSTOM)
@@ -5757,23 +5758,10 @@ public final class MainActivity extends Activity {
         saveLastChannelSnapshot(group, channel);
         configureEmbeddedResolverMode(group, channel);
         updatePlayingChannelSelection();
+        pendingHlsDecodeSequence = -1L;
+        pendingHlsDecodePlaylist = null;
         final int requestId = ++playRequestId;
         beginChannelSwitchTiming(requestId, pendingPluginTimingMs > 0 ? pendingPluginTimingStart : switchStartedAt);
-
-        HlsProxyServer playingProxy=outgoingPlaybackProxy!=null?outgoingPlaybackProxy:proxy;
-        boolean parallelLegacyWarmup=retainPlayback&&Build.VERSION.SDK_INT<=15
-                && (player==null || player instanceof AndroidMediaPlayer&&playingProxy!=null
-                        &&!playingProxy.canKeepForQuickSwitch(player.getCurrentPosition(),lowResourceDevice?1500L:6000L));
-        if(parallelLegacyWarmup&&player!=null) {
-            outgoingReopenChannel=activePlayerChannel;outgoingReopenUrl=activePlayerStreamUrl;
-            if(outgoingPlaybackProxy==null) {
-                outgoingPlaybackProxy=playingProxy;outgoingProxyStateful=proxyStatefulCmgSource;
-            }
-            if(proxy==playingProxy)proxy=null;
-            releasePlayer(true);
-            preparingChannelSwitch=true;
-            logChannelSwitchStage(requestId,"parallel-player-release");
-        }
 
         if (channelSwitchAnimating
                 && (channelSwitchDirectionY != 0f || channelSwitchDirectionX != 0f)) {
@@ -5783,13 +5771,10 @@ public final class MainActivity extends Activity {
         playerStartRetryCount = 0;
         legacyHardwareRetryRequestId = -1;
         clearPendingPlayer();
-        if(!retainPlayback)releasePlayer(true);
-        if (committedGestureSwitch && !retainPlayback) {
-            discardOutgoingChannelFrame();
-        }
+        releasePlayer(true);
         stallRecoveryRequestId = -1;
-        if(!retainPlayback)resetVideoLayout();
-        showLoading(channel.name, retainPlayback ? "缓冲中" : source == ChannelCatalog.SOURCE_CUSTOM
+        resetVideoLayout();
+        showLoading(channel.name, source == ChannelCatalog.SOURCE_CUSTOM
                 ? customSourceStatus("正在连接") : "正在准备直播");
         if (source == ChannelCatalog.SOURCE_CUSTOM && channel.sourceCount() > 1) {
             scheduleCustomSourceTimeout(channel, requestId);
@@ -5823,7 +5808,7 @@ public final class MainActivity extends Activity {
                 });
             }
         };
-        if (legacyPlayerReleasePending && !parallelLegacyWarmup) {
+        if (legacyPlayerReleasePending) {
             pendingChannelSetupAfterRelease = setup;
             updateLoadingStatus("等待上一频道播放器退出");
         } else {
@@ -6440,9 +6425,6 @@ public final class MainActivity extends Activity {
     }
 
     private void handleUnavailableSource(String label, String detail) {
-        if(preparingChannelSwitch&&outgoingPlaybackProxy!=null&&currentChannel().sourceCount()<=1) {
-            restoreOutgoingChannel(label+"，继续播放原频道");return;
-        }
         if (PlaybackHttpError.isForbidden(detail)) {
             showPlaybackForbidden(currentChannel());
             return;
@@ -6450,6 +6432,10 @@ public final class MainActivity extends Activity {
         if (returnFromFailedSniffedPlayback(label)) return;
         String message = detail == null ? "" : detail.toLowerCase(java.util.Locale.US);
         boolean disconnected = isDeviceNetworkDisconnected();
+        if (!disconnected && currentChannel().sourceCount() > 1) {
+            switchCustomSource(1, true, label, true);
+            return;
+        }
         if (disconnected || message.contains("unknownhost") || message.contains("unable to resolve host")
                 || message.contains("timeout") || message.contains("timed out")
                 || message.contains("network is unreachable") || message.contains("enetunreach")
@@ -6477,8 +6463,9 @@ public final class MainActivity extends Activity {
     }
 
     private void showPlaybackForbidden(Channel channel) {
-        if(preparingChannelSwitch&&outgoingPlaybackProxy!=null) {
-            restoreOutgoingChannel("目标频道授权无效，继续播放原频道");return;
+        if (channel.sourceCount() > 1 && triedCustomSources < channel.sourceCount()) {
+            switchCustomSource(1, true, PlaybackHttpError.FORBIDDEN_MESSAGE, true);
+            return;
         }
         if (returnFromFailedSniffedPlayback(PlaybackHttpError.FORBIDDEN_MESSAGE)) return;
         cancelCustomSourceTimeout();
@@ -6518,10 +6505,7 @@ public final class MainActivity extends Activity {
             return true;
         }
         if (automatic && triedCustomSources >= count) {
-            if(preparingChannelSwitch&&outgoingPlaybackProxy!=null) {
-                restoreOutgoingChannel("目标频道全部线路不可用，继续播放原频道");return true;
-            }
-            abortChannelSwitchAnimation();
+                abortChannelSwitchAnimation();
             hideLoading();
             showChannelBar(channel.name, "全部 " + count + " 条线路均不可用");
             return true;
@@ -6733,26 +6717,14 @@ public final class MainActivity extends Activity {
         HlsProxyServer previous = proxy;
         boolean previousStateful = proxyStatefulCmgSource;
         proxy = null;
-        HlsProxyServer outgoing = null;
-        boolean outgoingStateful = outgoingProxyStateful;
-        if(preparingChannelSwitch) {
-            if(outgoingPlaybackProxy==null){outgoingPlaybackProxy=previous;outgoingProxyStateful=proxyStatefulCmgSource;previous=null;}
-        } else if(outgoingPlaybackProxy!=null) {
-            outgoing=outgoingPlaybackProxy;outgoingPlaybackProxy=null;
-        }
-        final HlsProxyServer retired=previous, retiredOutgoing=outgoing;
-        final boolean closeStateful=previousStateful, closeOutgoingStateful=outgoingStateful;
-        final boolean resetCmg=!preparingChannelSwitch
-                && (nextProxyUsesCmgSession() || previousStateful && retired!=null
-                        || outgoingStateful && retiredOutgoing!=null);
+        final HlsProxyServer retired=previous;
+        final boolean closeStateful=previousStateful;
+        final boolean resetCmg=nextProxyUsesCmgSession() || previousStateful && retired!=null;
         // Old stateful decryptors must finish before the next session starts, but
         // cancellation, HTTP disconnect and the shared decrypt lock can take seconds.
         // Serialize that handoff off the UI thread; obsolete selections still retire
         // their detached proxies, and cannot open a player or reset a newer session.
         PROXY_SWITCH_WORKER.execute(() -> {
-            if(retiredOutgoing!=null) {
-                if(closeOutgoingStateful)retiredOutgoing.close();else retiredOutgoing.closeAsync();
-            }
             if(retired!=null) {
                 if(closeStateful)retired.close();else retired.closeAsync();
             }
@@ -6800,7 +6772,8 @@ public final class MainActivity extends Activity {
                     if (current instanceof IjkMediaPlayer) {
                         IjkMediaPlayer ijk = (IjkMediaPlayer) current;
                         boolean proxyLive = isActiveCctvWebSource() || activeEmbeddedYangshipinResolver
-                                || !next.finiteMedia() && isHttpHlsSource(activePlayerStreamUrl);
+                                || !next.finiteMedia() && isResolvedHlsSource(activePlayerStreamUrl)
+                                && next.buffersGenericLiveMedia();
                         ijk.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "packet-buffering", level == 0 && proxyLive ? 0 : 1);
                         ijk.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "next-high-water-mark-ms", level == 0 ? 1000 : 5000);
                         ijk.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "last-high-water-mark-ms", level == 0 ? 3000 : 5000);
@@ -6810,35 +6783,9 @@ public final class MainActivity extends Activity {
                 });
             });
         }
-        if (currentCatalogSource() == ChannelCatalog.SOURCE_CUSTOM) {
-            next.configureVodDiskCache(this, LIVE_DELAY_STABLE.equals(liveDelayMode) ? 2
-                    : LIVE_DELAY_BALANCED.equals(liveDelayMode) ? 1 : 0);
-            final int warmupRequestId = playRequestId;
-            next.setVodWarmupListener((milliseconds, enough) -> {
-                IMediaPlayer current = player;
-                if (proxy == next && playRequestId == warmupRequestId && current instanceof IjkMediaPlayer)
-                    IjkStreamMetrics.excludeProxyWarmup((IjkMediaPlayer) current, milliseconds, enough);
-            });
-        }
         next.start();
         proxy = next;
         proxyStatefulCmgSource = statefulCmgSource;
-        if (!LIVE_DELAY_LOW.equals(liveDelayMode)) {
-            final int cacheRequestId = playRequestId;
-            channelBar.postDelayed(new Runnable() {
-                @Override public void run() {
-                    if (proxy != next || playRequestId != cacheRequestId || isFinishing()
-                            || videoRenderingStarted || audioOnlyPlayback && prepared) return;
-                    if (next.isVodCachePreparing()) {
-                        int remaining = next.vodCacheEstimatedWaitSeconds();
-                        updateLoadingStatus("缓冲中 · " + (remaining > 0
-                                ? "网速太慢，稳定播放预计还需 " + remaining + " 秒"
-                                : "正在预缓冲：已下载 " + next.vodCachePreparingSeconds() + " 秒视频"), true);
-                    }
-                    channelBar.postDelayed(this, 1000L);
-                }
-            }, 1000L);
-        }
     }
 
     private void resolveYangshipinUrl(final Channel channel, final int requestId) {
@@ -7133,6 +7080,13 @@ public final class MainActivity extends Activity {
                 ? customSourceStatus("正在连接") : "正在获取高清线路");
         showChannelBar(channel.name, directCustomSource
                 ? customSourceStatus("正在连接") : "正在解析备用源");
+        // Let the player request HLS first. Failed opens re-enter this resolver
+        // once, so HTML/script responses still get classified.
+        if (directCustomSource && HttpStreamResolver.isExplicitHlsUrl(configuredUrl)
+                && directHlsFallbackRequestId != requestId) {
+            startResolvedPlayer(channel, configuredUrl, false);
+            return;
+        }
         httpResolveThread = new Thread(new Runnable() {
             @Override
             public void run() {
@@ -7142,15 +7096,18 @@ public final class MainActivity extends Activity {
                         && isDirectHttpMediaSource(streamUrl);
                 boolean webPage = false;
                 boolean htmlMimeOverride = false;
+                HttpStreamResolver.Result resolvedResponse = null;
                 if (HttpStreamResolver.shouldResolve(streamUrl)) {
                     try {
                         HttpStreamResolver.Result result = HttpStreamResolver.resolve(streamUrl);
+                        resolvedResponse = result;
                         streamUrl = result.url;
                         directHttpMedia = result.directMedia;
                         webPage = result.webPage;
                         htmlMimeOverride = result.htmlMimeOverride;
                     } catch (final IOException error) {
-                        Log.w(TAG, "Unable to resolve dynamic source " + streamUrl, error);
+                        // Android omits the throwable stack when a cause is UnknownHostException.
+                        Log.w(TAG, "Unable to resolve dynamic source " + streamUrl + ": " + error, error);
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
@@ -7168,6 +7125,7 @@ public final class MainActivity extends Activity {
                     }
                 }
                 final String resolvedUrl = streamUrl;
+                final HttpStreamResolver.Result resolvedManifest = resolvedResponse;
                 // Preserve MIME-based media detection for extensionless radio URLs.
                 // startIjkPlayer routes HTTPS through the streaming TLS proxy.
                 final boolean resolvedDirectHttpMedia = directHttpMedia;
@@ -7180,6 +7138,7 @@ public final class MainActivity extends Activity {
                             return;
                         }
                         httpResolveThread = null;
+                        if (proxy != null && resolvedManifest != null) proxy.rememberResolvedPlaylist(resolvedManifest);
                         if (resolvedWebPage) {
                             openWebSource(channel, "webview://" + resolvedUrl, requestId,
                                     "", resolvedHtmlMimeOverride);
@@ -7366,76 +7325,74 @@ public final class MainActivity extends Activity {
             return;
         }
 
+        if (!directHttpMedia && proxy != null
+                && (HttpStreamResolver.isExplicitHlsUrl(streamUrl) || proxy.knowsHlsPlaylist(streamUrl))
+                && !HlsProxyServer.needsSpecialDecrypt(streamUrl)) {
+            // The player's first manifest request performs the needed rewrite;
+            // do not fetch/classify the same playlist before opening the player.
+            if (sourceMetadataProbeNeeded() && useAndroidHlsPlayer(Build.VERSION.SDK_INT, streamUrl))
+                proxy.enableSourceVideoProbe();
+            Log.i(TAG, "HLS player opened without preflight: " + streamUrl);
+            startResolvedPlayerNow(channel, streamUrl, false);
+            return;
+        }
+
         if(proxy!=null&&!directHttpMedia && (streamUrl.startsWith("http://")||streamUrl.startsWith("https://"))
                 && !HlsProxyServer.needsSpecialDecrypt(streamUrl)) {
-            prepareResolvedChannel(channel,streamUrl,directHttpMedia);
+            prepareResolvedManifest(channel,streamUrl,directHttpMedia);
         } else {
-            commitPreparedChannel(channel,streamUrl,directHttpMedia,null);
+            startResolvedPlayerNow(channel,streamUrl,directHttpMedia);
         }
     }
 
-    private void cancelChannelWarmup() {
-        Thread worker=channelWarmupThread;channelWarmupThread=null;
+    private void cancelChannelManifest() {
+        Thread worker=channelManifestThread;channelManifestThread=null;
         if(worker!=null)worker.interrupt();
     }
 
-    private void prepareResolvedChannel(final Channel channel,final String url,final boolean direct) {
+    private boolean shouldTryDirectHttpHls(String url) {
+        return proxy != null && currentCatalogSource() == ChannelCatalog.SOURCE_CUSTOM
+                && !activeEmbeddedCctvResolver && !activeEmbeddedYangshipinResolver
+                && !activeEmbeddedCjsResolver && webStreamHeaders == null
+                && isResolvedHlsSource(url) && !useAndroidHlsPlayer(Build.VERSION.SDK_INT,url)
+                && playRequestId != directHlsFallbackRequestId
+                && proxy.canUseDirectHttpHlsUrl(url);
+    }
+
+    private void prepareResolvedManifest(final Channel channel,final String url,final boolean direct) {
         final HlsProxyServer candidate=proxy;final int request=playRequestId;
-        if (useAndroidHlsPlayer(Build.VERSION.SDK_INT, url)) candidate.enableSourceVideoProbe();
+        if (sourceMetadataProbeNeeded() && useAndroidHlsPlayer(Build.VERSION.SDK_INT, url))
+            candidate.enableSourceVideoProbe();
         updateLoadingStatus("缓冲中");
         Thread worker=new Thread(()->{
             final Thread current=Thread.currentThread();
             try {
-                final HlsSwitchSession.Prepared ready=candidate.prepareChannel(url);
+                final HlsStartupManifest.Result ready=candidate.prepareManifest(url);
                 runOnUiThread(()->{
-                    if(channelWarmupThread!=current||request!=playRequestId||proxy!=candidate||isFinishing())return;
-                    channelWarmupThread=null;logChannelSwitchStage(request,"segments-ready");
-                    commitPreparedChannel(channel,url,direct,ready);
+                    if(channelManifestThread!=current||request!=playRequestId||proxy!=candidate||isFinishing())return;
+                    channelManifestThread=null;logChannelSwitchStage(request,"segments-ready");
+                    String nativeHls = !direct && shouldTryDirectHttpHls(url)
+                            ? candidate.selectDirectHttpHlsUrl(ready) : null;
+                    if (nativeHls != null && isResolvedHlsSource(nativeHls)) {
+                        Log.i(TAG,"Clear HTTP HLS handed directly to IJK: " + nativeHls);
+                        startResolvedPlayerNow(channel,nativeHls,true);
+                    } else startResolvedPlayerNow(channel,url,direct);
                 });
             }catch(final Exception error) {
                 runOnUiThread(()->{
-                    if(channelWarmupThread!=current||request!=playRequestId||proxy!=candidate||isFinishing())return;
-                    channelWarmupThread=null;
-                    if(preparingChannelSwitch&&outgoingPlaybackProxy!=null&&channel.sourceCount()<=1)restoreOutgoingChannel("频道暂不可用，继续播放原频道");
-                    else handleUnavailableSource("分片准备失败",error.toString());
-                    Log.w(TAG,"Channel preloading failed: "+channel.name,error);
+                    if(channelManifestThread!=current||request!=playRequestId||proxy!=candidate||isFinishing())return;
+                    channelManifestThread=null;
+                    handleUnavailableSource("清单加载失败",error.toString());
+                    Log.w(TAG,"HLS manifest preparation failed: "+channel.name,error);
                 });
             }
-        },"channel-preload");
-        channelWarmupThread=worker;worker.start();
+        },"channel-manifest");
+        channelManifestThread=worker;worker.start();
         channelBar.postDelayed(()->{
-            if(request!=playRequestId||channelWarmupThread!=worker||proxy!=candidate)return;
-            cancelChannelWarmup();
-            if(preparingChannelSwitch&&outgoingPlaybackProxy!=null)restoreOutgoingChannel("频道缓冲超时，继续播放原频道");
-            else {candidate.close();hideLoading();showChannelBar(channel.name,"频道缓冲超时，请切换线路");}
+            if(request!=playRequestId||channelManifestThread!=worker||proxy!=candidate)return;
+            cancelChannelManifest();
+            handleUnavailableSource("频道缓冲超时", "HLS preparation timeout");
         },25000L);
-    }
-
-    private void restoreOutgoingChannel(String notice) {
-        HlsProxyServer candidate=proxy;proxy=outgoingPlaybackProxy;outgoingPlaybackProxy=null;
-        proxyStatefulCmgSource=outgoingProxyStateful;
-        if(candidate!=null&&candidate!=proxy)candidate.close();
-        preparingChannelSwitch=false;cancelCustomSourceTimeout();
-        if(activePlayerGroupIndex>=0&&activePlayerGroupIndex<ChannelCatalog.GROUPS.length) {
-            currentGroupIndex=activePlayerGroupIndex;currentChannelIndex=activePlayerChannelIndex;
-            currentSourceIndex=activePlayerSourceIndex;updatePlayingChannelSelection();
-            Channel restored=activePlayerChannel!=null?activePlayerChannel:outgoingReopenChannel;
-            if(restored!=null) {
-                configureEmbeddedResolverMode(currentGroup(),restored);
-                saveLastChannelSnapshot(currentGroup(),restored);
-            }
-        }
-        if(player==null&&outgoingReopenChannel!=null&&outgoingReopenUrl!=null) {
-            final Channel restored=outgoingReopenChannel;final String restoredUrl=outgoingReopenUrl;
-            outgoingReopenChannel=null;outgoingReopenUrl=null;
-            final int request=playRequestId;
-            showLoading(restored.name,"恢复原频道");
-            afterPlayerRelease(request,()->startResolvedPlayerNow(restored,restoredUrl,false));
-            return;
-        }
-        playbackReadyRequestId=playRequestId;channelSwitchTimingRequestId=-1;
-        installRetainedChannelListeners(player,activePlayerChannel,activePlayerStreamUrl,playRequestId);
-        hideLoading();abortChannelSwitchAnimation();showChannelBar(activePlayerChannel.name,notice);
     }
 
     private void afterPlayerRelease(final int request,final Runnable action) {
@@ -7447,108 +7404,20 @@ public final class MainActivity extends Activity {
         }}.run();
     }
 
-    private void commitPreparedChannel(final Channel channel,final String url,final boolean direct,
-            final HlsSwitchSession.Prepared ready) {
-        final int request=playRequestId;final HlsProxyServer candidate=proxy;
-        HlsProxyServer outgoing=outgoingPlaybackProxy;
-        if(preparingChannelSwitch && player!=null && outgoing!=null && ready!=null && request!=disableHotSwitchRequestId
-                && outgoing.canHotSwitch(ready)) {
-            try {
-                final IMediaPlayer retained=player;
-                // Older devices can open the warmed decoder sooner than a long
-                // existing queue drains. Retain only a short, bounded handoff.
-                final long boundary=outgoing.hotSwitch(candidate,ready,retained.getCurrentPosition(),
-                        lowResourceDevice?1500L:4000L);
-                proxy=outgoing;outgoingPlaybackProxy=null;candidate.close();
-                activePlayerChannel=channel;activePlayerStreamUrl=url;rememberActivePlayerSelection();
-                cachedIjkMetadata=null;sampledMetadataPlayer=null;
-                estimatedVideoBitrate=estimatedAudioBitrate=-1L;playerTransportBitrate.reset();
-                mediaTrackManifest=proxy.mediaTracks(url);
-                installRetainedChannelListeners(retained,channel,url,request);
-                showChannelBar(channel.name,"直播播放中");
-                logChannelSwitchStage(request,"hot-switch-committed");
-                final long deadline=SystemClock.elapsedRealtime()+Math.max(12000L,
-                        Math.min(30000L,boundary-retained.getCurrentPosition()+10000L));
-                channelBar.post(new Runnable(){
-                    long crossedPosition=-1,crossedFrames=-1;
-                    public void run(){
-                    if(request!=playRequestId||player!=retained||!preparingChannelSwitch)return;
-                    long position=retained.getCurrentPosition();
-                    if(proxy.hotTargetDelivered()&&!buffering&&retained.isPlaying()&&position>=boundary) {
-                        long frames=retained instanceof IjkMediaPlayer?IjkStreamMetrics.outputFrameCount((IjkMediaPlayer)retained):-1L;
-                        if(crossedPosition<0){crossedPosition=position;crossedFrames=frames;}
-                        if(position-crossedPosition<80L || crossedFrames>=0&&frames-crossedFrames<2L) {
-                            if(SystemClock.elapsedRealtime()>=deadline)reopenRetainedChannel(retained,channel,url,request,"hot-switch video output timeout");
-                            else channelBar.postDelayed(this,100L);
-                            return;
-                        }
-                        preparingChannelSwitch=false;playbackProgressObserved=true;lastPlaybackPosition=position;
-                        lastPlaybackProgressAt=lastVideoOutputAt=SystemClock.elapsedRealtime();playbackReadyRequestId=request;
-                        completeChannelLoadTiming(request);hideLoading();revealIncomingChannel(request);
-                        persistPlayingChannel(channel,request);refreshChannelPlaybackStatus();
-                        Log.i(TAG,"HLS hot switch output confirmed channel="+channel.name+" boundaryMs="+boundary+" positionMs="+position);
-                    }else if(SystemClock.elapsedRealtime()>=deadline) {
-                        reopenRetainedChannel(retained,channel,url,request,"hot-switch output timeout");
-                    }else channelBar.postDelayed(this,100L);
-                }});
-                return;
-            }catch(IOException error){Log.i(TAG,"HLS hot switch unavailable; reopening",error);}
-        }
-        preparingChannelSwitch=false;
-        if(outgoingPlaybackProxy!=null) {
-            if(player!=null)releasePlayer(true);
-            afterPlayerRelease(request,()->{
-                HlsProxyServer old=outgoingPlaybackProxy;outgoingPlaybackProxy=null;if(old!=null) { if (outgoingProxyStateful) old.close(); else old.closeAsync(); }
-                outgoingReopenChannel=null;outgoingReopenUrl=null;
-                if(HlsProxyServer.needsSpecialDecrypt(url))HlsProxyServer.resetCmgSessionForChannelSwitch();
-                if(ready!=null&&request!=disableHotSwitchRequestId)candidate.enableChannelSession(ready);
-                startResolvedPlayerNow(channel,url,direct);
-            });
-        } else {
-            if(ready!=null&&request!=disableHotSwitchRequestId)candidate.enableChannelSession(ready);
-            startResolvedPlayerNow(channel,url,direct);
-        }
-    }
-
-    private void reopenRetainedChannel(IMediaPlayer retained,Channel channel,String url,int request,String reason) {
-        if(player!=retained||request!=playRequestId)return;
-        Log.w(TAG,"Reopen HLS channel: "+reason);preparingChannelSwitch=false;disableHotSwitchRequestId=request;
-        releasePlayer(true);showLoading(channel.name,"缓冲中");
-        afterPlayerRelease(request,()->{proxy.disableChannelSession();startResolvedPlayerNow(channel,url,false);});
-    }
-
     private void rememberActivePlayerSelection() {
         activePlayerGroupIndex=currentGroupIndex;activePlayerChannelIndex=currentChannelIndex;
         activePlayerSourceIndex=currentSourceIndex;
     }
 
-    private void installRetainedChannelListeners(final IMediaPlayer retained,final Channel channel,
-            final String url,final int request) {
-        retained.setOnInfoListener((mediaPlayer,what,extra)->{
-            if(player!=retained||request!=playRequestId)return false;
-            if(what==IMediaPlayer.MEDIA_INFO_BUFFERING_START) {
-                buffering=true;showChannelBar(channel.name,"直播播放中");
-                channelBar.postDelayed(()->{if(player==retained&&request==playRequestId&&buffering)
-                    reopenRetainedChannel(retained,channel,url,request,"retained HLS buffering timeout");},PLAYBACK_BUFFERING_RECOVERY_MS);
-            } else if(what==IMediaPlayer.MEDIA_INFO_BUFFERING_END) {
-                buffering=false;refreshChannelPlaybackStatus();
-            }
-            return false;
-        });
-        retained.setOnErrorListener((mediaPlayer,what,extra)->{
-            if(player==retained&&request==playRequestId)reopenRetainedChannel(retained,channel,url,request,"retained HLS error "+what+"/"+extra);
-            return true;
-        });
-        retained.setOnCompletionListener(mediaPlayer->{
-            if(player==retained&&request==playRequestId)reopenRetainedChannel(retained,channel,url,request,"retained HLS completed");
-        });
+    private void startResolvedPlayerNow(Channel channel, String streamUrl, boolean directHttpMedia) {
+        startResolvedPlayerNow(channel, streamUrl, directHttpMedia, false);
     }
 
-    private void startResolvedPlayerNow(Channel channel, String streamUrl, boolean directHttpMedia) {
-
+    private void startResolvedPlayerNow(Channel channel, String streamUrl, boolean directHttpMedia,
+            boolean forceSoftwareDecode) {
         updateLoadingStatus("正在连接视频");
         try {
-            startPlayer(channel, streamUrl, false, directHttpMedia);
+            startPlayer(channel, streamUrl, forceSoftwareDecode, directHttpMedia);
         } catch (IOException | IllegalArgumentException | IllegalStateException error) {
             Log.e(TAG, "Unable to play " + channel.name, error);
             if (returnFromFailedSniffedPlayback("资源连接失败")) return;
@@ -7647,7 +7516,7 @@ public final class MainActivity extends Activity {
 
     private boolean useSystemAtmosPlayer(String url) {
         // Stagefright HLS does not support packed E-AC3 or fragmented MP4.
-        if (isHttpHlsSource(url) || !DolbyVisionSupport.supportsAtmosDecoder()) return false;
+        if (isResolvedHlsSource(url) || !DolbyVisionSupport.supportsAtmosDecoder()) return false;
         return proxy != null && proxy.selectedAtmos()
                 || url != null && url.toLowerCase(Locale.US).contains("ddp_joc");
     }
@@ -7690,7 +7559,7 @@ public final class MainActivity extends Activity {
         }
         if (proxy != null) {
             proxy.beginPlaybackAttempt();
-            if (hls && systemVideo) proxy.enableSourceVideoProbe();
+            if (hls && systemVideo && sourceMetadataProbeNeeded()) proxy.enableSourceVideoProbe();
         }
         resetVideoLayout();
         if (!videoView.isSurfaceReady()) {
@@ -7703,6 +7572,7 @@ public final class MainActivity extends Activity {
         final boolean radioChannel = channel.radio;
         final Bitmap[] initialArtwork = new Bitmap[1];
         player = nextPlayer;
+        bindSeekCompletion(nextPlayer);
         if (channel.logoUrl.length() > 0) {
             albumArtLoader.load(this, null, null, channel.logoUrl, art -> {
                 if (player == nextPlayer && sourceRequestId == playRequestId) {
@@ -7720,9 +7590,7 @@ public final class MainActivity extends Activity {
         android.media.MediaPlayer systemPlayer = nextPlayer.getInternalMediaPlayer();
         systemPlayer.setAudioStreamType(AudioManager.STREAM_MUSIC);
         nextPlayer.setScreenOnWhilePlaying(true);
-        SurfaceHolder videoSurfaceHolder = videoView.getVideoSurfaceHolder();
-        if (videoSurfaceHolder != null) nextPlayer.setDisplay(videoSurfaceHolder);
-        else nextPlayer.setSurface(videoView.getVideoSurface());
+        // Bind only after the old native producer has fully released this Surface.
         nextPlayer.setOnVideoSizeChangedListener((mediaPlayer, width, height, sarNum, sarDen) -> {
             if (player == mediaPlayer) updateVideoLayout(mediaPlayer);
         });
@@ -7796,7 +7664,7 @@ public final class MainActivity extends Activity {
                         if (player != nextPlayer || sourceRequestId != playRequestId
                                 || !buffering || eventId != bufferingEventId) return;
                         long elapsed = SystemClock.elapsedRealtime() - bufferingStartedAt;
-                        if (proxy != null && proxy.upstreamMakingProgress(8000L) && elapsed < 90000L) {
+                        if (proxy != null && proxy.mediaMakingProgress(8000L) && elapsed < 90000L) {
                             channelBar.postDelayed(this, 5000L);
                             return;
                         }
@@ -7832,6 +7700,7 @@ public final class MainActivity extends Activity {
         });
         nextPlayer.setOnErrorListener((mediaPlayer, what, extra) -> {
             if (player != mediaPlayer || sourceRequestId != playRequestId) return true;
+            lastSystemPlaybackError = SystemPlaybackError.message(what, extra);
             Log.w(TAG, "Android MediaPlayer " + (hls ? "HLS" : "MP3")
                     + " error=" + what + "/" + extra
                     + " channel=" + channel.name
@@ -7846,6 +7715,8 @@ public final class MainActivity extends Activity {
                         return;
                     }
                     if (!hls) androidMp3FallbackRequestId = sourceRequestId;
+                    if (SystemPlaybackError.crashed(what))
+                        Toast.makeText(this, lastSystemPlaybackError + "，正在恢复", Toast.LENGTH_LONG).show();
                     if (hls && what == 1 && extra == -2147483648 && proxy != null)
                         LegacyBackgroundMemoryRelief.afterHighResolutionPlayerError(this,
                                 proxy.sourceVideoWidth(), proxy.sourceVideoHeight());
@@ -7863,7 +7734,7 @@ public final class MainActivity extends Activity {
             nextPlayer.setDataSource(proxy == null ? streamUrl : hls
                     ? proxy.playerHlsUrl(streamUrl) : systemVideo ? proxy.mediaUrl(streamUrl) : proxy.systemPlayerMp3Url(streamUrl));
             showChannelBar(channel.name, "系统播放器播放中");
-            nextPlayer.prepareAsync();
+            prepareSystemPlayerAfterRelease(nextPlayer, sourceRequestId);
             Log.i(TAG, "Android MediaPlayer " + (hls ? "HLS" : systemVideo ? "MP4" : "MP3")
                     + (useSystemDolbyVisionPlayer() ? " Dolby Vision passthrough codecs=" + proxy.selectedVideoCodecs() : "")
                     + " sdk=" + Build.VERSION.SDK_INT
@@ -7964,14 +7835,23 @@ public final class MainActivity extends Activity {
             // after onPrepared/start can wedge old codecs while flushing frames.
             nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER,
                     "seek-at-start", initialPositionMs);
+            if (forceSoftwareDecode && Build.VERSION.SDK_INT > Build.VERSION_CODES.KITKAT)
+                nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "enable-accurate-seek", 1);
         }
         // Explicit M3U radio channels (including HLS) never need a video decoder.
         // MP3 embedded covers likewise belong to the artwork view.
         String mediaPath = Uri.parse(streamUrl).getPath();
+        // At zero there is no initial seek work. Later user seeks should discard
+        // the preceding keyframe interval instead of replaying it on old codecs.
+        // Keep the hardware seek-at-start workaround for resumed streams above.
+        if (initialPositionMs <= 0L && mediaPath != null
+                && mediaPath.toLowerCase(Locale.US).endsWith(".mp4"))
+            nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "enable-accurate-seek", 1);
         final boolean sniffedPresentation = playingDiscoveredWebStream && playingSniffedResource != null;
         final String artworkTitle = channelCardTitle(channel.name);
         final String artworkLogo = sniffedPresentation ? "" : channel.logoUrl;
-        final boolean radioChannel = !sniffedPresentation && channel.radio;
+        final boolean receivingCast=channel==multimediaReceiverChannel && isRtspSource(streamUrl);
+        final boolean radioChannel = !receivingCast && !sniffedPresentation && channel.radio;
         if (radioChannel || mediaPath != null && mediaPath.toLowerCase(Locale.US).endsWith(".mp3"))
             nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "vn", 1);
         if (initialTracks != null) {
@@ -7980,6 +7860,7 @@ public final class MainActivity extends Activity {
             nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "ntv-initial-subtitle", initialTracks[2]);
         }
         player = nextPlayer;
+        bindSeekCompletion(nextPlayer);
         final boolean customSource = currentCatalogSource() == ChannelCatalog.SOURCE_CUSTOM;
         final int sourceRequestId = playRequestId;
         // Fetch station artwork alongside player preparation, not after its network
@@ -7993,7 +7874,10 @@ public final class MainActivity extends Activity {
                 }
             });
         }
-        final boolean softwareDecode = forceSoftwareDecode || shouldUseSoftwareDecode();
+        boolean hintedSoftware = usePreparsedSoftwareDecode(channel, streamUrl);
+        final boolean softwareDecode = DECODE_MODE_SOFTWARE.equals(decodeMode)
+                || Build.VERSION.SDK_INT > Build.VERSION_CODES.KITKAT
+                && (forceSoftwareDecode || hintedSoftware || shouldUseSoftwareDecode());
         // Automatic codec fallback also uses these options. Frame threading on
         // low-RAM devices otherwise retains several extra full-resolution frames.
         if (lowResourceDevice) nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_CODEC, "threads", 2);
@@ -8093,11 +7977,11 @@ public final class MainActivity extends Activity {
         // playback and force startup to wait for another live playlist refresh.
         final boolean broadcastProbe = cctvSource || yangshipinSource;
         final boolean finiteHls = proxy != null && proxy.finiteMedia();
-        final boolean genericLiveHls = !cctvSource && isHttpHlsSource(streamUrl) && !finiteHls;
-        final boolean knownLiveTracks = genericLiveHls && proxy != null
-                && proxy.hasVerifiedLiveAvTracks();
-        final boolean proxyControlledLive = proxy != null && (cctvSource || yangshipinSource
-                || genericLiveHls
+        final boolean directLiveHls = directHttpMedia && streamUrl.startsWith("http://")
+                && isResolvedHlsSource(streamUrl) && !finiteHls;
+        final boolean genericLiveHls = !cctvSource && isResolvedHlsSource(streamUrl) && !finiteHls;
+        final boolean proxyControlledLive = !directLiveHls && proxy != null && (cctvSource || yangshipinSource
+                || genericLiveHls && proxy.buffersGenericLiveMedia()
                 && (LIVE_DELAY_LOW.equals(liveDelayMode) || LIVE_DELAY_AUTO.equals(liveDelayMode)));
         // Broadcast proxies deliver whole clear TS segments and retain their prefetch
         // reserve in every mode. A second IJK startup queue and longer stream probe
@@ -8108,7 +7992,7 @@ public final class MainActivity extends Activity {
                 realtimeCastSource || proxyControlledLive ? 0 : 1);
         // Native demux verifies ENDLIST/duration before changing buffering;
         // live HLS and realtime casting retain their existing latency profile.
-        final int vodBufferMode = !cctvSource && !yangshipinSource && isHttpHlsSource(streamUrl)
+        final int vodBufferMode = !cctvSource && !yangshipinSource && isResolvedHlsSource(streamUrl)
                 && !realtimeCastSource && !remoteCatalogPlayback
                 ? LIVE_DELAY_STABLE.equals(liveDelayMode) ? 2
                 : LIVE_DELAY_BALANCED.equals(liveDelayMode) ? 1 : 0 : 0;
@@ -8158,8 +8042,15 @@ public final class MainActivity extends Activity {
                         : remoteCatalogPlayback ? 800
                         : finiteHls ? 500
                         : broadcastStartup ? (LIVE_DELAY_LOW.equals(liveDelayMode) || LIVE_DELAY_AUTO.equals(liveDelayMode) ? 250 : 1000)
-                        : cctvSource || genericLiveHls ? liveIjkFirstBufferMs()
-                        : 5000);
+                        // Only the first-play queue is short. Refill reserves below
+                        // still follow the selected stable/balanced/low mode.
+                        : genericLiveHls ? Math.min(500,liveIjkFirstBufferMs())
+                        : cctvSource ? liveIjkFirstBufferMs()
+                        // Extensionless HTTP IPTV is not necessarily HLS. Prime
+                        // only the first A/V queue; keep the 5s refill reserve.
+                        // This also starts HTTP VOD sooner without URL guessing
+                        // or an extra network request to classify the container.
+                        : bufferedHttpMedia ? 500 : 5000);
         nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "next-high-water-mark-ms",
                 realtimeCastSource ? 100 : liveRadioStartup ? 2000 : remoteCatalogPlayback ? 3000
                         : cctvSource || genericLiveHls ? liveIjkNextBufferMs() : 5000);
@@ -8186,17 +8077,22 @@ public final class MainActivity extends Activity {
         nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "http-detect-range-support", 0);
         boolean genericThirdPartySource = customSource && !cctvSource && !yangshipinSource
                 && !realtimeCastSource && !remoteCatalogPlayback;
+        if (bufferedHttpMedia || broadcastStartup) {
+            // IJK defaults scan_all_pmts to 1, which keeps TS discovery running
+            // for the entire analysis budget even after every PAT program has
+            // its PMT and codec parameters. FFmpeg's normal mode still waits for
+            // those headers (including late audio); it can then finish early.
+            nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "scan_all_pmts", 0);
+            // Reuse codec timing only after native DTS samples agree with it.
+            // Unknown/irregular timestamps retain normal discovery; this works
+            // for both direct HTTP and plaintext forwarded by our TLS proxy.
+            nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "ntv-adaptive-fps-probe", 1);
+        }
         nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "probesize",
                 realtimeCastSource ? 128 * 1024
                         : liveRadioStartup ? 32 * 1024
                         : remoteCatalogPlayback ? 1024 * 1024
-                        : genericThirdPartySource && !knownLiveTracks ? 4 * 1024 * 1024 : 256 * 1024);
-        if(knownLiveTracks) {
-            // Preloading has already verified video parameter sets and actual AAC
-            // track. Avoid collecting another FPS window across a live playlist refresh.
-            // Unprobed/late-audio sources keep the larger compatibility probe below.
-            nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT,"fpsprobesize",0);
-        }
+                        : genericThirdPartySource ? 4 * 1024 * 1024 : 256 * 1024);
         if (realtimeCastSource) {
             // Keep enough socket space for one paced IDR on old kernels. The sender
             // now spreads large access units over a few milliseconds, preventing
@@ -8230,16 +8126,26 @@ public final class MainActivity extends Activity {
             // Legacy TS services may announce audio late or begin between GOPs. The
             // previous 256 KiB probe could therefore produce picture without sound.
             nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT,
-                    "analyzeduration", knownLiveTracks ? 500000 : 3000000);
+                    "analyzeduration", 3000000);
         } else if (remoteCatalogPlayback) {
             nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT,
                     "analyzeduration", 1500000);
         }
         /* Start at the first segment exposed by the selected startup policy. Using a
          * negative index would discard already prepared data in the two-segment modes. */
-        nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "live_start_index",
-                cctvSource || yangshipinSource ? 0
-                        : LIVE_DELAY_LOW.equals(liveDelayMode) || LIVE_DELAY_AUTO.equals(liveDelayMode) ? -2 : -3);
+        int liveStartIndex = cctvSource || yangshipinSource ? 0
+                : LIVE_DELAY_LOW.equals(liveDelayMode) || LIVE_DELAY_AUTO.equals(liveDelayMode) ? -2 : -3;
+        if (proxy != null) {
+            proxy.decoderHandoff.begin(liveStartIndex);
+            if (pendingHlsDecodeSequence >= 0L) {
+                proxy.decoderHandoff.request(pendingHlsDecodeSequence);
+                liveStartIndex = 0;
+            }
+        }
+        final String handoffPlaylist = pendingHlsDecodePlaylist;
+        pendingHlsDecodeSequence = -1L;
+        pendingHlsDecodePlaylist = null;
+        nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "live_start_index", liveStartIndex);
 
         if (!videoView.isSurfaceReady()) {
             queuePendingPlayer(channel, streamUrl, forceSoftwareDecode);
@@ -8289,7 +8195,19 @@ public final class MainActivity extends Activity {
                 }
                 logChannelSwitchStage(sourceRequestId, "player-prepared");
                 prepared = true;
-                audioOnlyPlayback = radioChannel || isAudioOnly(nextPlayer);
+                audioOnlyPlayback = !receivingCast && (radioChannel || isAudioOnly(nextPlayer));
+                // IJK can internally fall back when MediaCodec rejects the stream.
+                // Legacy devices must require explicit consent via the decode setting.
+                if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.KITKAT && !audioOnlyPlayback
+                        && !DECODE_MODE_SOFTWARE.equals(decodeMode)
+                        && nextPlayer.getVideoDecoder() == IjkMediaPlayer.FFP_PROPV_DECODER_AVCODEC) {
+                    releasePlayer(true);
+                    hideLoading();
+                    showChannelBar(channel.name, "硬件解码不支持此视频，可手动选择软件解码");
+                    Toast.makeText(MainActivity.this, "硬件解码不支持此视频，可手动选择软件解码",
+                            Toast.LENGTH_LONG).show();
+                    return;
+                }
                 if (audioOnlyPlayback && proxy != null) proxy.disableSourceVideoProbe();
                 applyDebugInfoVisibility();
                 String artworkSource = channel.sourceUrl(currentSourceIndex);
@@ -8304,6 +8222,9 @@ public final class MainActivity extends Activity {
                 } else {
                     playbackSpeed = 1f;
                 }
+                if (hintedSoftware && rejectStalePreparsedDecode(nextPlayer, channel, streamUrl)) return;
+                if (!audioOnlyPlayback && mediaPlayer.getDuration() > 0L
+                        && tryRememberedVodSoftwareDecode(nextPlayer, channel, streamUrl)) return;
                 mediaPlayer.start();
                 if (audioOnlyPlayback) {
                     audioArtwork.show(artworkTitle, mediaPlayer.getDuration() <= 0, initialArtwork[0]);
@@ -8432,7 +8353,7 @@ public final class MainActivity extends Activity {
                                             || playbackProgressObserved
                                             || playbackRecoveryAttempts > 0)) {
                                 long elapsed = SystemClock.elapsedRealtime() - bufferingStartedAt;
-                                if (proxy != null && proxy.upstreamMakingProgress(8000L)
+                                if (proxy != null && proxy.mediaMakingProgress(8000L)
                                         && elapsed < Math.max(90000L, bufferingRecoveryMs)) {
                                     // Slow segment processing is not a dead player. Keep the
                                     // existing queue instead of downloading it again on reconnect.
@@ -8515,6 +8436,24 @@ public final class MainActivity extends Activity {
                         showChannelBar(channel.name, "设备内存不足以软解此分辨率，请切换较低分辨率线路");
                         return true;
                     }
+                    if (proxy != null && directHlsFallbackRequestId != sourceRequestId
+                            && (directLiveHls || customSource && !prepared
+                            && HttpStreamResolver.isExplicitHlsUrl(streamUrl))) {
+                        // An explicit HLS URL may return HTML or a script response.
+                        // Retry classification once for this request before failing the source.
+                        directHlsFallbackRequestId = sourceRequestId;
+                        Log.w(TAG,"HLS open failed; retrying source classification: " + what + "/" + extra);
+                        releasePlayer(true);
+                        showLoading(channel.name,"正在恢复播放");
+                        afterPlayerRelease(sourceRequestId,()->{
+                            if (proxy == null) return;
+                            // Reclassify the configured source: an HLS-looking URL
+                            // may actually redirect to a webpage or a script response.
+                            // The request-scoped fallback flag prevents another direct try.
+                            resolveFallbackUrl(channel, sourceRequestId);
+                        });
+                        return true;
+                    }
                     if (returnFromFailedSniffedPlayback("资源播放失败（" + what + "/" + extra + "）")) return true;
                     if (videoRenderingStarted || playbackProgressObserved
                             || playbackRecoveryAttempts > 0) {
@@ -8577,17 +8516,19 @@ public final class MainActivity extends Activity {
                 return true;
             }
         });
-        // Native RTMP/RTSP sources can be handed to IJK directly. HLS keeps using the
-        // lightweight generic proxy because the compact IJK profile has no crypto
-        // protocol and encryption cannot be known until the playlist has been read.
+        // Native streams and verified clear HTTP HLS go straight to IJK. Unverified,
+        // encrypted and HTTPS HLS retain the compatibility proxy for native profiles
+        // without crypto/TLS protocols.
         acquireMulticastPlayback(streamUrl);
         boolean directDataSource = isNativeStreamingSource(streamUrl)
                 || (directHttpMedia && streamUrl.startsWith("http://"));
-        if (directHttpMedia) {
+        if (directHttpMedia || genericLiveHls && proxy != null && proxy.canUseDirectHttpHlsUrl(streamUrl)) {
+            // Clear HLS segments may leave the manifest proxy after its first request.
+            // Keep the same user agent when IJK downloads them directly.
             // Some radio servers reject FFmpeg 3.4's legacy default user agent.
             // Explicit resource headers below still take precedence.
             nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "user_agent",
-                    "nTv/" + BuildConfig.VERSION_NAME);
+                    directLiveHls || genericLiveHls ? HlsProxyServer.DEFAULT_USER_AGENT : "nTv/" + BuildConfig.VERSION_NAME);
         }
         if (directHttpMedia) {
             Log.i(TAG, "Opening resolved media " + (directDataSource ? "directly: " : "through TLS proxy: ") + streamUrl);
@@ -8596,7 +8537,10 @@ public final class MainActivity extends Activity {
                 && !TextUtils.isEmpty(webStreamHeaders)) {
             nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "headers", webStreamHeaders);
         }
-        nextPlayer.setDataSource(directDataSource ? streamUrl
+        // Pin the current rendition during handoff: sequence numbers need not
+        // align between different variants selected from a master playlist.
+        nextPlayer.setDataSource(handoffPlaylist != null && proxy != null
+                ? proxy.playerHlsUrl(handoffPlaylist) : directDataSource ? streamUrl
                 : directHttpMedia ? proxy.mediaUrl(streamUrl) : proxy.playerHlsUrl(streamUrl));
         logChannelSwitchStage(sourceRequestId, "player-open-requested");
         showChannelBar(channel.name, "直播播放中");
@@ -8613,9 +8557,11 @@ public final class MainActivity extends Activity {
             @Override public void run() {
                 if (player != nextPlayer || playRequestId != requestId || isFinishing()) return;
                 if (pending.getCount() != 0 && SystemClock.elapsedRealtime() < deadline) {
-                    channelBar.postDelayed(this, 16L);
+                    pendingIjkPrepareAfterRelease = this;
+                    channelBar.postDelayed(this, Math.max(1L, deadline - SystemClock.elapsedRealtime()));
                     return;
                 }
+                if (pendingIjkPrepareAfterRelease == this) pendingIjkPrepareAfterRelease = null;
                 if (pending.getCount() != 0) Log.w(TAG,"Player release wait timed out request=" + requestId);
                 try { nextPlayer.prepareAsync(); }
                 catch (RuntimeException error) {
@@ -8626,12 +8572,59 @@ public final class MainActivity extends Activity {
         }.run();
     }
 
+    private void prepareSystemPlayerAfterRelease(final AndroidMediaPlayer nextPlayer, final int requestId) {
+        final java.util.concurrent.CountDownLatch pending = playerReleaseComplete;
+        final long deadline = SystemClock.elapsedRealtime() + 2000L;
+        new Runnable() {
+            @Override public void run() {
+                if (player != nextPlayer || requestId != playRequestId || isFinishing()) return;
+                if (pending.getCount() != 0L && SystemClock.elapsedRealtime() < deadline) {
+                    pendingSystemPrepareAfterRelease = this;
+                    channelBar.postDelayed(this, Math.max(1L, deadline - SystemClock.elapsedRealtime()));
+                    return;
+                }
+                if (pendingSystemPrepareAfterRelease == this) pendingSystemPrepareAfterRelease = null;
+                try {
+                    SurfaceHolder holder=videoView.getVideoSurfaceHolder();
+                    if(holder!=null)nextPlayer.setDisplay(holder);
+                    else nextPlayer.setSurface(videoView.getVideoSurface());
+                    nextPlayer.prepareAsync();
+                } catch(RuntimeException error) {
+                    Log.w(TAG,"Unable to prepare system player after release",error);
+                    lastSystemPlaybackError="系统播放器准备失败，请重试或切换解码模式";
+                    releasePlayer(true);hideLoading();
+                    showChannelBar(currentChannel().name,lastSystemPlaybackError);
+                }
+            }
+        }.run();
+    }
+
+    private void resumeIjkPreparationAfterRelease(java.util.concurrent.CountDownLatch completed) {
+        if (completed != playerReleaseComplete) return;
+        Runnable systemPending = pendingSystemPrepareAfterRelease;
+        pendingSystemPrepareAfterRelease = null;
+        if (systemPending != null) {
+            channelBar.removeCallbacks(systemPending);
+            systemPending.run();
+        }
+        Runnable pending = pendingIjkPrepareAfterRelease;
+        pendingIjkPrepareAfterRelease = null;
+        if (pending != null) {
+            channelBar.removeCallbacks(pending);
+            pending.run();
+        }
+    }
+
     private boolean isDirectThirdPartyRecordingSource(String streamUrl) {
         return currentCatalogSource() == ChannelCatalog.SOURCE_CUSTOM
                 && !activeEmbeddedCctvResolver && !activeEmbeddedYangshipinResolver
                 && !activeEmbeddedCjsResolver
                 && webStreamHeaders == null && isHttpHlsSource(streamUrl)
                 && !HlsProxyServer.needsSpecialDecrypt(streamUrl);
+    }
+
+    private boolean isResolvedHlsSource(String sourceUrl) {
+        return isHttpHlsSource(sourceUrl) || proxy!=null && proxy.knowsHlsPlaylist(sourceUrl);
     }
 
     private static boolean isHttpHlsSource(String sourceUrl) {
@@ -8666,11 +8659,31 @@ public final class MainActivity extends Activity {
                 || path.endsWith(".mp3");
     }
 
+    private final InterlacedDecodeMonitor interlacedDecodeMonitor = new InterlacedDecodeMonitor();
+    private int interlacedSoftwareAttemptRequest = -1;
+    private float interlacedHardwareFps;
+    private String activeInterlacedPreferenceKey = "";
+    private long pendingHlsDecodeSequence = -1L;
+    private String pendingHlsDecodePlaylist;
+    private Runnable pendingInterlacedSwitch;
+    private ChannelDecodeHints channelDecodeHints;
+    private long channelPreparseHealthySince;
+    private int channelPreparseRequest = -1;
+    private final InterlacedDecodeMonitor interlacedSoftwareConfirmation = new InterlacedDecodeMonitor();
+
+    private String interlacedPreferenceKey(PlaybackDebugStats stats) {
+        return MediaTrackSelection.urlKey("interlaced_class_v2", Build.FINGERPRINT
+                + "\n" + hardwareDecoder + "\n" + stats.videoDecoderName
+                + "\n" + stats.videoCodec + "\n" + stats.videoDescription.bitDepth
+                + "\n1080i50");
+    }
+
     private boolean shouldUseSoftwareDecode() {
         if (DECODE_MODE_SOFTWARE.equals(decodeMode)) {
             return true;
         }
-        return DECODE_MODE_AUTO.equals(decodeMode) && autoSoftwareDecode;
+        return Build.VERSION.SDK_INT > Build.VERSION_CODES.KITKAT
+                && DECODE_MODE_AUTO.equals(decodeMode) && autoSoftwareDecode;
     }
 
     private static String sanitizeDecodeMode(String mode) {
@@ -9766,6 +9779,11 @@ public final class MainActivity extends Activity {
         return showColorDebugInfo && !audioOnlyPlayback;
     }
 
+    private boolean sourceMetadataProbeNeeded() {
+        // Startup timing and network speed use counters, not another media probe.
+        return !audioOnlyPlayback && (showDebugInfo || showColorDebugInfo);
+    }
+
     private float debugInfoHeightFactor() {
         int rows = (showDebugInfo ? 2 : 0) + (colorDebugInfoEnabled() ? 1 : 0)
                 + (showLoadTiming ? 1 : 0);
@@ -9773,6 +9791,11 @@ public final class MainActivity extends Activity {
     }
 
     private void applyDebugInfoVisibility() {
+        if (proxy != null && !sourceMetadataProbeNeeded()) proxy.disableSourceVideoProbe();
+        else if (proxy != null) {
+            if (player instanceof AndroidMediaPlayer) proxy.enableSourceVideoProbe();
+            else proxy.disableSourceVideoProbe();
+        }
         if (debugInfoOverlay == null) {
             return;
         }
@@ -9845,7 +9868,8 @@ public final class MainActivity extends Activity {
                     }
                     return;
                 }
-                if (!DECODE_MODE_AUTO.equals(decodeMode)) {
+                if (!DECODE_MODE_AUTO.equals(decodeMode)
+                        || Build.VERSION.SDK_INT <= Build.VERSION_CODES.KITKAT) {
                     Log.w(TAG, "Hardware decoder produced no visible frame; automatic fallback "
                             + "disabled mode=" + decodeMode + " channel=" + channel.name);
                     showChannelBar(channel.name, "硬解未检测到画面，可在管理页选择兼容软解");
@@ -9916,7 +9940,8 @@ public final class MainActivity extends Activity {
             releasePlayer(true);
             hideLoading();
             showChannelBar(currentChannel().name,
-                    "系统播放器出错，请稍后重试或切换线路");
+                    lastSystemPlaybackError + "，请重试或切换线路");
+            Toast.makeText(this, lastSystemPlaybackError + "，请重试或切换线路", Toast.LENGTH_LONG).show();
             return;
         }
         int recoveryLimit = legacyHlsFailure ? 2 : PLAYBACK_RECOVERY_MAX_ATTEMPTS;
@@ -10042,9 +10067,14 @@ public final class MainActivity extends Activity {
         // Capture before releasePlayer clears the clock. The initial seek belongs
         // to this new player only; later channel switches still start normally.
         IMediaPlayer previous = player;
+        int[] retainedTracks = null;
         long duration = 0L, position = 0L;
         if (previous != null) {
             try {
+                if (previous instanceof IjkMediaPlayer) retainedTracks = new int[] {
+                        ((IjkMediaPlayer) previous).getSelectedTrack(ITrackInfo.MEDIA_TRACK_TYPE_AUDIO),
+                        ((IjkMediaPlayer) previous).getSelectedTrack(ITrackInfo.MEDIA_TRACK_TYPE_VIDEO),
+                        ((IjkMediaPlayer) previous).getSelectedTrack(ITrackInfo.MEDIA_TRACK_TYPE_TIMEDTEXT) };
                 duration = previous.getDuration();
                 position = previous.getCurrentPosition();
             } catch (RuntimeException error) {
@@ -10062,7 +10092,8 @@ public final class MainActivity extends Activity {
             startAndroidMediaPlayer(channel, url, softwareDecode, systemHls);
         } else {
             startIjkPlayer(channel, url, softwareDecode,
-                    url != null && url.equals(directHttpMediaUrl), null, resume);
+                    url != null && url.equals(directHttpMediaUrl),
+                    previous instanceof IjkMediaPlayer ? retainedTracks : null, resume);
         }
         if (resume > 0L && player != null && player != previous) {
             Log.i(TAG, "Resuming reconnected VOD positionMs=" + resume);
@@ -11280,7 +11311,7 @@ public final class MainActivity extends Activity {
 
     private boolean channelPlaybackWaiting() {
         // Prepared/Started and a fetched segment do not prove decoded output.
-        return preparingChannelSwitch || player == null || !prepared || buffering
+        return player == null || !prepared || buffering
                 || !(audioOnlyPlayback ? playbackProgressObserved : videoRenderingStarted);
     }
 
@@ -11554,11 +11585,25 @@ public final class MainActivity extends Activity {
     }
 
     private void releasePlayer(boolean keepPendingArtwork) {
+        playbackSeekState.reset();
+        if (channelDecodeHints != null) channelDecodeHints.cancel();
+        channelPreparseHealthySince = 0L;
+        channelPreparseRequest = -1;
+        if (pendingInterlacedSwitch != null) {
+            root.removeCallbacks(pendingInterlacedSwitch);
+            pendingInterlacedSwitch = null;
+        }
+        if (pendingSystemPrepareAfterRelease != null) {
+            channelBar.removeCallbacks(pendingSystemPrepareAfterRelease);
+            pendingSystemPrepareAfterRelease = null;
+        }
+        if (pendingIjkPrepareAfterRelease != null) {
+            channelBar.removeCallbacks(pendingIjkPrepareAfterRelease);
+            pendingIjkPrepareAfterRelease = null;
+        }
         releaseMulticastPlayback();
-        cancelChannelWarmup();
-        preparingChannelSwitch=false;
+        cancelChannelManifest();
         videoScreenshot.clear();
-        sniffedPlaybackWarmup.reset();
         albumArtLoader.clear();
         audioOnlyPlayback = false;
         if (audioArtwork != null) audioArtwork.clear(keepPendingArtwork);
@@ -11603,17 +11648,12 @@ public final class MainActivity extends Activity {
             final IMediaPlayer oldPlayer = player;
             player = null;
             long releaseStartedAt = SystemClock.elapsedRealtime();
-            // Platform release shuts the codec down before disconnecting its
-            // native window. A null Surface first requests a decoder reconfigure;
-            // explicit reset first can discard the client before window cleanup.
-            if (!(oldPlayer instanceof AndroidMediaPlayer)) try {
-                oldPlayer.setSurface(null);
-                oldPlayer.setDisplay(null);
-            } catch (RuntimeException error) {
-                Log.w(TAG, "Unable to detach old player", error);
-            }
+            // Both framework release() and IJK's JNI release detach their own
+            // native window. Clearing it first asks a still-running codec to
+            // reconfigure just before shutdown. The replacement still waits for
+            // releaseComplete before preparing against this Surface.
             if(oldPlayer instanceof AndroidMediaPlayer) {
-                HlsProxyServer oldProxy=outgoingPlaybackProxy!=null?outgoingPlaybackProxy:proxy;
+                HlsProxyServer oldProxy=proxy;
                 if(oldProxy!=null)oldProxy.disconnectPlayerRequests();
             }
             final int releaseRequestId = playRequestId;
@@ -11631,6 +11671,8 @@ public final class MainActivity extends Activity {
                         Log.w(TAG, "Unable to release old player", error);
                     } finally {
                         releaseComplete.countDown();
+                        if (oldPlayer instanceof IjkMediaPlayer) channelBar.post(
+                                () -> resumeIjkPreparationAfterRelease(releaseComplete));
                     }
                     long finished = SystemClock.elapsedRealtime();
                     channelStartupTiming.stage(releaseRequestId, "release-end", finished);
@@ -11730,9 +11772,8 @@ public final class MainActivity extends Activity {
         videoHeight = 0;
         videoSarNum = 1;
         videoSarDen = 1;
-        {
-            videoView.resetSurfaceBufferSizePreservingAspect();
-        }
+        // Keep the last queued Surface buffer while the replacement prepares.
+        // Resizing here invalidates it before the incoming decoder has a frame.
         refreshVideoInfo();
     }
 
@@ -11771,6 +11812,34 @@ public final class MainActivity extends Activity {
     }
 
     private VideoControlsOverlay videoControlsOverlay;
+    private final PlaybackSeekState playbackSeekState = new PlaybackSeekState();
+
+    private void bindSeekCompletion(final IMediaPlayer targetPlayer) {
+        targetPlayer.setOnSeekCompleteListener(completed -> {
+            if (player != targetPlayer || completed != targetPlayer) return;
+            long next = playbackSeekState.complete();
+            if (next >= 0L) {
+                try { targetPlayer.seekTo(next); }
+                catch (RuntimeException error) {
+                    playbackSeekState.reset();
+                    Log.w(TAG, "Unable to apply queued seek", error);
+                    Toast.makeText(this, "进度跳转失败，请重试", Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
+    }
+
+    private void seekPlayback(long value) {
+        long duration = seekableDuration();
+        if (duration <= 0L || player == null) return;
+        long target = Math.max(0L, Math.min(duration - 1L, value));
+        mediaTrackChangeGeneration++;
+        long submit = playbackSeekState.request(target, SystemClock.elapsedRealtime());
+        if (submit >= 0L) {
+            try { player.seekTo(submit); }
+            catch (RuntimeException error) { playbackSeekState.reset(); throw error; }
+        }
+    }
 
     private void showVideoControls() {
         if (seekableDuration() <= 0L || audioOnlyPlayback) return;
@@ -11788,11 +11857,11 @@ public final class MainActivity extends Activity {
                     }
                 }
                 public long duration() { return seekableDuration(); }
-                public long position() { return prepared && player != null ? player.getCurrentPosition() : 0L; }
+                public long position() { return prepared && player != null
+                        ? playbackSeekState.position(player.getCurrentPosition(), SystemClock.elapsedRealtime()) : 0L; }
                 public void toggle() { if (prepared && player != null) togglePlayback(); }
                 public void seek(long value) {
-                    long duration = seekableDuration();
-                    if (duration > 0) player.seekTo(Math.max(0L, Math.min(duration - 1L, value)));
+                    seekPlayback(value);
                 }
             }, isTelevisionDevice());
             ((android.widget.FrameLayout) root).addView(videoControlsOverlay,
@@ -11803,12 +11872,12 @@ public final class MainActivity extends Activity {
 
     private boolean playbackSpeedAvailable(IMediaPlayer target) {
         if (!(target instanceof IjkMediaPlayer) || target.getDuration() <= 0L) return false;
-        return proxy == null || !isHttpHlsSource(activePlayerStreamUrl) || proxy.finiteMedia();
+        return proxy == null || !isResolvedHlsSource(activePlayerStreamUrl) || proxy.finiteMedia();
     }
 
     private long seekableDuration() {
         if (!prepared || player == null || (webSourceView != null && webSourceView.isPageVisible())) return 0L;
-        if (proxy != null && isHttpHlsSource(activePlayerStreamUrl) && !proxy.finiteMedia()) return 0L;
+        if (proxy != null && isResolvedHlsSource(activePlayerStreamUrl) && !proxy.finiteMedia()) return 0L;
         return Math.max(0L, player.getDuration());
     }
 
@@ -11823,7 +11892,6 @@ public final class MainActivity extends Activity {
 
     @SuppressLint("SetTextI18n")
     private void refreshVideoInfo() {
-        if(preparingChannelSwitch)return;
         if (audioArtwork != null && audioOnlyPlayback)
             audioArtwork.setPlaying(prepared && player != null && player.isPlaying() && !buffering);
         if (videoInfo == null && debugInfoOverlay == null) {
@@ -11851,7 +11919,7 @@ public final class MainActivity extends Activity {
             } else if (videoRenderingStarted && player instanceof IjkMediaPlayer
                     && lastVideoOutputAt > 0L
                     && now - lastVideoOutputAt >= PLAYBACK_STALL_RECOVERY_MS
-                    && isHttpHlsSource(activePlayerStreamUrl) && proxy != null && !proxy.finiteMedia()
+                    && isResolvedHlsSource(activePlayerStreamUrl) && proxy != null && !proxy.finiteMedia()
                     && IjkStreamMetrics.sourceFrameRate((IjkMediaPlayer) player) >= 1f) {
                 // Checking the audio clock alone misses a frozen video renderer.
                 // Use measured output, with the same bounded retry policy as a
@@ -11861,12 +11929,6 @@ public final class MainActivity extends Activity {
                 return;
             }
             long playbackPosition = player.getCurrentPosition();
-            if (sniffedPlaybackWarmup.sample(now, playbackPosition,
-                    webViewAutoCloseSniffed && canReturnToSniffedPage() && playingSniffedResource != null
-                    && !webSourceView.isPageVisible() && !buffering && player.isPlaying()
-                    && (audioOnlyPlayback || videoRenderingStarted && outputFps > 0.1f))) {
-                suspendSniffedWebAudio();
-            }
             // A live HLS window can rebase the reported position when older
             // segments leave the manifest.  A backwards jump is still playback
             // progress; treating it as a stall causes a false reconnect roughly once
@@ -11908,6 +11970,8 @@ public final class MainActivity extends Activity {
         refreshChannelPlaybackStatus();
         PlaybackDebugStats stats = collectPlaybackStreamStats(outputFps);
         latestPlaybackDebugStats = stats;
+        updateChannelDecodeHints(stats);
+        if (maybeSwitchInterlacedSoftwareDecode(stats)) return;
         if (videoInfo != null && channelBar.getVisibility() == View.VISIBLE) {
             setCardText(videoInfo, audioOnlyPlayback ? ""
                     : formatChannelVideoInfo(stats));
@@ -12092,6 +12156,245 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private String decodeHintSource(Channel channel, String url) {
+        String source = channel.sourceUrl(currentSourceIndex);
+        return source == null || source.length() == 0 ? url : source;
+    }
+
+    private boolean usePreparsedSoftwareDecode(Channel channel, String url) {
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.KITKAT || channelDecodeHints == null
+                || !DECODE_MODE_AUTO.equals(decodeMode)) return false;
+        ChannelDecodeHints.Hint hint = channelDecodeHints.get(decodeHintSource(channel, url));
+        if (hint == null || !hint.interlaced50() || hint.depth <= 0) return false;
+        PlaybackDebugStats stats = new PlaybackDebugStats();
+        stats.videoCodec = hint.codec;
+        stats.videoDescription = hint.description();
+        String mime = "H.264".equals(hint.codec) ? "video/avc" : "H.265".equals(hint.codec) ? "video/hevc" : null;
+        if (mime == null) return false;
+        stats.videoDecoderName = HARDWARE_DECODER_AUTO.equals(hardwareDecoder)
+                ? IjkMediaPlayer.DefaultMediaCodecSelector.sInstance.onMediaCodecSelect(null, mime, 0, 0)
+                : hardwareDecoder;
+        if (stats.videoDecoderName == null) return false;
+        String key = interlacedPreferenceKey(stats);
+        float baseline = getSharedPreferences(PREFERENCES, MODE_PRIVATE).getFloat(key, 0f);
+        if (baseline <= 0f) return false;
+        activeInterlacedPreferenceKey = key;
+        interlacedHardwareFps = baseline;
+        interlacedSoftwareAttemptRequest = playRequestId;
+        Log.i(TAG, "SQLite channel hint matched known 1080i decoder type; opening software directly");
+        return true;
+    }
+
+    private boolean rejectStalePreparsedDecode(IjkMediaPlayer active, Channel channel, String url) {
+        if (channelDecodeHints == null) return false;
+        ChannelDecodeHints.Hint hint=channelDecodeHints.get(decodeHintSource(channel,url));
+        if (hint == null) return false;
+        PlaybackDebugStats actual=collectPlaybackStreamStats(0f);
+        boolean changed=actual.height>0 && actual.height!=hint.height
+                || !"--".equals(actual.videoCodec) && !hint.codec.equals(actual.videoCodec)
+                || "progressive".equals(actual.videoDescription.scanType)
+                || actual.videoDescription.bitDepth>0 && actual.videoDescription.bitDepth!=hint.depth;
+        if(!changed)return false;
+        channelDecodeHints.invalidate(decodeHintSource(channel,url));
+        interlacedHardwareFps=0f;
+        interlacedSoftwareAttemptRequest=playRequestId;
+        Log.i(TAG,"Current stream headers override stale SQLite decode hint");
+        try {
+            restartPlayerPreservingPosition(channel,url,false);
+        } catch(IOException error) {
+            Log.w(TAG,"Unable to restart after stale decode hint",error);
+            hideLoading();showChannelBar(channel.name,"播放信息已变化，请重试");
+        }
+        return true;
+    }
+
+    private void updateChannelDecodeHints(PlaybackDebugStats stats) {
+        // Save current IJK metadata without network requests. Only automatic mode
+        // uses neighbor probes; API 19 and older never select software from hints.
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.KITKAT
+                || !prepared || !videoRenderingStarted || player == null || !player.isPlaying()
+                || buffering || audioOnlyPlayback || isDeviceNetworkDisconnected()) {
+            channelPreparseHealthySince = 0L;
+            if (channelDecodeHints != null && channelPreparseRequest >= 0) {
+                channelDecodeHints.cancel(); channelPreparseRequest = -1;
+            }
+            return;
+        }
+        long now = SystemClock.elapsedRealtime();
+        if (channelPreparseHealthySince == 0L) channelPreparseHealthySince = now;
+        if (now - channelPreparseHealthySince < 3000L) return;
+        if (channelDecodeHints == null) channelDecodeHints = new ChannelDecodeHints(this);
+        if (activePlayerChannel != null
+                && stats.height > 0 && stats.videoDescription.bitDepth > 0
+                && !"unknown".equals(stats.videoDescription.scanType) && stats.nominalFrameRate > 0f) {
+            channelDecodeHints.remember(decodeHintSource(activePlayerChannel,activePlayerStreamUrl),
+                    stats.width,stats.height,stats.videoCodec,stats.videoDescription,stats.nominalFrameRate);
+        }
+        if (!DECODE_MODE_AUTO.equals(decodeMode)) {
+            if (channelPreparseRequest >= 0) channelDecodeHints.cancel();
+            channelPreparseRequest = -1;
+            return;
+        }
+        if (channelPreparseRequest == playRequestId) return;
+        channelPreparseRequest = playRequestId;
+        java.util.List<String> sources = new java.util.ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        if (activePlayerChannel != null) seen.add(decodeHintSource(activePlayerChannel,activePlayerStreamUrl));
+        int[] groups = {currentGroupIndex,currentGroupIndex};
+        int[] indices = {currentChannelIndex,currentChannelIndex};
+        for (int distance=0;distance<5;distance++) {
+            for (int side=0;side<2;side++) {
+                int[] location=adjacentChannelLocation(groups[side],indices[side],side==0?-1:1);
+                if(location==null)continue;
+                groups[side]=location[0];indices[side]=location[1];
+                Channel candidate=ChannelCatalog.GROUPS[location[0]].channels[location[1]];
+                String url=candidate.sourceUrl(0);
+                if(url==null || !seen.add(url))continue;
+                // Web/JS/provider authorization must not disturb the active session.
+                if((url.startsWith("http://") || url.startsWith("https://"))
+                        && (HttpStreamResolver.isExplicitHlsUrl(url) || isDirectHttpMediaSource(url))) sources.add(url);
+            }
+        }
+        channelDecodeHints.schedule(sources);
+    }
+
+    private boolean tryRememberedVodSoftwareDecode(IjkMediaPlayer vod, Channel channel, String url) {
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.KITKAT
+                || !DECODE_MODE_AUTO.equals(decodeMode)
+                || vod.getVideoDecoder() != IjkMediaPlayer.FFP_PROPV_DECODER_MEDIACODEC) return false;
+        // Reuse headers parsed by prepareAsync; no second network probe or playback is needed.
+        PlaybackDebugStats stats = collectPlaybackStreamStats(0f);
+        if (stats.nominalFrameRate <= 0f) {
+            IjkMediaMeta meta = IjkMediaMeta.parse(vod.getMediaMeta());
+            if (meta != null && meta.mVideoStream != null && meta.mVideoStream.mFpsDen > 0)
+                stats.nominalFrameRate = (float) meta.mVideoStream.mFpsNum / meta.mVideoStream.mFpsDen;
+        }
+        if (stats.height != 1080 || !"interlaced".equals(stats.videoDescription.scanType)
+                || stats.nominalFrameRate < 24f || stats.nominalFrameRate > 26f) return false;
+        String key = interlacedPreferenceKey(stats);
+        float oldFps = getSharedPreferences(PREFERENCES, MODE_PRIVATE).getFloat(key, 0f);
+        if (oldFps <= 0f || interlacedSoftwareAttemptRequest == playRequestId) return false;
+        activeInterlacedPreferenceKey = key;
+        interlacedHardwareFps = oldFps;
+        interlacedSoftwareAttemptRequest = playRequestId;
+        try {
+            Log.i(TAG, "VOD headers matched remembered 1080i type before playback");
+            startIjkPlayer(channel, url, true, url.equals(directHttpMediaUrl));
+            return true;
+        } catch (IOException error) {
+            Log.w(TAG, "Unable to select remembered VOD software decoder", error);
+            hideLoading();
+            showChannelBar(channel.name, "软件解码启动失败，请重试或调整解码模式");
+            return true; // The old prepared player was released: never start it again.
+        }
+    }
+
+    private boolean maybeSwitchInterlacedSoftwareDecode(PlaybackDebugStats stats) {
+        // Never query the adaptation clock/cache or start its warmup before first frame.
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.KITKAT
+                || !prepared || !videoRenderingStarted || !(player instanceof IjkMediaPlayer)) return false;
+        if (pendingInterlacedSwitch != null) return false;
+        boolean softwareTrial = interlacedSoftwareAttemptRequest == playRequestId
+                && interlacedHardwareFps > 0f && activeSoftwareDecode;
+        boolean hardware = stats.videoDecoder == IjkMediaPlayer.FFP_PROPV_DECODER_MEDIACODEC;
+        if (!softwareTrial && interlacedSoftwareAttemptRequest == playRequestId) return false;
+        boolean eligible = DECODE_MODE_AUTO.equals(decodeMode) && (softwareTrial || hardware)
+                && !audioOnlyPlayback && !buffering && player.isPlaying()
+                && !isDeviceNetworkDisconnected()
+                && stats.height == 1080 && "interlaced".equals(stats.videoDescription.scanType)
+                && stats.nominalFrameRate >= 24f && stats.nominalFrameRate <= 26f;
+        float rememberedHardwareFps = 0f;
+        if (eligible && hardware) {
+            activeInterlacedPreferenceKey = interlacedPreferenceKey(stats);
+            rememberedHardwareFps = getSharedPreferences(PREFERENCES, MODE_PRIVATE)
+                    .getFloat(activeInterlacedPreferenceKey, 0f);
+        }
+        long position = 0L, cached = 0L;
+        if (eligible) {
+            IjkMediaPlayer ijk = (IjkMediaPlayer) player;
+            position = ijk.getCurrentPosition();
+            cached = ijk.getVideoCachedDuration();
+        }
+        // On weak CPUs, software deinterlacing may be slower than half-rate hardware.
+        // Use the same stable window before restoring hardware, and never oscillate.
+        float evaluatedFps = softwareTrial
+                ? (stats.frameRate < interlacedHardwareFps * 0.95f ? 25f : 50f)
+                : stats.frameRate;
+        if (softwareTrial && interlacedSoftwareConfirmation.sample(player,
+                SystemClock.elapsedRealtime(), position, eligible && cached >= 300L,
+                stats.frameRate >= 40f ? 25f : 50f)) {
+            // Persist only after software has demonstrated stable field-rate output.
+            getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit()
+                    .putFloat(activeInterlacedPreferenceKey, interlacedHardwareFps).apply();
+            Log.i(TAG, "Remembering confirmed 1080i software decoder preference");
+        }
+        boolean remembered = rememberedHardwareFps > 0f;
+        if (!remembered && !interlacedDecodeMonitor.sample(player, SystemClock.elapsedRealtime(), position,
+                eligible && cached >= 300L && stats.frameRate >= 1f, evaluatedFps)) return false;
+        Channel channel = activePlayerChannel;
+        String url = activePlayerStreamUrl;
+        if (channel == null || url == null) return false;
+        final IMediaPlayer switchingPlayer = player;
+        final int switchingRequest = playRequestId;
+        final HlsProxyServer switchingProxy = proxy;
+        long[] boundary = player.getDuration() <= 0L && proxy != null && isResolvedHlsSource(url)
+                ? proxy.decoderHandoff.nextBoundary(position) : null;
+        final String handoffPlaylist = boundary == null ? null : proxy.decoderHandoff.mediaPlaylistUrl();
+        final long nextSequence = boundary == null ? -1L : boundary[0];
+        final long boundaryPosition = boundary == null ? -1L : position + boundary[1];
+        final long expires = SystemClock.elapsedRealtime() + (boundary == null ? 0L : boundary[1]) + 10000L;
+        final float baselineFps = remembered ? rememberedHardwareFps : stats.frameRate;
+        Runnable change = new Runnable() {
+            @Override public void run() {
+                if (player != switchingPlayer || playRequestId != switchingRequest
+                        || !DECODE_MODE_AUTO.equals(decodeMode) || proxy != switchingProxy) {
+                    pendingInterlacedSwitch = null;
+                    return;
+                }
+                if (boundaryPosition >= 0L && player.getCurrentPosition() < boundaryPosition) {
+                    if (SystemClock.elapsedRealtime() < expires) { root.postDelayed(this, 100L); return; }
+                    pendingInterlacedSwitch = null;
+                    return;
+                }
+                pendingInterlacedSwitch = null;
+                final boolean useSoftware = !softwareTrial;
+                if (useSoftware) {
+                    interlacedSoftwareAttemptRequest = playRequestId;
+                    interlacedHardwareFps = baselineFps;
+                } else {
+                    getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit()
+                            .remove(activeInterlacedPreferenceKey).apply();
+                    interlacedHardwareFps = 0f;
+                }
+                Log.w(TAG, "1080i50 adaptive decode fps=" + stats.frameRate
+                        + " decoder=" + stats.videoDecoderName + " software=" + useSoftware);
+                Toast.makeText(MainActivity.this, useSoftware ? remembered ? "此类视频已记录硬解兼容问题，正在使用软件解码"
+                        : "1080i 硬解帧率不足，正在切换软件解码"
+                        : "软件解码性能不足，正在恢复硬件解码", Toast.LENGTH_LONG).show();
+                try {
+                    if (nextSequence >= 0L) {
+                        pendingHlsDecodeSequence = nextSequence;
+                        pendingHlsDecodePlaylist = handoffPlaylist;
+                    }
+                    restartPlayerPreservingPosition(channel, url, useSoftware);
+                } catch (IOException error) {
+                    pendingHlsDecodeSequence = -1L;
+                    pendingHlsDecodePlaylist = null;
+                    Log.e(TAG, "Unable to switch interlaced stream to software", error);
+                    hideLoading();
+                    showChannelBar(channel.name, "软件解码启动失败，请重试或调整解码模式");
+                }
+            }
+        };
+        if (boundary != null) {
+            pendingInterlacedSwitch = change;
+            Log.i(TAG, "Scheduling decoder change at next HLS sequence=" + nextSequence
+                    + " remainingMs=" + boundary[1]);
+            root.postDelayed(change, boundary[1]);
+        } else change.run();
+        return true;
+    }
+
     private PlaybackDebugStats collectPlaybackStreamStats(float measuredOutputFps) {
         PlaybackDebugStats stats = new PlaybackDebugStats();
         stats.width = videoWidth;
@@ -12125,7 +12428,11 @@ public final class MainActivity extends Activity {
                 stats.videoDecoder = ijkPlayer.getVideoDecoder();
                 stats.videoDecoderName = IjkStreamMetrics.videoDecoderName(ijkPlayer);
                 stats.videoDescription = IjkStreamMetrics.videoDescription(ijkPlayer);
-                if (!audioOnlyPlayback && proxy != null && !stats.videoDescription.complete()) {
+                // The active IJK demuxer/decoder already publishes source headers.
+                // Missing/unspecified tags must not start another player on a segment.
+                // Keep compatibility with native builds that lack this property.
+                if (!stats.videoDescription.complete() && sourceMetadataProbeNeeded()
+                        && proxy != null && !IjkStreamMetrics.sourceDescriptionAvailable(ijkPlayer)) {
                     proxy.enableSourceVideoProbe();
                     stats.videoDescription = stats.videoDescription.withFallback(proxy.sourceVideoDescription());
                 }
@@ -12133,7 +12440,8 @@ public final class MainActivity extends Activity {
             } catch (RuntimeException error) {
                 Log.w(TAG, "Unable to read active video decoder", error);
             }
-            if (!IjkStreamMetrics.extendedMetricsAvailable(ijkPlayer)) stats.frameRate = 0f;
+            // Output cadence is independently available on upstream native builds,
+            // even when the optional source-frame-rate property is absent.
             applyIjkMetadata(stats);
             // Count access units against their media timestamps. SPS/VUI may
             // advertise 50 fields/s for 25 interlaced frames/s.
@@ -12811,41 +13119,7 @@ public final class MainActivity extends Activity {
         updateFavoriteButton();
     }
 
-    private void suspendSniffedWebAudio() {
-        if (!webViewAutoCloseSniffed || !canReturnToSniffedPage()) return;
-        webSourceView.suspendForStreamPlayback(sniffedWebAudioCompletion());
-    }
-
-    private WebViewShutdown.Completion sniffedWebAudioCompletion() {
-        final IMediaPlayer expectedPlayer = player;
-        final int expectedRequest = playRequestId;
-        final long expectedPlayback = sniffedPlaybackGeneration;
-        final long expectedFocus = playbackAudioFocusGeneration;
-        refreshCallAudioMute();
-        final boolean ownedFocus = playbackAudioManager != null
-                && !mutedByAudioFocus && !mutedByCallMode;
-        return stopped -> {
-            Log.i(TAG, "Web audio drain stopped=" + stopped + " ownedFocus=" + ownedFocus
-                    + " focusUnchanged=" + (playbackAudioFocusGeneration == expectedFocus));
-            // Focus callbacks and cleanup callbacks share the main looper. A loss
-            // has no public owner identity: never assume it came from our WebView,
-            // and never steal focus back from a call/another app on a timer.
-            if (!stopped || !ownedFocus || player != expectedPlayer
-                    || playRequestId != expectedRequest
-                    || sniffedPlaybackGeneration != expectedPlayback
-                    || playbackAudioFocusGeneration != expectedFocus
-                    || !playingDiscoveredWebStream || playingSniffedResource == null
-                    || !prepared || isFinishing()) return;
-            refreshCallAudioMute();
-            if (mutedByAudioFocus || mutedByCallMode || !player.isPlaying()) return;
-            requestPlaybackAudioFocus();
-            applyPlaybackMuteState(); // A denied request keeps volume at zero.
-            Log.i(TAG, "Native audio handoff granted=" + !mutedByAudioFocus);
-        };
-    }
-
     private void requestPlaybackAudioFocus() {
-        playbackAudioFocusGeneration++;
         if (playbackAudioManager == null) {
             playbackAudioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
         }
@@ -13318,15 +13592,6 @@ public final class MainActivity extends Activity {
         }
     }
 
-    /** Called only after a swipe has crossed the commit threshold. */
-    private void discardOutgoingChannelFrame() {
-        discardChannelSwipeSnapshot();
-        // Canvas connects a CPU producer to the decoder's Surface, which cannot
-        // then be reused by MediaPlayer on old Android. Hide the retained frame
-        // with the existing independent overlay until the incoming frame is ready.
-        if (channelSwitchBlackout != null) channelSwitchBlackout.setVisibility(View.VISIBLE);
-    }
-
     private void resetPlaybackGesture() {
         boolean movedPlayback = (playbackGestureVertical && !playbackGestureLeftSide)
                 || playbackGestureHorizontal;
@@ -13417,34 +13682,17 @@ public final class MainActivity extends Activity {
             switchRelative(offset);channelBar.removeCallbacks(commitRelativeChannelSwitch);
             commitRelativeChannelSwitch.run();return;
         }
-        channelSwitchAnimating = true;
-        channelSwitchDirectionX = 0f;
-        channelSwitchDirectionY = direction;
-        channelSwitchRequestId = -1;
-        float distance = Math.max(1f, root.getHeight()) * direction;
-        channelSwitchBlackout.setVisibility(View.VISIBLE);
-        if (channelSwipeBitmap != null && channelSwipeSnapshot != null) {
-            channelSwipeSnapshot.setVisibility(View.VISIBLE);
-            channelSwipeSnapshot.animate().translationY(distance).alpha(1f)
-                    .setInterpolator(GESTURE_SWITCH_EASING)
-                    .setDuration(GESTURE_SWITCH_ANIMATION_MS).start();
-        } else {
-            animatePlaybackLayerOut(0f, distance);
-        }
-        channelBar.postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                positionIncomingChannelOffscreen();
-                switchRelative(offset);
-            }
-        }, GESTURE_SWITCH_ANIMATION_MS);
+        // Commit immediately without sliding the last decoded frame offscreen.
+        clearChannelSwitchVisuals();
+        resetPlaybackLayerImmediately();
+        switchRelative(offset);
+        channelBar.removeCallbacks(commitRelativeChannelSwitch);
+        commitRelativeChannelSwitch.run();
     }
 
     private void positionIncomingChannelOffscreen() {
-        if (channelSwitchDirectionY == 0f && channelSwitchDirectionX == 0f) {
-            return;
-        }
-        channelSwitchBlackout.setVisibility(View.VISIBLE);
+        // Keep the outgoing Surface visible until the new decoder produces a frame.
+        resetPlaybackLayerImmediately();
     }
 
     private boolean isWaitingForIncomingFrame(int requestId) {
@@ -13488,34 +13736,9 @@ public final class MainActivity extends Activity {
             showChannelBar(currentChannel().name, "当前频道没有可切换的备用源");
             return;
         }
-        channelSwitchAnimating = true;
-        channelSwitchDirectionX = direction;
-        channelSwitchDirectionY = 0f;
-        channelSwitchRequestId = -1;
-        float distance = Math.max(1f, root.getWidth()) * direction;
-        channelSwitchBlackout.setVisibility(View.VISIBLE);
-        if (channelSwipeBitmap != null && channelSwipeSnapshot != null) {
-            channelSwipeSnapshot.setVisibility(View.VISIBLE);
-            channelSwipeSnapshot.animate().translationX(distance).alpha(1f)
-                    .setInterpolator(GESTURE_SWITCH_EASING)
-                    .setDuration(GESTURE_SWITCH_ANIMATION_MS).start();
-        } else {
-            animatePlaybackLayerOut(distance, 0f);
-        }
-        channelBar.postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                positionIncomingChannelOffscreen();
-                if (!switchCustomSource(offset, false, "")) {
-                    abortChannelSwitchAnimation();
-                }
-            }
-        }, GESTURE_SWITCH_ANIMATION_MS);
-    }
-
-    private void animatePlaybackLayerOut(float translationX, float translationY) {
-        animatePlaybackLayers(translationX, translationY, GESTURE_SWITCH_ANIMATION_MS,
-                GESTURE_SWITCH_EASING);
+        clearChannelSwitchVisuals();
+        resetPlaybackLayerImmediately();
+        switchCustomSource(offset, false, "");
     }
 
     private void animatePlaybackLayers(float translationX, float translationY,
@@ -13535,6 +13758,7 @@ public final class MainActivity extends Activity {
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent event) {
+        if(receiverRenderOnly)return true;
         int action = event.getActionMasked();
         if (videoControlsOverlay != null && videoControlsOverlay.visible()) {
             playbackGestureTracking = false;
@@ -13609,6 +13833,13 @@ public final class MainActivity extends Activity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        if(receiverRenderOnly) {
+            int key=event.getKeyCode();
+            if(key==KeyEvent.KEYCODE_VOLUME_UP || key==KeyEvent.KEYCODE_VOLUME_DOWN
+                    || key==KeyEvent.KEYCODE_VOLUME_MUTE)return super.dispatchKeyEvent(event);
+            if(key==KeyEvent.KEYCODE_BACK && event.getAction()==KeyEvent.ACTION_UP)multimedia.returnToPrevious();
+            return true;
+        }
         if (userScriptInstallOverlay != null) {
             int keyCode = normalizeRemoteKeyCode(event.getKeyCode());
             if (event.getAction() == KeyEvent.ACTION_DOWN
@@ -13990,7 +14221,6 @@ public final class MainActivity extends Activity {
         clearPendingPlayer();
         if (player != null) player.setVolume(0f, 0f);
         releasePlayer();
-        playbackAudioFocusGeneration++;
         abandonPlaybackAudioFocus();
         playingDiscoveredWebStream = false;
         clearSniffedPlaybackIdentity();
@@ -14145,10 +14375,11 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (channelDecodeHints != null) channelDecodeHints.close();
         cancelPendingChannelListSelection();
         if (videoControlsOverlay != null) videoControlsOverlay.hide();
         startupMaintenanceDestroyed = true;
-        cancelChannelWarmup();
+        cancelChannelManifest();
         cancelHttpResolve();
         userScriptInstallGeneration++;
         removeUserScriptInstallOverlay();
@@ -14213,7 +14444,6 @@ public final class MainActivity extends Activity {
         if (proxy != null) {
             proxy.close();
         }
-        if(outgoingPlaybackProxy!=null){if (outgoingProxyStateful) outgoingPlaybackProxy.close(); else outgoingPlaybackProxy.closeAsync();outgoingPlaybackProxy=null;}
         if (videoView != null) videoView.releaseOutput();
         super.onDestroy();
     }

@@ -60,8 +60,7 @@ test('browser settings save core options without exposing rule details', () => {
     webViewCacheBytes:0}});
   assert.equal(b.elements.get('webViewBrowserVersion').value,'128');
   assert.equal(b.elements.get('webViewAdBlock').checked,true);
-  assert.equal(b.elements.get('webViewAutoCloseSniffed').checked,true);
-  b.elements.get('webViewAutoCloseSniffed').checked=false;
+  assert.ok(!html.includes('webViewAutoCloseSniffed'));
   assert.equal(b.elements.get('webViewWebRtcEnabled').checked,false);
   b.elements.get('webViewBrowserVersion').value='138';
   b.elements.get('webViewWebRtcEnabled').checked=true;
@@ -69,7 +68,7 @@ test('browser settings save core options without exposing rule details', () => {
   const save=b.requests.find(r=>r.url==='/api/settings');
   assert.equal(JSON.parse(save.body).webViewBrowserVersion,'138');
   assert.equal(JSON.parse(save.body).webViewWebRtcEnabled,true);
-  assert.equal(JSON.parse(save.body).webViewAutoCloseSniffed,false);
+  assert.equal('webViewAutoCloseSniffed' in JSON.parse(save.body),false);
   assert.equal('webViewUserScript' in JSON.parse(save.body),false);
 });
 
@@ -414,15 +413,54 @@ test('source reads bound native waiting and abort a stuck route without late com
   let calls=0, receivedError;
   c.requestPlaylistText({location:'https://example.com/list.txt'}, (error)=>{calls++;receivedError=error;});
   const cached=b.requests[b.requests.length-1];
-  assert.equal(cached.timeout,8000);
+  assert.equal(cached.timeout,25000);
   cached.ontimeout();
   const phone=b.requests[b.requests.length-1];
   assert.equal(phone.url,'https://example.com/list.txt');
-  b.runTimers(30000);
+  b.runTimers(25000);
   assert.equal(calls,1);assert.ok(receivedError);assert.equal(phone.aborted,true);
   phone.readyState=4;phone.status=200;phone.responseText='迟到频道,http://example.com/live';
   phone.onreadystatechange();cached.onerror();
   assert.equal(calls,1);
+});
+
+test('slow PHP sources remain pending past old timeout and succeed once', () => {
+  const b=browser('channels'),c=b.context;let calls=0,result;
+  c.requestPlaylistText({location:'https://example.com/slow.php'},(error,text)=>{
+    assert.equal(error,null);calls++;result=text;
+  });
+  const cached=b.requests[b.requests.length-1];
+  assert.equal(cached.timeout,25000);
+  b.runTimers(8000);b.runTimers(30000);assert.equal(calls,0);
+  cached.readyState=4;cached.status=200;cached.responseText='频道,http://example.com/live';
+  cached.onreadystatechange();cached.onerror();b.runTimers(25000);
+  assert.equal(calls,1);assert.equal(result,cached.responseText);
+});
+
+test('phone fallback preserves server error and GitHub keeps short mirror budget', () => {
+  const b=browser('channels'),c=b.context;let error;
+  c.requestPlaylistText({location:'https://example.com/slow.php'},e=>{error=e;});
+  const cached=b.requests[b.requests.length-1];
+  cached.readyState=4;cached.status=500;cached.responseText=JSON.stringify({message:'upstream timeout'});
+  cached.onreadystatechange();const phone=b.requests[b.requests.length-1];
+  assert.ok(phone.timeout>24000 && phone.timeout<=25000);phone.onerror();
+  assert.ok(error.message.includes('upstream timeout'));assert.ok(error.message.includes('跨域'));
+  c.state={settings:{githubProxyEnabled:false}};
+  c.requestPlaylistText({location:'https://raw.githubusercontent.com/a/b/main/list.txt'},()=>{});
+  assert.equal(b.requests[b.requests.length-1].timeout,8000);
+});
+
+test('all source routes share 25 seconds and do not retry after deadline', () => {
+  const b=browser('channels'),c=b.context;let calls=0,error;
+  c.testNow=0;vm.runInContext('Date.now = function () { return testNow; };',c);
+  c.requestPlaylistText({location:'https://example.com/slow.php'},e=>{calls++;error=e;});
+  const cached=b.requests[b.requests.length-1];
+  c.testNow=18000;cached.readyState=4;cached.status=500;cached.onreadystatechange();
+  const phone=b.requests[b.requests.length-1];assert.equal(phone.timeout,7000);
+  c.testNow=25000;phone.ontimeout();
+  assert.equal(calls,1);assert.ok(error.message.includes('25'));
+  const count=b.requests.length;cached.onerror();phone.onerror();b.runTimers(25000);
+  assert.equal(b.requests.length,count);assert.equal(calls,1);
 });
 
 test('two source reads run concurrently and preserve configured order after reverse completion', () => {
@@ -482,6 +520,27 @@ test('playlist validation preserves supported streams, signed URLs and relative 
   const m3u = c.parsePlaylistOnPhone('#EXTM3U\n#EXTINF:-1,频道\n../live.m3u8', source);
   assert.equal(m3u.entries[0].url, 'https://example.com/live.m3u8');
   assert.equal(c.playlistAddressProblem('file:///storage/频道 列表.txt', true), '');
+});
+
+test('RTP and UDP multicast survive TXT, M3U and legacy browser import', () => {
+  const c = browser('channels').context;
+  const source = {name:'河南联通',location:'https://example.com/unicom.txt'};
+  const addresses = ['rtp://225.1.2.47:10276', 'RTP://225.1.2.54:11380',
+    'udp://@239.1.2.3:1234', 'udp://239.1.2.4:1234?localaddr=192.168.1.2'];
+  for (const urlApi of [URL, undefined]) {
+    c.URL = urlApi;
+    const text = '央视,#genre#\n' + addresses.map((url, i) => '频道' + i + ',,' + url).join('\n');
+    const parsed = c.parsePlaylistOnPhone(text, source);
+    assert.equal(parsed.warningCount, 0);
+    assert.deepEqual(Array.from(parsed.entries, row => row.url), addresses);
+    assert.ok(parsed.entries.every(row => row.group === '央视'));
+    const local = c.parsePlaylistOnPhone('#EXTM3U\n#EXTINF:-1,CCTV1\n' + addresses[0], {name:'本地',location:'file:///channels.m3u'});
+    assert.equal(local.entries[0].url, addresses[0]);
+    assert.notEqual(c.playlistAddressProblem(addresses[0], true), '', 'A multicast channel is not a downloadable playlist location');
+  }
+  c.URL = URL;
+  assert.notEqual(c.playlistAddressProblem('rtp://:10276', false), '');
+  assert.notEqual(c.playlistAddressProblem('rtp://225.1.2.47:70000', false), '');
 });
 
 test('playlist validation skips broken rows and keeps their original line in the warning', () => {

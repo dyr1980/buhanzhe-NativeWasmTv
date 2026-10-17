@@ -256,7 +256,6 @@ public final class HdrPlaybackInstrumentation extends Instrumentation {
                     throw new AssertionError("Missing estimated wait message: "+warmupStatuses);
                 long startupCacheMs=media.getVideoCachedDuration();
                 HlsProxyServer observedProxy=(HlsProxyServer)field("proxy").get(activity);
-                long startupDiskCacheBytes=observedProxy==null?0:observedProxy.vodDiskCachedBytes();
                 long start=SystemClock.elapsedRealtime();
                 while(media.getCurrentPosition()<6500) {
                     if(!activity.hasWindowFocus())throw new AssertionError("Fixture lost foreground");
@@ -281,7 +280,6 @@ public final class HdrPlaybackInstrumentation extends Instrumentation {
                                 .put("decodeFps",media.getVideoDecodeFramesPerSecond())
                                 .put("tcpBytesPerSecond",media.getTcpSpeed())
                                 .put("videoCacheBytes",media.getVideoCachedBytes())
-                                .put("diskCacheBytes",observedProxy==null?0:observedProxy.vodDiskCachedBytes())
                                 .put("processCpuMs",android.os.Process.getElapsedCpuTime()-cpuStart)
                                 .put("videoCacheMs",media.getVideoCachedDuration())
                                 .put("audioCacheMs",media.getAudioCachedDuration())
@@ -295,7 +293,6 @@ public final class HdrPlaybackInstrumentation extends Instrumentation {
                             .put("firstFrameMs",firstFrameMs)
                             .put("warmupStatuses",warmupStatuses)
                             .put("startupVideoCacheMs",startupCacheMs)
-                            .put("startupDiskCacheBytes",startupDiskCacheBytes)
                             .put("elapsedMs",SystemClock.elapsedRealtime()-begin)
                             .put("positionAdvancedMs",media.getCurrentPosition()-position)
                             .put("bufferStateTransitions",field("bufferingEventId").getInt(activity)-events)

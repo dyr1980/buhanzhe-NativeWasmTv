@@ -28,7 +28,7 @@ static final String DECODE_MODE_AUTO="auto";
 static final long PLAYBACK_STALL_RECOVERY_MS=10000,NTV_CAST_STALL_RECOVERY_MS=5000;
 long lastVideoOutputAt=100;int playRequestId=7,calls;boolean software;
 boolean isNtVCastSource(String u){return "cast".equals(u);}
-boolean isHttpHlsSource(String u){return "live".equals(u);}
+boolean isResolvedHlsSource(String u){return "live".equals(u);}
 void recoverStalledPlayback(int request,Player p,String reason){calls++;software=false;}
 void recoverStalledPlayback(int request,Player p,String reason,boolean stopped){calls++;software=choose(p,stopped);}
 boolean choose(Player watchedPlayer,boolean videoOutputStopped){FALLBACK}

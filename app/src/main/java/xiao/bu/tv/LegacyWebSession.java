@@ -28,7 +28,7 @@ final class LegacyWebSession {
     String channelTitle = "", channelGroup = "";
     int request = -1, pid, retiredPid, sequence;
     float scale = 1f;
-    boolean active, visible, suspended;
+    boolean active, visible;
     boolean htmlMimeOverride;
     Messenger browser;
     IBinder.DeathRecipient death;
@@ -43,7 +43,7 @@ final class LegacyWebSession {
         channelTitle = title; channelGroup = group;
         htmlMimeOverride = forceHtml;
         token = UUID.randomUUID().toString();
-        active = visible = true; suspended = false;
+        active = visible = true;
         state = new Bundle(); state.putString("url", url);
         started = lastBeat = SystemClock.elapsedRealtime();
         owner.setVisibility(android.view.View.VISIBLE);
@@ -188,7 +188,7 @@ final class LegacyWebSession {
         return intent;
     }
     boolean restore() {
-        if (!active || visible || suspended) return false;
+        if (!active || visible) return false;
         visible = true; command("restore"); owner.setVisibility(android.view.View.VISIBLE);
         owner.getContext().startActivity(browserIntent().addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
         return true;
@@ -197,11 +197,7 @@ final class LegacyWebSession {
         if (!active || !visible || browser == null) return;
         owner.getContext().startActivity(browserIntent().addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
     }
-    void suspend(WebViewShutdown.Completion completion) {
-        if (!active || visible || suspended) { completion.onComplete(false); return; }
-        // Once native playback is stable, discard the entire isolated process, including background tabs.
-        suspended = true; close(); completion.onComplete(true);
-    }
+
     String value(String key) { return state.getString(key, ""); }
     JSONObject media() { return active && visible ? json(value("media")) : new JSONObject(); }
     void mediaControl(String action, String page, String media, WebSourceView.MediaControlResult callback) {

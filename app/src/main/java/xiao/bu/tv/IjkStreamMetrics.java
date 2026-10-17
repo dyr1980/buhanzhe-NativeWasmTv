@@ -7,7 +7,6 @@ import tv.danmaku.ijk.media.player.IjkMediaPlayer;
 final class IjkStreamMetrics {
     private static final Method GET_FLOAT = findGetter("_getPropertyFloat", int.class, float.class);
     private static final Method GET_LONG = findGetter("_getPropertyLong", int.class, long.class);
-    private static final Method SET_LONG = findGetter("_setPropertyLong", int.class, long.class);
     private static final Method GET_CODEC = findGetter("_getVideoCodecInfo");
     private static final int SOURCE_FPS = 11001;
     private static final int OUTPUT_FRAMES = 22001;
@@ -27,16 +26,14 @@ final class IjkStreamMetrics {
         }
     }
 
-    static void excludeProxyWarmup(IjkMediaPlayer player, long milliseconds, boolean enough) {
-        if (player != null && SET_LONG != null) try {
-            SET_LONG.invoke(player, 22040, Math.min(2147483000L, Math.max(0L, milliseconds)));
-            SET_LONG.invoke(player, 22041, enough ? 1L : 0L);
-        } catch (Exception ignored) { }
-    }
-
     static VideoStreamDescription videoDescription(IjkMediaPlayer player) {
         long value = longProperty(player, VIDEO_DESCRIPTION, 0L);
         return value == 0L ? VideoStreamDescription.UNKNOWN : new VideoStreamDescription(value);
+    }
+
+    static boolean sourceDescriptionAvailable(IjkMediaPlayer player) {
+        // Zero means not parsed yet; -1 means this native build lacks the property.
+        return longProperty(player, VIDEO_DESCRIPTION, -1L) >= 0L;
     }
 
     static String videoDecoderName(IjkMediaPlayer player) {
