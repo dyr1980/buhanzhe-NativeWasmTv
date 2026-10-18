@@ -43,6 +43,18 @@ final class AutoUpdater {
 
     private final Activity activity;
     private volatile boolean destroyed;
+    
+    // === 恢复原作者的回调接口，确保 MainActivity 不报错 ===
+    private volatile Runnable liteListener;
+    void setLiteListener(Runnable listener){liteListener=listener;}
+    private void notifyLite(){notifyLite(null);}
+    private void notifyLite(String message){activity.runOnUiThread(()->{
+        if(destroyed||activity.isFinishing())return;
+        Runnable value=liteListener;if(value!=null)value.run();
+        if(message!=null)Toast.makeText(activity,message,Toast.LENGTH_LONG).show();
+    });}
+    // ===============================================
+
     private volatile boolean importantChecking;
     private volatile boolean liteChecking;
     private volatile String liteState = "idle";
@@ -91,7 +103,10 @@ final class AutoUpdater {
         }, "update-check").start();
     }
 
-    synchronized String checkLiteForUpdates() {
+    // === 恢复原作者的带参重载方法 ===
+    synchronized String checkLiteForUpdates() {return checkLiteForUpdates(false);}
+
+    synchronized String checkLiteForUpdates(final boolean showResult) {
         if (destroyed) return stateResponse(false, "更新服务已关闭");
         if (downloadActive || "downloading".equals(liteState)) return stateResponse(true, "正在下载更新");
         if (liteChecking) return stateResponse(true, "正在检查更新");
@@ -127,11 +142,13 @@ final class AutoUpdater {
                     Log.w(TAG, "Lightweight update check failed", error);
                 } finally {
                     liteChecking = false;
+                    notifyLite(showResult ? liteMessage : null); // 恢复回调
                 }
             }
         }, "update-lite-check").start();
-        return stateResponse(true, "正在检查更新");
+        notifyLite();return stateResponse(true, "正在检查更新");
     }
+    // ===============================
 
     synchronized String installLiteUpdate() {
         if (destroyed) return stateResponse(false, "更新服务已关闭");
@@ -180,6 +197,7 @@ final class AutoUpdater {
 
     void destroy() {
         destroyed = true;
+        liteListener=null; // 恢复原作者的清理逻辑
         if (promptDialog != null) {
             promptDialog.dismiss();
             promptDialog = null;
@@ -199,8 +217,7 @@ final class AutoUpdater {
         return parseUpdateInfo(object, allowArchitectureUpgrade);
     }
 
-    // Old releases predate version-lite.json. Only a missing file permits this
-    // compatibility fallback; network/server/JSON errors must not report stale data.
+    // === 保留你的优秀设计：老版本 404 兼容回退 ===
     String readManifest(String manifestUrl, String legacyUrl) throws IOException {
         try {
             return downloadManifest(manifestUrl);
@@ -529,6 +546,7 @@ final class AutoUpdater {
         launchInstaller(apk);
     }
 
+    // === 保留你的优秀设计：原生的 Intent 安装器 ===
     private void launchInstaller(File apk) {
         try {
             Uri uri;
