@@ -21,6 +21,8 @@ final class EpgListAdapter extends BaseAdapter {
     private final EpgDisplayCache displayCache = new EpgDisplayCache();
     private List<EpgManager.Program> programs = Collections.emptyList();
     private float uiScale = 1f;
+    private Channel channel;
+    private final SimpleDateFormat dateFormat=new SimpleDateFormat("MM-dd HH:mm",Locale.getDefault());
 
     EpgListAdapter(Context context, UiScaleHelper uiScaleHelper) {
         inflater = LayoutInflater.from(context);
@@ -37,7 +39,11 @@ final class EpgListAdapter extends BaseAdapter {
     }
 
     void showPrograms(List<EpgManager.Program> programs) {
-        this.programs = displayCache.programsFor(programs);
+        showPrograms(programs,null);
+    }
+    void showPrograms(List<EpgManager.Program> programs,Channel channel){
+        this.channel=channel;
+        this.programs = displayCache.programsFor(programs,channel==null?0:channel.catchupDays());
         // Keep time-based highlights fresh even when the cached list is reused.
         notifyDataSetChanged();
     }
@@ -69,6 +75,7 @@ final class EpgListAdapter extends BaseAdapter {
 
     @Override
     public View getView(int position, View convertView, ViewGroup parent) {
+        if(TvUiPlugin.current()!=null){try{return themedRow(position,convertView);}catch(RuntimeException|LinkageError error){TvUiPlugin.rejectRenderer(inflater.getContext(),error);convertView=null;}}
         ViewHolder holder;
         if (convertView == null || !(convertView.getTag() instanceof ViewHolder)) {
             convertView = inflater.inflate(R.layout.item_epg_program, parent, false);
@@ -93,9 +100,10 @@ final class EpgListAdapter extends BaseAdapter {
             holder.title.setActivated(false);
             return convertView;
         }
-        holder.time.setText(timeFormat.format(new Date(program.startMillis)) + "–"
+        holder.time.setText((program.startMillis<EpgManager.dayStart(System.currentTimeMillis())?dateFormat:timeFormat).format(new Date(program.startMillis)) + "–"
                 + timeFormat.format(new Date(program.stopMillis)));
-        holder.title.setText(program.title);
+        long now=System.currentTimeMillis();
+        holder.title.setText(programTitle(program,now));
         boolean current = program.isPlaying(System.currentTimeMillis());
         convertView.setBackgroundResource(current
                 ? R.drawable.epg_program_current_background
@@ -106,6 +114,29 @@ final class EpgListAdapter extends BaseAdapter {
         convertView.refreshDrawableState();
         return convertView;
     }
+
+    private String programTitle(EpgManager.Program program,long now){
+        // Inferred catchup remains available on click without advertising uncertain support.
+        String marker=channel!=null&&channel.catchupDays()>0&&!channel.automaticCatchupOnly()
+                ?program.isPlaying(now)?"直播 · ":channel.canCatchup(program.startMillis,program.stopMillis,now)?"回看 · ":"":"";
+        return marker+program.title;
+    }
+
+    private View themedRow(int position,View old){
+        float scale=inflater.getContext() instanceof xiao.bu.tv.skin.SharedTvUi.Viewport
+                ?((xiao.bu.tv.skin.SharedTvUi.Viewport)inflater.getContext()).themeScale():uiScale;
+        ThemedRow holder=old!=null&&old.getTag() instanceof ThemedRow?(ThemedRow)old.getTag():null;
+        if(holder==null||holder.revision!=TvUiPlugin.revision()||Math.abs(holder.scale-scale)>.001f){
+            holder=new ThemedRow();holder.revision=TvUiPlugin.revision();holder.scale=scale;
+            old=TvUiPlugin.provider().create(inflater.getContext(),"epg-row",holder.state,null,null);old.setTag(holder);
+        }
+        EpgManager.Program program=getItem(position);long now=System.currentTimeMillis();
+        holder.state.putString("time",program==null?"":(program.startMillis<EpgManager.dayStart(now)?dateFormat:timeFormat).format(new Date(program.startMillis))+"–"+timeFormat.format(new Date(program.stopMillis)));
+        holder.state.putString("title",program==null?"":programTitle(program,now));
+        holder.state.putBoolean("current",program!=null&&program.isPlaying(now));
+        TvUiPlugin.provider().update(old,holder.state);return old;
+    }
+    private static final class ThemedRow{int revision;float scale;final android.os.Bundle state=new android.os.Bundle();}
 
     private static final class ViewHolder {
         TextView time;

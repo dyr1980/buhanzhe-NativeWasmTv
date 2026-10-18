@@ -130,7 +130,11 @@ public final class HdrDecoderColorInstrumentation extends Instrumentation {
                 } else if(index>=0) {codec.releaseOutputBuffer(index,true);frames++;SystemClock.sleep(45);}
             }
             if(frames<8)throw new AssertionError("Decoder stalled");
-            SystemClock.sleep(200);texture.updateTexImage();texture.getTransformMatrix(transform);
+            long outputDeadline=SystemClock.elapsedRealtime()+2000;
+            do { texture.updateTexImage();if(texture.getTimestamp()!=0)break;SystemClock.sleep(20); }
+            while(SystemClock.elapsedRealtime()<outputDeadline);
+            if(texture.getTimestamp()==0)throw new AssertionError("No output Surface frame");
+            texture.getTransformMatrix(transform);
             GLES20.glUseProgram(program);GLES20.glUniformMatrix4fv(GLES20.glGetUniformLocation(program,"transform"),1,false,transform,0);
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP,0,4);GLES20.glFinish();
             ByteBuffer pixel=ByteBuffer.allocateDirect(4);JSONArray pixels=new JSONArray();int maxError=0;
@@ -143,14 +147,17 @@ public final class HdrDecoderColorInstrumentation extends Instrumentation {
                 pixels.put(actual);
             }
             if(GLES20.glGetError()!=GLES20.GL_NO_ERROR)throw new AssertionError("Readback error");
+            java.lang.reflect.Field raw=NativeHdrOutput.class.getDeclaredField("rawYuv");raw.setAccessible(true);
             return new JSONObject().put("name",fixture.getString("name")).put("decoder",decoder).put("output",output)
                     .put("reportedTransfer",fixture.optInt("reportedTransfer",-1))
                     .put("reportedStandard",fixture.optInt("reportedStandard",-1))
                     .put("reportedRange",fixture.optInt("reportedRange",-1))
-                    .put("frames",frames).put("gpuFrames",NativeHdrOutput.renderedFrameCount())
+                    .put("frames",frames).put("surfaceTimestamp",texture.getTimestamp())
+                    .put("gpuFrames",NativeHdrOutput.renderedFrameCount()).put("colorOutput",NativeHdrOutput.outputRoute(true))
+                    .put("rawYuv",bridge!=null&&raw.getBoolean(bridge))
                     .put("pixels",pixels).put("expected",expected).put("maxError",maxError).put("pass",maxError<=5);
         } finally {
-            if(codec!=null){try{codec.stop();}finally{codec.release();}}
+            if(codec!=null){try{codec.stop();}catch(IllegalStateException ignored){}finally{codec.release();}}
             if(bridge!=null)bridge.release();NativeHdrOutput.prepareSoftwareOutput();extractor.release();
         }
     }
@@ -171,18 +178,17 @@ public final class HdrDecoderColorInstrumentation extends Instrumentation {
                     || HdrDisplayPolicy.passthrough(3,7,new int[]{3},35))
                 throw new AssertionError("HDR display/pipeline policy regression");
             int defaultMode=HdrMode.nativeValue(HdrMode.DEFAULT);
-            for(int sdk : new int[]{19,25,26,30,31,35}) {
-                if(defaultMode!=3 || HdrDisplayPolicy.passthrough(defaultMode,7,new int[]{3},sdk)
-                        || HdrDisplayPolicy.passthrough(defaultMode,6,new int[]{2},sdk)
-                        || HdrDisplayPolicy.decoderToneMapping(defaultMode,sdk))
-                    throw new AssertionError("Default must use GPU regardless of display capability or SDK");
+            for(int sdk:new int[]{14,19,25,26,29,30,31,35,37}){
+                if(defaultMode!=1||HdrDisplayPolicy.decoderToneMapping(defaultMode,sdk)!=(sdk>=31))throw new AssertionError("Automatic HDR routing regression");
             }
-            if(HdrMode.nativeValue("hardware")!=3 || HdrMode.nativeValue("hardware_sdr")!=3
-                    || HdrMode.nativeValue("passthrough")!=1
-                    || !"passthrough".equals(HdrMode.sanitize("passthrough")))
-                throw new AssertionError("Saved default/manual HDR output preference regression");
             for(int i=0;i<fixtures.length();i++) {
-                JSONObject row=measure(fixtures.getJSONObject(i));report.put(row);if(!row.getBoolean("pass"))failures++;
+                JSONObject row;
+                try { row=measure(fixtures.getJSONObject(i)); }
+                catch(Exception error) {
+                    row=new JSONObject().put("name",fixtures.getJSONObject(i).getString("name"))
+                            .put("pass",false).put("error",android.util.Log.getStackTraceString(error));
+                }
+                report.put(row);if(!row.getBoolean("pass"))failures++;
                 Bundle progress=new Bundle();progress.putString("stream",row.toString()+"\n");sendStatus(0,progress);
             }
             File file=new File(getTargetContext().getExternalFilesDir(null),"hdr-decoder-color.json");

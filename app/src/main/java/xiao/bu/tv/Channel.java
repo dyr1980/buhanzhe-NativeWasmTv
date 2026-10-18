@@ -14,6 +14,8 @@ final class Channel {
     final String epgId;
     final String logoUrl;
     final boolean radio;
+    final java.util.Map<String,IptvCatchup> catchupSources;
+    private volatile IptvCatchup[] resolvedCatchups;
     final String[] subtitleUrls;
     final int catalogSource;
     final String favoriteKey;
@@ -72,6 +74,15 @@ final class Channel {
             String yangshipinPid, String yangshipinStreamId, String yangshipinMaxDefinition,
             String epgId, int catalogSource, String favoriteKey, String logoUrl, String[] subtitleUrls,
             boolean radio) {
+        this(number,name,streamId,urls,yangshipinPid,yangshipinStreamId,yangshipinMaxDefinition,
+                epgId,catalogSource,favoriteKey,logoUrl,subtitleUrls,radio,java.util.Collections.<String,IptvCatchup>emptyMap());
+    }
+
+    private Channel(String number,String name,String streamId,String[] urls,String yangshipinPid,
+            String yangshipinStreamId,String yangshipinMaxDefinition,String epgId,int catalogSource,
+            String favoriteKey,String logoUrl,String[] subtitleUrls,boolean radio,
+            java.util.Map<String,IptvCatchup> catchupSources) {
+        this.catchupSources=catchupSources;
         this.number = number;
         this.name = name;
         this.streamId = streamId;
@@ -103,7 +114,7 @@ final class Channel {
         combined[urls.length] = candidate;
         return new Channel(number, name, streamId, combined,
                 yangshipinPid, yangshipinStreamId, yangshipinMaxDefinition, epgId,
-                catalogSource, favoriteKey, logoUrl, subtitleUrls, radio);
+                catalogSource, favoriteKey, logoUrl, subtitleUrls, radio, catchupSources);
     }
 
     static boolean sameSourceUrl(String first, String second) {
@@ -233,26 +244,26 @@ final class Channel {
     Channel asFavorite(String key, int source) {
         return new Channel(number, name, streamId, urls,
                 yangshipinPid, yangshipinStreamId, yangshipinMaxDefinition, epgId,
-                source, key, logoUrl, subtitleUrls, radio);
+                source, key, logoUrl, subtitleUrls, radio, catchupSources);
     }
 
     Channel withCatalogSource(int source) {
         return new Channel(number, name, streamId, urls,
                 yangshipinPid, yangshipinStreamId, yangshipinMaxDefinition, epgId,
-                source, favoriteKey, logoUrl, subtitleUrls, radio);
+                source, favoriteKey, logoUrl, subtitleUrls, radio, catchupSources);
     }
 
     Channel withLogo(String url) {
         return new Channel(number, name, streamId, urls, yangshipinPid,
                 yangshipinStreamId, yangshipinMaxDefinition, epgId,
-                catalogSource, favoriteKey, url, subtitleUrls, radio);
+                catalogSource, favoriteKey, url, subtitleUrls, radio, catchupSources);
     }
 
     Channel withRadio(boolean value) {
         if (radio == value) return this;
         return new Channel(number, name, streamId, urls, yangshipinPid,
                 yangshipinStreamId, yangshipinMaxDefinition, epgId,
-                catalogSource, favoriteKey, logoUrl, subtitleUrls, value);
+                catalogSource, favoriteKey, logoUrl, subtitleUrls, value, catchupSources);
     }
 
     Channel withSubtitles(String values) {
@@ -264,7 +275,7 @@ final class Channel {
         }
         return new Channel(number, name, streamId, urls, yangshipinPid,
                 yangshipinStreamId, yangshipinMaxDefinition, epgId, catalogSource,
-                favoriteKey, logoUrl, result.toArray(new String[result.size()]), radio);
+                favoriteKey, logoUrl, result.toArray(new String[result.size()]), radio, catchupSources);
     }
 
     String subtitleUrlsText() {
@@ -286,6 +297,38 @@ final class Channel {
                     ? url.toString().replace(" ", "%20") : "";
         } catch (Exception ignored) { return ""; }
     }
+
+    Channel withCatchup(String url,IptvCatchup spec) {
+        if(spec==null||!spec.configured())return this;
+        java.util.Map<String,IptvCatchup> entries=new java.util.LinkedHashMap<>(catchupSources);
+        entries.put(canonicalSourceUrl(url),spec);return copyCatchups(entries);
+    }
+    Channel withCatchups(String stored) {
+        if(stored==null||stored.isEmpty())return this;
+        java.util.Map<String,IptvCatchup> entries=new java.util.LinkedHashMap<>(catchupSources);
+        for(java.util.Map.Entry<String,IptvCatchup> e:IptvCatchup.decode(stored).entrySet())if(!entries.containsKey(e.getKey()))entries.put(e.getKey(),e.getValue());
+        return entries.isEmpty()?this:copyCatchups(entries);
+    }
+    private Channel copyCatchups(java.util.Map<String,IptvCatchup> entries) {
+        return new Channel(number,name,streamId,urls,yangshipinPid,yangshipinStreamId,
+                yangshipinMaxDefinition,epgId,catalogSource,favoriteKey,logoUrl,subtitleUrls,radio,
+                java.util.Collections.unmodifiableMap(entries));
+    }
+    String catchupText(){return IptvCatchup.encode(catchupSources);}
+    // Derived lazily when the guide is opened; inferred rules do not grow SQLite or delay startup.
+    private IptvCatchup[] catchupSpecs(){
+        IptvCatchup[] result=resolvedCatchups;if(result!=null)return result;
+        result=new IptvCatchup[urls.length];
+        for(int i=0;i<urls.length;i++){
+            IptvCatchup spec=catchupSources.get(canonicalSourceUrl(urls[i]));
+            result[i]=spec!=null&&spec.enabled()?spec:radio?null:IptvCatchup.automatic(urls[i],spec);
+        }
+        resolvedCatchups=result;return result;
+    }
+    IptvCatchup catchupFor(int source){IptvCatchup[] specs=catchupSpecs();return specs.length==0?null:specs[(source%specs.length+specs.length)%specs.length];}
+    double catchupDays(){double days=0;for(IptvCatchup c:catchupSpecs())if(c!=null)days=Math.max(days,c.days);return days;}
+    boolean canCatchup(long start,long end,long now){for(IptvCatchup c:catchupSpecs())if(c!=null&&c.available(start,end,now))return true;return false;}
+    boolean automaticCatchupOnly(){boolean any=false;for(IptvCatchup c:catchupSpecs())if(c!=null){if(!c.inferred())return false;any=true;}return any;}
 
     int sourceCount() {
         return urls.length;

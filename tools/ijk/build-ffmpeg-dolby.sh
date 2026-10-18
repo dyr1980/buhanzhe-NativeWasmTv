@@ -11,6 +11,7 @@ cd "$tree/android/contrib/ffmpeg-$arch"
 test -f ffbuild/config.mak
 node "$repo/tools/ijk/apply-ffmpeg-buffer-patches.cjs" "$PWD"
 node "$repo/tools/ijk/apply-ffmpeg-seek-patches.cjs" "$PWD"
+node "$repo/tools/ijk/apply-parser-damage-patches.cjs" "$PWD"
 node "$repo/tools/ijk/apply-adaptive-probe-patches.cjs" "$PWD"
 # Reuse the already configured cross-toolchain, retaining all prior IPTV flags.
 flags="$(sed -n 's/^FFMPEG_CONFIGURATION=//p' ffbuild/config.mak)"

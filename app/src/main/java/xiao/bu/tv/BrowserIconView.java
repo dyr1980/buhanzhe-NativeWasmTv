@@ -25,6 +25,7 @@ final class BrowserIconView extends View {
     static final int FAVORITE = 12;
     static final int FAVORITE_FILLED = 13;
     static final int FOLDER = 14;
+    static final int COVER = 15;
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint focusPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -93,6 +94,15 @@ final class BrowserIconView extends View {
             case FAVORITE: drawFavorite(canvas, false); break;
             case FAVORITE_FILLED: drawFavorite(canvas, true); break;
             case FOLDER: drawFolder(canvas); break;
+            case COVER:
+                paint.setStyle(Paint.Style.STROKE);
+                path.moveTo(2f, 12f);
+                path.cubicTo(7f, 4f, 17f, 4f, 22f, 12f);
+                path.cubicTo(17f, 20f, 7f, 20f, 2f, 12f);
+                canvas.drawPath(path, paint);
+                canvas.drawCircle(12f, 12f, 3f, paint);
+                canvas.drawLine(4f, 3f, 20f, 21f, paint);
+                break;
             default: break;
         }
         canvas.restoreToCount(save);

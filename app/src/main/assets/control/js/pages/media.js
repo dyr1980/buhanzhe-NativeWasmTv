@@ -138,14 +138,7 @@ var mediaControllerTimer = null,
   mediaClockTimer = null,
   mediaControllerOpen = false,
   mediaSeeking = false,
-  mediaVolumeEditing = false,
-  mediaVolumeFinalizing = false,
-  mediaVolumeSending = false,
-  mediaVolumeQueued = null,
-  mediaVolumeStartValue = null,
-  mediaVolumeTimer = null,
-  mediaVolumeRequest = null,
-  mediaVolumeLastSentAt = 0,
+  mediaLevels = {volume: mediaCreateLevel("volume", 0), brightness: mediaCreateLevel("brightness", 50)},
   subtitleOffsetEditing = false,
   mediaState = null,
   mediaControllerBuilt = false,
@@ -513,7 +506,8 @@ function buildMediaController() {
     );
   body.innerHTML =
     '<section class="media-player-card">' +
-    '<div id="mediaVolumeControl" class="media-volume-control"><span id="mediaVolumeValue">--</span><div class="media-volume-range"><div class="media-volume-track"><i id="mediaVolumeFill"></i><i id="mediaVolumeKnob"></i></div><input id="mediaVolume" type="range" min="0" max="15" value="0" step="1" aria-label="播放设备音量" aria-orientation="vertical" oninput="mediaVolumePreview(this)" onchange="mediaVolumeCommit(this)" onblur="mediaVolumeCancel()" ontouchcancel="mediaVolumeCancel()"></div><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4 6 8H3v8h3l5 4V4Z M15 8a6 6 0 0 1 0 8 M18 5a10 10 0 0 1 0 14"/></svg></div>' +
+    mediaLevelMarkup("volume", "播放设备音量", '<path d="M11 4 6 8H3v8h3l5 4V4Z M15 8a6 6 0 0 1 0 8 M18 5a10 10 0 0 1 0 14"/>') +
+    mediaLevelMarkup("brightness", "播放设备亮度", '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>') +
     '<div class="media-scene"><img id="mediaArtwork" class="media-artwork" alt="专辑封面" hidden><span id="mediaLiveBadge" class="media-live-badge">正在播放</span><div class="media-scene-actions"><button id="mediaScreenshot" class="media-circle-action" type="button" hidden aria-label="截图" onclick="mediaCaptureScreenshot()"><svg class="media-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h4l2-3h4l2 3h4a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="4"/></svg></button></div></div>' +
     '<div class="media-now"><span id="mediaGroup">当前频道</span><b id="mediaTitle">当前节目</b><small id="mediaStatus">正在读取播放状态…</small></div>' +
     '<div id="mediaProgressSection" class="media-progress"><div id="mediaSeekBar" class="media-seekbar"><div class="media-seek-track"><i id="mediaSeekFill"></i><i id="mediaSeekKnob"></i></div><input id="mediaProgress" type="range" min="0" max="1" value="0" step="250" aria-label="播放进度" oninput="mediaProgressPreview(this)" onchange="mediaSeekCommit(this)"></div><div class="media-time"><span id="mediaPosition">--:--</span><span id="mediaDuration">直播</span></div></div>' +
@@ -534,12 +528,13 @@ function renderMediaController(data) {
     buildMediaController();
     mediaControllerBuilt = true;
   }
-  if (!subtitleOffsetEditing && !mediaVolumeEditing) {
+  if (!subtitleOffsetEditing && !mediaLevels.volume.editing && !mediaLevels.brightness.editing) {
     fillMediaTrackSelect("mediaVideo", mediaState.videoTracks || [], mediaState.selectedVideoTrack, "未检测到视轨", false);
     fillMediaTrackSelect("mediaAudio", mediaState.audioTracks || [], mediaState.selectedAudioTrack, "未检测到音轨", false);
     fillMediaTrackSelect("mediaSubtitle", mediaState.subtitleTracks || [], mediaState.selectedSubtitleTrack, "未检测到字幕", true);
   }
   mediaRenderVolume();
+  mediaLevels.brightness.render();
   var available = mediaState.available === true,
     prepared = mediaState.prepared === true,
     duration = Number(mediaState.durationMs) || 0,
@@ -689,19 +684,11 @@ function setMediaControllerActive(active) {
   mediaControllerOpen = active;
   mediaControllerGeneration++;
   mediaSeeking = false;
-  mediaVolumeEditing = false;
-  mediaVolumeFinalizing = false;
-  mediaVolumeSending = false;
-  mediaVolumeQueued = null;
-  mediaVolumeStartValue = null;
-  mediaVolumeLastSentAt = 0;
+  mediaLevels.volume.reset();
+  mediaLevels.brightness.reset();
   subtitleOffsetEditing = false;
   clearTimeout(mediaControllerTimer);
   clearTimeout(mediaClockTimer);
-  clearTimeout(mediaVolumeTimer);
-  mediaVolumeTimer = null;
-  if (mediaVolumeRequest) mediaVolumeRequest.abort();
-  mediaVolumeRequest = null;
   if (active) {
     mediaControllerBuilt = false;
     mediaNeedsDetail = true;
@@ -731,7 +718,7 @@ function mediaCommand(action, extra) {
     generation = mediaControllerGeneration,
     sequence = ++mediaRequestSequence;
   body.action = action;
-  if (mediaState && mediaState.webPageVisible && action !== "volume") {
+  if (mediaState && mediaState.webPageVisible && action !== "volume" && action !== "brightness") {
     body.webPageKey = mediaState.webPageKey || "";
     body.webMediaToken = mediaState.webMediaToken || "";
     if (action === "toggle") body.action = mediaState.playing ? "pause" : "play";
@@ -753,103 +740,107 @@ function mediaCommand(action, extra) {
   });
 }
 
-function mediaRenderVolume() {
-  var input = document.getElementById("mediaVolume");
-  if (!input || mediaVolumeEditing) return;
-  input.max = String(Math.max(1, Number(mediaState.volumeMax) || 1));
-  input.value = String(Math.max(0, Number(mediaState.volume) || 0));
-  input.disabled = mediaState.volumeAvailable !== true;
-  mediaVolumePaint(input);
-}
-
-function mediaVolumePaint(input) {
-  var percent = Math.round(Math.max(0, Math.min(100,
-    Number(input.value) / Math.max(1, Number(input.max)) * 100)));
-  document.getElementById("mediaVolumeValue").textContent = input.disabled ? "--" : percent + "%";
-  document.getElementById("mediaVolumeFill").style.height = percent + "%";
-  document.getElementById("mediaVolumeKnob").style.bottom = percent + "%";
-  document.getElementById("mediaVolumeControl").className = "media-volume-control" + (input.disabled ? " unavailable" : "");
-  input.setAttribute("aria-valuetext", input.disabled ? "设备不支持音量调节" : percent === 0 ? "静音" : percent + "%");
-}
-
-function mediaVolumePreview(input) {
-  if (!input || input.disabled) return;
-  if (!mediaVolumeEditing) {
+// The two sliders share request coalescing, cancellation and stale-session guards.
+function mediaCreateLevel(action, fallback) {
+  var id = action === "volume" ? "mediaVolume" : "mediaBrightness",
+    control = { editing: false, finalizing: false, sending: false, queued: null,
+      start: null, timer: null, request: null, sentAt: 0 };
+  function value() {
+    var current = Number(mediaState && mediaState[action]);
+    return mediaState && mediaState[action] != null && isFinite(current) ? Math.round(current) : fallback;
+  }
+  function queue(level, finalValue) {
+    control.queued = Math.max(action === "volume" ? 0 : 1, Math.round(Number(level) || 0));
+    if (finalValue) control.finalizing = true;
+    flush(!!finalValue);
+  }
+  function flush(force) {
+    if (!mediaControllerOpen || control.sending || control.queued === null) return;
+    clearTimeout(control.timer);
+    control.timer = null;
+    var wait = force ? 0 : Math.max(0, 70 - (Date.now() - control.sentAt));
+    if (wait > 0) { control.timer = setTimeout(function () { flush(false); }, wait); return; }
+    var level = control.queued, generation = mediaControllerGeneration, body = {action: action};
+    body[action] = level;
+    control.queued = null;
+    control.sending = true;
+    control.sentAt = Date.now();
+    control.request = api("/api/media/control", body, function (error, data) {
+      // A request aborted by reset must not clear a newer session's in-flight state.
+      if (!mediaControllerOpen || generation !== mediaControllerGeneration) return;
+      control.request = null;
+      control.sending = false;
+      if (!error && data) mediaState = mergeMediaState(data);
+      if (control.queued !== null) { flush(control.finalizing); return; }
+      if (!control.finalizing) return;
+      control.editing = false;
+      control.finalizing = false;
+      control.start = null;
+      if (error) toast(error.message, true);
+      control.render();
+      scheduleMediaControllerRefresh(error ? 500 : 250);
+    });
+  }
+  function paint(input) {
+    var percent = Math.round(Math.max(0, Math.min(100,
+      Number(input.value) / Math.max(1, Number(input.max)) * 100)));
+    document.getElementById(id + "Value").textContent = input.disabled ? "--" : percent + "%";
+    document.getElementById(id + "Fill").style.height = percent + "%";
+    document.getElementById(id + "Knob").style.bottom = percent + "%";
+    document.getElementById(id + "Control").className = "media-volume-control"
+      + (action === "brightness" ? " media-brightness-control" : "") + (input.disabled ? " unavailable" : "");
+    input.setAttribute("aria-valuetext", input.disabled ? "设备不支持调节" : percent === 0 ? "静音" : percent + "%");
+  }
+  function begin() {
+    if (control.editing) return;
     mediaRequestSequence++;
     clearTimeout(mediaControllerTimer);
-    mediaVolumeEditing = true;
-    mediaVolumeFinalizing = false;
-    mediaVolumeStartValue = Math.max(0, Math.round(Number(mediaState && mediaState.volume) || 0));
+    control.editing = true;
+    control.finalizing = false;
+    control.start = value();
   }
-  mediaVolumeEditing = true;
-  mediaVolumePaint(input);
-  mediaQueueVolume(Math.round(Number(input.value) || 0), false);
+  control.render = function () {
+    var input = document.getElementById(id);
+    if (!input || control.editing) return;
+    input.max = String(action === "volume" ? Math.max(1, Number(mediaState && mediaState.volumeMax) || 1) : 100);
+    input.value = String(Math.max(action === "volume" ? 0 : 1, value()));
+    input.disabled = !mediaState || mediaState[action + "Available"] !== true;
+    paint(input);
+  };
+  control.preview = function (input) {
+    if (!input || input.disabled) return;
+    begin(); paint(input); queue(input.value, false);
+  };
+  control.commit = function (input) {
+    if (!input || input.disabled) return;
+    begin(); paint(input); queue(input.value, true);
+  };
+  control.cancel = function () {
+    if (!control.editing || control.finalizing) return;
+    var input = document.getElementById(id), restore = control.start === null ? value() : control.start;
+    if (input) { input.value = String(restore); paint(input); }
+    queue(restore, true);
+  };
+  control.reset = function () {
+    clearTimeout(control.timer);
+    var request = control.request;
+    control.request = control.timer = control.queued = control.start = null;
+    control.editing = control.finalizing = control.sending = false;
+    control.sentAt = 0;
+    if (request) request.abort();
+  };
+  return control;
 }
 
-function mediaVolumeCommit(input) {
-  if (!input || input.disabled) return;
-  if (!mediaVolumeEditing) {
-    mediaVolumeEditing = true;
-    mediaVolumeStartValue = Math.max(0, Math.round(Number(mediaState && mediaState.volume) || 0));
-  }
-  mediaVolumePaint(input);
-  // Always send the release value once more so the receiver finishes on the
-  // exact knob position even when an intermediate request was coalesced.
-  mediaQueueVolume(Math.round(Number(input.value) || 0), true);
+function mediaLevelMarkup(action, label, icon) {
+  var id = action === "volume" ? "mediaVolume" : "mediaBrightness";
+  return '<div id="' + id + 'Control" class="media-volume-control' + (action === "brightness" ? ' media-brightness-control' : '') + '"><span id="' + id + 'Value">' + (action === "brightness" ? '50%' : '--') + '</span><div class="media-volume-range"><div class="media-volume-track"><i id="' + id + 'Fill" class="media-level-fill"></i><i id="' + id + 'Knob" class="media-level-knob"></i></div><input id="' + id + '" class="media-level-input" type="range" min="' + (action === "volume" ? '0' : '1') + '" max="' + (action === "volume" ? '15' : '100') + '" value="' + (action === "volume" ? '0' : '50') + '" step="1" aria-label="' + label + '" aria-orientation="vertical" oninput="mediaLevels.' + action + '.preview(this)" onchange="mediaLevels.' + action + '.commit(this)" onblur="mediaLevels.' + action + '.cancel()" ontouchcancel="mediaLevels.' + action + '.cancel()"></div><svg viewBox="0 0 24 24" aria-hidden="true">' + icon + '</svg></div>';
 }
 
-function mediaVolumeCancel() {
-  if (!mediaVolumeEditing || mediaVolumeFinalizing) return;
-  var input = document.getElementById("mediaVolume"), restore = mediaVolumeStartValue;
-  if (restore === null) restore = Math.max(0, Math.round(Number(mediaState && mediaState.volume) || 0));
-  if (input) {
-    input.value = String(restore);
-    mediaVolumePaint(input);
-  }
-  mediaQueueVolume(restore, true);
-}
-
-function mediaQueueVolume(value, finalValue) {
-  mediaVolumeQueued = Math.max(0, Math.round(Number(value) || 0));
-  if (finalValue) mediaVolumeFinalizing = true;
-  mediaFlushVolume(!!finalValue);
-}
-
-function mediaFlushVolume(force) {
-  if (!mediaControllerOpen || mediaVolumeSending || mediaVolumeQueued === null) return;
-  clearTimeout(mediaVolumeTimer);
-  mediaVolumeTimer = null;
-  var wait = force ? 0 : Math.max(0, 70 - (Date.now() - mediaVolumeLastSentAt));
-  if (wait > 0) {
-    mediaVolumeTimer = setTimeout(function () {
-      mediaVolumeTimer = null;
-      mediaFlushVolume(false);
-    }, wait);
-    return;
-  }
-  var value = mediaVolumeQueued,
-    generation = mediaControllerGeneration;
-  mediaVolumeQueued = null;
-  mediaVolumeSending = true;
-  mediaVolumeLastSentAt = Date.now();
-  mediaVolumeRequest = api("/api/media/control", { action: "volume", volume: value }, function (error, data) {
-    mediaVolumeRequest = null;
-    mediaVolumeSending = false;
-    if (!mediaControllerOpen || generation !== mediaControllerGeneration) return;
-    if (!error && data) mediaState = mergeMediaState(data);
-    if (mediaVolumeQueued !== null) {
-      mediaFlushVolume(mediaVolumeFinalizing);
-      return;
-    }
-    if (!mediaVolumeFinalizing) return;
-    mediaVolumeEditing = false;
-    mediaVolumeFinalizing = false;
-    mediaVolumeStartValue = null;
-    if (error) toast(error.message, true);
-    mediaRenderVolume();
-    scheduleMediaControllerRefresh(error ? 500 : 250);
-  });
-}
+function mediaRenderVolume() { mediaLevels.volume.render(); }
+function mediaVolumePreview(input) { mediaLevels.volume.preview(input); }
+function mediaVolumeCommit(input) { mediaLevels.volume.commit(input); }
+function mediaVolumeCancel() { mediaLevels.volume.cancel(); }
 
 function mediaToggleFavorite() {
   mediaCommand("favorite");

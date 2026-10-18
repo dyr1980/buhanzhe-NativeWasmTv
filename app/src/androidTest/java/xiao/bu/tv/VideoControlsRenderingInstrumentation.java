@@ -30,6 +30,11 @@ public final class VideoControlsRenderingInstrumentation extends Instrumentation
                 attach.setAccessible(true);attach.invoke(owner,getTargetContext());owner.setTheme(R.style.AppTheme);
                 final long[] duration={40000},position={20000};final int[] seeks={0};
                 VideoControlsOverlay controls=new VideoControlsOverlay(owner,new VideoControlsOverlay.Playback() {
+                        public boolean completed(){return false;}
+                        public boolean catchup(){return false;}
+                        public void live(){}
+                    public String status(){return "";}
+                    public boolean loading(){return false;}
                     public boolean playing(){return true;} public long duration(){return duration[0];}
                     public long position(){return position[0];} public void toggle(){}
                     public void seek(long value){position[0]=value;seeks[0]++;} public String title(){return "Controls regression";}

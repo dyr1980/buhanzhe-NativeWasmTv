@@ -48,12 +48,19 @@ final class EpgManager {
         void onUpdated();
     }
 
+    private static final long KEEP_PAST_MS=IptvCatchup.MAX_DAYS*86400000L;
+
     static final class Program {
         final long startMillis;
         final long stopMillis;
         final String title;
+        final String catchupId;
 
         Program(long startMillis, long stopMillis, String title) {
+            this(startMillis,stopMillis,title,"");
+        }
+        Program(long startMillis,long stopMillis,String title,String catchupId){
+            this.catchupId=catchupId==null?"":catchupId;
             this.startMillis = startMillis;
             this.stopMillis = stopMillis;
             this.title = title;
@@ -65,6 +72,7 @@ final class EpgManager {
     }
 
     private static final class Guide {
+        final Object revision = new Object();
         final Map<String, String> channelByAlias = new HashMap<String, String>();
         final Map<String, String> logosByChannel = new HashMap<String, String>();
         final Map<String, List<Program>> programsByChannel =
@@ -79,6 +87,7 @@ final class EpgManager {
     private volatile String loadedUrl = "";
     private String attemptedSource;
     private long attemptedDay;
+    private long attemptedAt;
 
     EpgManager(Context context) {
         this.context = context.getApplicationContext();
@@ -97,14 +106,49 @@ final class EpgManager {
     }
 
     List<Program> programsFor(Channel channel) {
+        return programsFor(guide, channel);
+    }
+
+    private static List<Program> programsFor(Guide snapshot, Channel channel) {
         if (channel == null) {
             return Collections.emptyList();
         }
-        Guide snapshot = guide;
         String channelId = channelIdFor(snapshot, channel);
         List<Program> result = channelId == null
                 ? null : snapshot.programsByChannel.get(channelId);
         return result == null ? Collections.<Program>emptyList() : result;
+    }
+
+    /** One entry per recycled row: no alias normalization or guide scan during cursor moves. */
+    static final class CurrentProgram {
+        private Object revision;
+        private Channel channel;
+        private long from, until;
+        private String title = "";
+
+        String titleFor(EpgManager manager, Channel value, long now) {
+            Guide next = manager == null ? null : manager.guide;
+            Object token = next == null ? null : next.revision;
+            if (token == revision && value == channel && now >= from && now < until) return title;
+            // Keep only the revision token, never an obsolete complete guide in a recycled row.
+            revision = token;
+            channel = value;
+            from = now;
+            until = Long.MAX_VALUE;
+            title = "";
+            if (next == null) return title;
+            // Guides are sorted, immutable snapshots. Preserve first-active semantics
+            // even for overlapping programmes; invalidate exactly at stop/next-start.
+            for (Program program : programsFor(next, value)) {
+                if (program.startMillis > now) { until = program.startMillis; break; }
+                if (program.isPlaying(now)) {
+                    title = program.title;
+                    until = program.stopMillis;
+                    break;
+                }
+            }
+            return title;
+        }
     }
 
     String logoFor(Channel channel) {
@@ -138,13 +182,16 @@ final class EpgManager {
         final int requestId;
         synchronized (this) {
             long day = dayStart(System.currentTimeMillis());
-            if (sourceSignature.equals(attemptedSource) && attemptedDay == day) return;
+            long now=android.os.SystemClock.elapsedRealtime();
+            if (sourceSignature.equals(attemptedSource) && attemptedDay == day
+                    && (loading || lastError.length()==0 || now-attemptedAt<60000L)) return;
             attemptedSource = sourceSignature;
             attemptedDay = day;
+            attemptedAt = now;
             requestId = ++refreshGeneration;
             loading = true;
+            lastError = "";
         }
-        lastError = "";
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -160,6 +207,19 @@ final class EpgManager {
                             LoadedGuide loaded = loadGuide(source, cacheSlot(source, index));
                             mergeGuide(merged, loaded.guide);
                             loadedSources.add(loaded.sourceUrl);
+                            // Expose the first usable cold-load source before a
+                            // slow fallback finishes. Preserve an existing guide
+                            // during refresh, and never mutate a published snapshot.
+                            boolean published = false;
+                            synchronized (EpgManager.this) {
+                                if (requestId == refreshGeneration && index + 1 < sources.size()
+                                        && guide.programsByChannel.isEmpty()
+                                        && !merged.programsByChannel.isEmpty()) {
+                                    publish(copyGuide(merged), loadedSources);
+                                    published = true;
+                                }
+                            }
+                            if (published) notifyListener(listener);
                         } catch (Exception sourceError) {
                             if (firstError.length() == 0) {
                                 firstError = sourceError.getMessage() == null
@@ -177,9 +237,13 @@ final class EpgManager {
                         if (requestId == refreshGeneration) publish(merged, loadedSources);
                     }
                 } catch (Exception error) {
-                    if (requestId == refreshGeneration) {
-                        lastError = error.getMessage() == null
-                                ? error.getClass().getSimpleName() : error.getMessage();
+                    synchronized(EpgManager.this){
+                        if (requestId == refreshGeneration) {
+                            lastError = error.getMessage() == null
+                                    ? error.getClass().getSimpleName() : error.getMessage();
+                            // Back off from completion, including slow DNS/TLS timeouts.
+                            attemptedAt=android.os.SystemClock.elapsedRealtime();
+                        }
                     }
                     Log.w(TAG, "Unable to refresh EPG", error);
                 } finally {
@@ -254,6 +318,14 @@ final class EpgManager {
         Log.i(TAG, "EPG loaded source=" + loadedUrl
                 + " aliases=" + next.channelByAlias.size()
                 + " channels=" + next.programsByChannel.size());
+    }
+
+    private static Guide copyGuide(Guide source) {
+        Guide copy = new Guide();
+        copy.channelByAlias.putAll(source.channelByAlias);
+        copy.logosByChannel.putAll(source.logosByChannel);
+        copy.programsByChannel.putAll(source.programsByChannel);
+        return copy;
     }
 
     private static void mergeGuide(Guide target, Guide incoming) {
@@ -615,6 +687,7 @@ final class EpgManager {
         String channelId = normalize(parser.getAttributeValue(null, "channel"));
         long start = parseXmlTvTime(parser.getAttributeValue(null, "start"));
         long stop = parseXmlTvTime(parser.getAttributeValue(null, "stop"));
+        String catchupId=parser.getAttributeValue(null,"catchup-id");
         String title = "未命名节目";
         int depth = parser.getDepth();
         int event;
@@ -630,7 +703,7 @@ final class EpgManager {
             }
         }
         if (channelId.length() == 0 || start <= 0L || stop <= start
-                || stop <= today || start > now + KEEP_FUTURE_MS) {
+                || stop <= now-KEEP_PAST_MS || start > now + KEEP_FUTURE_MS) {
             return;
         }
         List<Program> programs = result.programsByChannel.get(channelId);
@@ -638,7 +711,7 @@ final class EpgManager {
             programs = new ArrayList<Program>();
             result.programsByChannel.put(channelId, programs);
         }
-        programs.add(new Program(start, stop, title));
+        programs.add(new Program(start, stop, title,catchupId));
     }
 
     private static long parseXmlTvTime(String raw) {

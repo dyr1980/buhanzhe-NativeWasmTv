@@ -1,143 +1,126 @@
 package xiao.bu.tv;
 
-import android.app.Instrumentation;
-import android.app.Activity;
-import android.content.Intent;
-import android.content.SharedPreferences;
-import android.widget.FrameLayout;
-import android.os.Bundle;
+import android.app.*;
+import android.content.*;
 import android.graphics.*;
+import android.os.*;
 import android.view.View;
-import android.media.MediaPlayer;
+import android.widget.FrameLayout;
 import java.io.*;
-import java.lang.reflect.Field;
-import org.json.JSONObject;
-import java.util.Map;
+import java.lang.reflect.*;
+import java.util.*;
+import org.json.*;
+import tv.danmaku.ijk.media.player.IMediaPlayer;
 
-/** Loads actual API14 DEX JARs, swaps identical class names, and rejects invalid candidates. */
+/** Exercise the real audio player, downloaded DEX, catalog and offline repair on a device. */
 public final class RadioUiInstrumentation extends Instrumentation {
-    private Bundle args;
-    private AudioArtworkView view;
-    private AudioArtworkView cold;
-    private Activity activity;
+    private Bundle args;private volatile MainActivity activity;private AudioArtworkView view,cold;
     @Override public void onCreate(Bundle value){super.onCreate(value);args=value;start();}
-    private static byte[] read(File file)throws Exception {
-        ByteArrayOutputStream bytes=new ByteArrayOutputStream();
-        try(InputStream in=new FileInputStream(file)){byte[] b=new byte[8192];int n;while((n=in.read(b))!=-1)bytes.write(b,0,n);}
-        return bytes.toByteArray();
+    @Override public void callActivityOnResume(Activity resumed){super.callActivityOnResume(resumed);if(resumed instanceof MainActivity)activity=(MainActivity)resumed;}
+    private static Object field(Object value,String name)throws Exception{Field f=value.getClass().getDeclaredField(name);f.setAccessible(true);return f.get(value);}
+    private static void setStatic(Class<?> type,String name,Object value)throws Exception{Field f=type.getDeclaredField(name);f.setAccessible(true);f.set(null,value);}
+    private static void check(boolean ok,String message){if(!ok)throw new AssertionError(message);}
+    private Object delegate(AudioArtworkView v)throws Exception{return field(v,"ui");}
+    private void choose(String id)throws Exception {RadioUiPlugin.configure(getTargetContext(),new JSONObject().put("id",id));waitForIdleSync();}
+    private void waitStyle(AudioArtworkView v,boolean optical)throws Exception {
+        long until=SystemClock.elapsedRealtime()+30000;
+        while(SystemClock.elapsedRealtime()<until){waitForIdleSync();Object ui=delegate(v);if(ui!=null&&(Boolean)field(ui,"optical")==optical)return;SystemClock.sleep(30);}
+        throw new AssertionError("Selected artwork did not become active: "+optical+" "+RadioUiPlugin.status(getTargetContext()));
     }
-    private Object delegate()throws Exception{Field f=AudioArtworkView.class.getDeclaredField("ui");f.setAccessible(true);return f.get(view);}
-    private void waitVersion(int version)throws Exception {
-        for(int i=0;i<100;i++) {
-            waitForIdleSync();
-            Field field=AudioArtworkView.class.getDeclaredField("factory");field.setAccessible(true);
-            RadioUiPlugin.Factory current=(RadioUiPlugin.Factory)field.get(view);
-            if(current!=null&&current.version==version&&delegate()!=null)return;
-            Thread.sleep(30);
-        }
-        throw new AssertionError("Version not active: "+version);
+    private void screenshot(String name)throws Exception {
+        runOnMainSync(()->{try{for(String overlay:new String[]{"channelBar","debugInfoOverlay","networkSpeedOverlay","backPrompt"})((View)field(activity,overlay)).setVisibility(View.GONE);}catch(Exception e){throw new RuntimeException(e);}});
+        SystemClock.sleep(150);Bitmap image=getUiAutomation().takeScreenshot();
+        if(image!=null)try(FileOutputStream out=new FileOutputStream(new File(getTargetContext().getExternalFilesDir(null),name+".png"))){image.compress(Bitmap.CompressFormat.PNG,100,out);}finally{image.recycle();}
     }
-    private void waitStyle(boolean optical)throws Exception {
-        for(int i=0;i<100;i++) {
-            waitForIdleSync();Object current=delegate();
-            Field field=current.getClass().getDeclaredField("optical");field.setAccessible(true);
-            if(field.getBoolean(current)==optical)return;
-            Thread.sleep(30);
-        }
-        throw new AssertionError("Style not active: "+optical);
+    private static void restore(SharedPreferences prefs,Map<String,?> saved){
+        SharedPreferences.Editor e=prefs.edit().clear();for(Map.Entry<String,?> v:saved.entrySet()){
+            Object o=v.getValue();String k=v.getKey();if(o instanceof String)e.putString(k,(String)o);else if(o instanceof Integer)e.putInt(k,(Integer)o);else if(o instanceof Long)e.putLong(k,(Long)o);else if(o instanceof Boolean)e.putBoolean(k,(Boolean)o);else if(o instanceof Float)e.putFloat(k,(Float)o);else if(o instanceof Set)e.putStringSet(k,(Set<String>)o);
+        }e.commit();
     }
-    @Override public void onStart(){Bundle result=new Bundle();int code=1;MediaPlayer audio=null;
-        String previous=getTargetContext().getSharedPreferences("radio_ui",0).getString("active","");
-        String previousStyle=RadioUiPlugin.style(getTargetContext());
-        String previousUrl=RadioUiPlugin.sourceUrl(getTargetContext());
-        SharedPreferences preferences=getTargetContext().getSharedPreferences(MainActivity.PREFERENCES,0);
-        Map<String,?> saved=new java.util.HashMap<String,Object>(preferences.getAll());
-        try {
-            activity=startActivitySync(new Intent(getTargetContext(),MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-            final Bitmap cover=Bitmap.createBitmap(100,100,Bitmap.Config.ARGB_8888);cover.eraseColor(0xff42bb66);
-            runOnMainSync(new Runnable(){public void run(){
-                try {java.lang.reflect.Method stop=MainActivity.class.getDeclaredMethod("releasePlayer");stop.setAccessible(true);stop.invoke(activity);}catch(Exception e){throw new RuntimeException(e);}
-                view=new AudioArtworkView(activity,null);
-                ((FrameLayout)activity.getWindow().getDecorView()).addView(view,new FrameLayout.LayoutParams(-1,-1));
-                view.show("电台插件测试",true,cover);view.setPlaying(true);
-            }});
-            String dir=args.getString("fixtures");
-            audio=new MediaPlayer();audio.setVolume(0,0);audio.setDataSource(dir+"/audio.wav");audio.setLooping(true);audio.prepare();audio.start();Thread.sleep(200);
-            RadioUiPlugin.install(getTargetContext(),read(new File(dir,"radio-ui-v1.jar")));waitVersion(1);
-            final Object old=delegate();
-            int before=audio.getCurrentPosition();
-            runOnMainSync(new Runnable(){public void run(){view.beginChannelSwitch(1);view.showPending("热替换测试", "",cover);}});
-            RadioUiPlugin.install(getTargetContext(),read(new File(dir,"radio-ui-v2.jar")));waitVersion(2);
-            Object next=delegate();
-            if(old==next || old.getClass().getClassLoader()==next.getClass().getClassLoader())throw new AssertionError("ClassLoader was reused");
-            Thread.sleep(150);
-            if(!audio.isPlaying()||audio.getCurrentPosition()<=before)throw new AssertionError("Audio stopped during UI replacement");
-            if(view.cover()!=cover)throw new AssertionError("Cover state lost");
-            runOnMainSync(new Runnable(){public void run(){
-                view.setVisibility(View.GONE);
-                try{if(((xiao.bu.tv.radio.RadioUi)delegate()).view().getVisibility()!=View.GONE)throw new AssertionError("Host visibility not forwarded");}catch(Exception e){throw new RuntimeException(e);}
-                view.setVisibility(View.VISIBLE);
-            }});
-            runOnMainSync(new Runnable(){public void run(){
-                view.measure(View.MeasureSpec.makeMeasureSpec(960,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(540,View.MeasureSpec.EXACTLY));
-                view.layout(0,0,960,540);
-                Bitmap image=Bitmap.createBitmap(960,540,Bitmap.Config.ARGB_8888);view.draw(new Canvas(image));
-                if(image.getPixel(480,225)==0)throw new AssertionError("Plugin did not render");
-                try(FileOutputStream output=new FileOutputStream(new File(getTargetContext().getExternalFilesDir(null),"radio-ui.png"))){image.compress(Bitmap.CompressFormat.PNG,100,output);}catch(Exception e){throw new RuntimeException(e);}
-            }});
-            String active=new JSONObject(RadioUiPlugin.status(getTargetContext())).getString("sha256");
-            try{RadioUiPlugin.install(getTargetContext(),new byte[]{1,2,3});throw new AssertionError("Invalid JAR accepted");}catch(IOException expected){}
-            if(!active.equals(new JSONObject(RadioUiPlugin.status(getTargetContext())).getString("sha256")) || delegate()!=next)
-                throw new AssertionError("Failed install replaced working UI");
-            RadioUiPlugin.configure(getTargetContext(),new JSONObject().put("style","classic"));
-            RadioUiPlugin.install(getTargetContext(),read(new File(dir,"radio-ui2.jar")));waitVersion(4);waitStyle(false);
-            before=audio.getCurrentPosition();
-            RadioUiPlugin.configure(getTargetContext(),new JSONObject().put("style","optical"));waitStyle(true);
-            if(view.cover()!=cover)throw new AssertionError("Style switch lost cover");
-            final Object opticalUi=delegate();
-            try {RadioUiPlugin.configure(getTargetContext(),new JSONObject().put("style","unknown"));throw new AssertionError("Unknown style accepted");}
-            catch(IOException expected){}
-            if(delegate()!=opticalUi || !"optical".equals(RadioUiPlugin.style(getTargetContext())))
-                throw new AssertionError("Invalid style replaced working UI");
-            runOnMainSync(new Runnable(){public void run(){view.previewSlide(-45f,true,"neighbor",cover);}});
-            RadioUiPlugin.configure(getTargetContext(),new JSONObject().put("style","classic"));waitForIdleSync();
-            if(delegate()!=opticalUi)throw new AssertionError("Style replaced during gesture");
-            runOnMainSync(new Runnable(){public void run(){view.restoreSlide();}});waitStyle(false);
-            Thread.sleep(100);
-            if(!audio.isPlaying()||audio.getCurrentPosition()<=before)throw new AssertionError("Style switch interrupted audio");
-            if(view.cover()!=cover)throw new AssertionError("Deferred style switch lost cover");
-            RadioUiPlugin.configure(getTargetContext(),new JSONObject().put("style","optical"));waitStyle(true);
-            // Forget the process cache, as on a cold start; only the on-disk JAR/pointer remain.
-            Field cached=RadioUiPlugin.class.getDeclaredField("active");cached.setAccessible(true);cached.set(null,null);
-            Field requested=RadioUiPlugin.class.getDeclaredField("requested");requested.setAccessible(true);requested.setBoolean(null,false);
-            runOnMainSync(new Runnable(){public void run(){cold=new AudioArtworkView(activity,null);cold.show("离线恢复",true,cover);}});
-            Field content=AudioArtworkView.class.getDeclaredField("ui");content.setAccessible(true);
-            for(int i=0;i<100&&content.get(cold)==null;i++){Thread.sleep(30);waitForIdleSync();}
-            if(content.get(cold)==null)throw new AssertionError("Cold cached JAR did not load");
-            Field styleField=content.get(cold).getClass().getDeclaredField("optical");styleField.setAccessible(true);
-            if(!styleField.getBoolean(content.get(cold)))throw new AssertionError("Cold reload lost selected style");
-            result.putString("stream","PASS: classic DEX v1->v2->radio-ui2, classic/optical switching, gesture-deferred replacement, cover/audio preservation, invalid-JAR/style rollback, persisted style and offline cold reload\n");code=-1;
+    @Override public void onStart(){Bundle result=new Bundle();int code=1;Context c=getTargetContext();
+        SharedPreferences prefs=c.getSharedPreferences("radio_ui",0),settings=c.getSharedPreferences(MainActivity.PREFERENCES,0);
+        Map<String,?> saved=new HashMap<>(prefs.getAll()),savedSettings=new HashMap<>(settings.getAll());ChannelCatalog.Group[] catalog=ChannelCatalog.GROUPS;
+        try{
+            prefs.edit().clear().putString("url","not-a-valid-legacy-url").putString("style","classic").putLong("catalog_checked_at",System.currentTimeMillis()).commit();
+            settings.edit().putBoolean("auto_update_channel_list",false).putBoolean(GithubProxy.ENABLED_PREFERENCE,true).putString(GithubProxy.PREFERENCE,"https://127.0.0.1:39470/").commit();
+            NetworkClient.initialize(c);installTestTransport();
+            File cache=new File(c.getFilesDir(),"radio-ui");File[] files=cache.listFiles();if(files!=null)for(File file:files)if(file.getName().matches("[a-f0-9]{64}\\.jar")){file.setWritable(true);check(file.delete(),"Could not reset download fixture");}
+            c.startActivity(new Intent(c,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            long launched=SystemClock.elapsedRealtime()+15000;while(activity==null&&SystemClock.elapsedRealtime()<launched)SystemClock.sleep(30);
+            check(activity!=null,"Activity did not resume");
+            SystemClock.sleep(2000); // Let the startup catalog finish before injecting the radio fixture.
+            runOnMainSync(()->{try{
+                Channel channel=new Channel("1","电台界面测试","",args.getString("audio"),null,null);
+                ChannelCatalog.GROUPS=new ChannelCatalog.Group[]{new ChannelCatalog.Group("电台",ChannelCatalog.SOURCE_CUSTOM,new Channel[]{channel})};
+                for(String name:new String[]{"currentGroupIndex","currentChannelIndex","currentSourceIndex"}){Field f=MainActivity.class.getDeclaredField(name);f.setAccessible(true);f.setInt(activity,0);}
+                Method start=MainActivity.class.getDeclaredMethod("startChannel",int.class);start.setAccessible(true);start.invoke(activity,0);
+            }catch(Exception e){throw new RuntimeException(e);}});
+            long until=SystemClock.elapsedRealtime()+15000;
+            while(SystemClock.elapsedRealtime()<until&&(!(Boolean)field(activity,"prepared")||!(Boolean)field(activity,"audioOnlyPlayback")))SystemClock.sleep(50);
+            check((Boolean)field(activity,"prepared")&&(Boolean)field(activity,"audioOnlyPlayback"),"Audio fixture did not start");
+            view=(AudioArtworkView)field(activity,"audioArtwork");IMediaPlayer audio=(IMediaPlayer)field(activity,"player");waitStyle(view,false);
+            JSONObject nativeMenus=new JSONObject();TvUiChecks.radioPreferences(this,activity,nativeMenus);result.putString("nativeMenus",nativeMenus.toString());
+            Bitmap cover=Bitmap.createBitmap(100,100,Bitmap.Config.ARGB_8888);cover.eraseColor(0xff42bb66);runOnMainSync(()->{try{((AlbumArtLoader)field(activity,"albumArtLoader")).clear();}catch(Exception e){throw new RuntimeException(e);}view.setCover(cover);});
+            SystemClock.sleep(4000); // Let any startup toast expire before the artwork screenshots.
+            long before=audio.getCurrentPosition();screenshot("radio-select-classic");
+            choose("optical");waitStyle(view,true);check(view.cover()==cover,"Selection lost cover");screenshot("radio-select-optical");
+            check(field(activity,"player")==audio&&audio.isPlaying(),"Selection replaced or stopped player");
+            Object optical=delegate(view);try{choose("unknown");throw new AssertionError("Unknown choice accepted");}catch(IOException expected){}
+            check(delegate(view)==optical&&"optical".equals(RadioUiPlugin.style(c)),"Failed choice replaced artwork");
+            runOnMainSync(()->view.previewSlide(-45,true,"neighbor",cover));choose("classic");check(delegate(view)==optical,"Replaced during gesture");
+            choose("optical");runOnMainSync(()->view.restoreSlide());waitStyle(view,true);
+            choose("classic");waitStyle(view,false);choose("optical");waitStyle(view,true);
+            // A future catalog ID is a choice, not a hardcoded host enum. Reuse cached bytes for offline verification.
+            GithubProxy.setBaseUrl("https://127.0.0.1:39470/");GithubProxy.setEnabled(false);GithubProxy.setEnabled(true);
+            RadioUiCatalog.refresh(c,true);until=SystemClock.elapsedRealtime()+10000;while(RadioUiCatalog.refreshing()&&SystemClock.elapsedRealtime()<until)SystemClock.sleep(30);
+            check(!RadioUiCatalog.refreshing()&&RadioUiCatalog.failure().isEmpty(),"Remote catalog refresh failed: "+RadioUiCatalog.failure()+" routes="+Arrays.toString(GithubProxy.candidates(RadioUiCatalog.URL)));
+            JSONObject remote=RadioUiCatalog.find(c,"remote-optical").json();
+            check(new JSONObject(RadioUiPlugin.status(c)).getJSONArray("choices").length()==3,"Remote choice missing");
+            choose("remote-optical");waitStyle(view,true);check("remote-optical".equals(new JSONObject(RadioUiPlugin.status(c)).getString("selected")),"Remote choice not selected");
+            List<RadioUiCatalog.Entry> valid=new ArrayList<>(RadioUiCatalog.choices(c)),bad=new ArrayList<>(valid);
+            String zeros="0000000000000000000000000000000000000000000000000000000000000000";
+            bad.add(new RadioUiCatalog.Entry(new JSONObject(remote.toString()).put("id","bad-download").put("url","https://127.0.0.1:39470/fail.jar").put("sha256",zeros)));
+            bad.add(new RadioUiCatalog.Entry(new JSONObject(remote.toString()).put("id","bad-hash").put("url","https://127.0.0.1:39470/radio-ui2.jar").put("sha256",zeros)));
+            setStatic(RadioUiCatalog.class,"entries",bad);Object retained=delegate(view);
+            for(String id:new String[]{"bad-download","bad-hash"}){try{choose(id);throw new AssertionError("Invalid download accepted");}catch(IOException expected){check(expected.getMessage().contains(id.equals("bad-download")?"503":"校验"),"Unexpected download failure: "+expected);}check(delegate(view)==retained&&"remote-optical".equals(prefs.getString("selected","")),"Failed download changed selection");}
+            // A changed remote descriptor must not force a JAR download on cold startup.
+            List<RadioUiCatalog.Entry> changed=new ArrayList<>(valid);
+            for(int i=0;i<changed.size();i++)if(changed.get(i).id.equals("remote-optical"))changed.set(i,new RadioUiCatalog.Entry(new JSONObject(remote.toString()).put("sha256",zeros).put("url","https://127.0.0.1:39470/fail.jar")));
+            setStatic(RadioUiCatalog.class,"entries",changed);setStatic(RadioUiPlugin.class,"active",null);((Map<?,?>)staticField(RadioUiPlugin.class,"factories")).clear();
+            runOnMainSync(()->RadioUiPlugin.request(view));until=SystemClock.elapsedRealtime()+6000;
+            while(staticField(RadioUiPlugin.class,"active")==null&&SystemClock.elapsedRealtime()<until)SystemClock.sleep(30);
+            check(staticField(RadioUiPlugin.class,"active")!=null&&remote.getString("sha256").equals(prefs.getString("active","")),"Catalog update replaced working cached selection");
+            setStatic(RadioUiCatalog.class,"entries",valid);
+
+            // Missing/invalid init is retryable, rather than leaving requested=true forever.
+            setStatic(RadioUiPlugin.class,"active",null);setStatic(RadioUiPlugin.class,"requested",false);prefs.edit().putString("selected","missing").remove("selected_entry").commit();
+            runOnMainSync(()->{cold=new AudioArtworkView(activity,null);((FrameLayout)activity.getWindow().getDecorView()).addView(cold,new FrameLayout.LayoutParams(-1,-1));cold.show("初始化失败恢复测试",true,cover);});
+            until=SystemClock.elapsedRealtime()+3000;while((Boolean)staticField(RadioUiPlugin.class,"requested")&&SystemClock.elapsedRealtime()<until)SystemClock.sleep(30);
+            check(!(Boolean)staticField(RadioUiPlugin.class,"requested"),"Initialization failure stuck loading flag");choose("optical");waitStyle(cold,true);
+            // Corrupt the cached file and forget class loaders, as after a cold process start.
+            String sha=prefs.getString("active","");File jar=new File(new File(c.getFilesDir(),"radio-ui"),sha+".jar");jar.setWritable(true);try(FileOutputStream out=new FileOutputStream(jar)){out.write(new byte[]{1,2,3});}jar.setReadOnly();
+            ((Map<?,?>)staticField(RadioUiPlugin.class,"factories")).clear();setStatic(RadioUiPlugin.class,"active",null);
+            GithubProxy.setBaseUrl("https://127.0.0.1:39470/");GithubProxy.setEnabled(false);GithubProxy.setEnabled(true);
+            choose("optical");waitStyle(view,true);check(jar.length()>100000,"Download cache repair did not run");
+            choose("classic");waitStyle(view,false);
+            setStatic(RadioUiPlugin.class,"active",null);((Map<?,?>)staticField(RadioUiPlugin.class,"factories")).clear();choose("optical");waitStyle(view,true);waitStyle(cold,true);
+            check(audio.isPlaying()&&audio.getCurrentPosition()>before&&field(activity,"player")==audio,"Audio interrupted by switching or recovery");
+            for(String json:new String[]{"{\"schema\":2,\"styles\":[]}",new JSONObject().put("schema",1).put("styles",new JSONArray().put(remote).put(remote)).toString()})try{RadioUiCatalog.parse(json);throw new AssertionError("Invalid catalog accepted");}catch(IOException expected){}
+            result.putString("stream","PASS: real audio player retained; downloaded classic/optical; legacy URL ignored; gesture-deferred and latest selection; invalid choice rollback; future catalog ID; HTTP failure and hash mismatch rollback; cached selection survives catalog update; retryable init; corrupt cache repair; offline reload; cover and audio preserved\n");code=-1;
         }catch(Throwable e){result.putString("stream",android.util.Log.getStackTraceString(e));}
-        finally {
-            if(audio!=null)audio.release();
-            if(view!=null)runOnMainSync(new Runnable(){public void run(){view.setActive(false);view.clear();}});
-            if(cold!=null)runOnMainSync(new Runnable(){public void run(){cold.setActive(false);cold.clear();}});
-            if(activity!=null)runOnMainSync(new Runnable(){public void run(){activity.finish();}});
-            waitForIdleSync();
-            SharedPreferences.Editor editor=preferences.edit().clear();
-            for(Map.Entry<String,?> entry:saved.entrySet()) {
-                String k=entry.getKey();Object v=entry.getValue();
-                if(v instanceof String)editor.putString(k,(String)v);
-                else if(v instanceof Integer)editor.putInt(k,(Integer)v);
-                else if(v instanceof Boolean)editor.putBoolean(k,(Boolean)v);
-                else if(v instanceof Long)editor.putLong(k,(Long)v);
-                else if(v instanceof Float)editor.putFloat(k,(Float)v);
-                else if(v instanceof java.util.Set)editor.putStringSet(k,(java.util.Set<String>)v);
-            }
-            editor.commit();
-            getTargetContext().getSharedPreferences("radio_ui",0).edit().putString("active",previous)
-                    .putString("style",previousStyle).putString("url",previousUrl).commit();
-        }
-        finish(code,result);
+        finally{
+            if(activity!=null)runOnMainSync(()->{if(cold!=null){cold.setActive(false);cold.clear();}if(view!=null)view.setActive(false);activity.finish();});waitForIdleSync();
+            ChannelCatalog.GROUPS=catalog;restore(prefs,saved);restore(settings,savedSettings);
+        }finish(code,result);
     }
+    private void installTestTransport()throws Exception {
+        java.security.cert.Certificate certificate;try(InputStream in=new FileInputStream(args.getString("cert"))){certificate=java.security.cert.CertificateFactory.getInstance("X.509").generateCertificate(in);}
+        java.security.KeyStore store=java.security.KeyStore.getInstance(java.security.KeyStore.getDefaultType());store.load(null);store.setCertificateEntry("fixture",certificate);
+        javax.net.ssl.TrustManagerFactory managers=javax.net.ssl.TrustManagerFactory.getInstance(javax.net.ssl.TrustManagerFactory.getDefaultAlgorithm());managers.init(store);
+        javax.net.ssl.X509TrustManager trust=(javax.net.ssl.X509TrustManager)managers.getTrustManagers()[0];javax.net.ssl.SSLContext tls=javax.net.ssl.SSLContext.getInstance("TLS");tls.init(null,new javax.net.ssl.TrustManager[]{trust},null);
+        okhttp3.OkHttpClient.Builder builder=NetworkClient.sharedClient().newBuilder().sslSocketFactory(tls.getSocketFactory(),trust);
+        okhttp3.OkHttpClient client=builder.build();
+        setStatic(NetworkClient.class,"client",client);setStatic(NetworkClient.class,"factory",new okhttp3.OkUrlFactory(client));GithubProxy.setBaseUrl("https://127.0.0.1:39470/");GithubProxy.setEnabled(true);
+    }
+    private static Object staticField(Class<?> type,String name)throws Exception{Field f=type.getDeclaredField(name);f.setAccessible(true);return f.get(null);}
 }

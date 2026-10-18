@@ -117,6 +117,7 @@ final class ChannelCatalog {
     private static final Channel[] STARTUP_SATELLITE_CHANNELS = startupChannels(SATELLITE_CHANNELS);
     private static Group[] customGroups = new Group[0];
     private static Channel[] favoriteChannels = new Channel[0];
+    private static boolean favoritesVisible = true;
     static volatile Group[] GROUPS = buildGroups();
 
     private ChannelCatalog() {
@@ -125,6 +126,11 @@ final class ChannelCatalog {
     static synchronized void setCustomGroups(Group[] customGroups) {
         ChannelCatalog.customGroups = normalizeCustomGroups(customGroups);
         GROUPS = buildGroups();
+    }
+
+    static synchronized void setCustomGroups(Group[] customGroups, boolean showFavorites) {
+        favoritesVisible = showFavorites;
+        setCustomGroups(customGroups);
     }
 
     static synchronized void setFavoriteChannels(Channel[] channels) {
@@ -166,9 +172,10 @@ final class ChannelCatalog {
     private static Group[] buildGroups() {
         Group[] visibleGroups = hasPlayableChannels(customGroups)
                 ? customGroups : builtInFallbackGroups();
-        Group[] groups = new Group[1 + visibleGroups.length];
-        groups[0] = new Group("我的收藏", SOURCE_FAVORITES, favoriteChannels);
-        System.arraycopy(visibleGroups, 0, groups, 1, visibleGroups.length);
+        int offset = favoritesVisible ? 1 : 0;
+        Group[] groups = new Group[offset + visibleGroups.length];
+        if (favoritesVisible) groups[0] = new Group("我的收藏", SOURCE_FAVORITES, favoriteChannels);
+        System.arraycopy(visibleGroups, 0, groups, offset, visibleGroups.length);
         return groups;
     }
 

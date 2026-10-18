@@ -160,6 +160,14 @@ function saveNetworkSpeed() {
   });
 }
 
+function savePlaybackPosition() {
+  var input = document.getElementById("showPlaybackPosition");
+  api("/api/settings", { showPlaybackPosition: input.checked }, function (error) {
+    if (error) { input.checked = !input.checked; toast(error.message, true); return; }
+    toast(input.checked ? "已显示播放进度" : "已隐藏播放进度");
+  });
+}
+
 function saveDateTime() {
   var enabled = document.getElementById("showDateTime"),
     clock = document.getElementById("clockLocation"),
@@ -219,7 +227,7 @@ function saveLiveDelay() {
 }
 function renderPageState() {
   var s = state.settings;
-  var checked = ["showColorDebugInfo", "showLoadTiming", "showDebugInfo", "showNetworkSpeed", "showDateTime"];
+  var checked = ["showColorDebugInfo", "showLoadTiming", "showDebugInfo", "showNetworkSpeed", "showDateTime", "showPlaybackPosition"];
   for (var i = 0; i < checked.length; i++)
     document.getElementById(checked[i]).checked = s[checked[i]] === true;
   document.getElementById("videoScale").value = s.videoScaleMode || "fit";

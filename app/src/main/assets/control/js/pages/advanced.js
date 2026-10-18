@@ -1,3 +1,23 @@
+function loadTvUi() {
+  api("/api/tv-ui",null,function(error,result){
+    document.getElementById("tvUiStatus").textContent=error?error.message:(result.error || "已生效，播放保持不中断");
+    if(!error)document.getElementById("tvUiStyle").value=result.selected;
+  });
+}
+function saveTvUiStyle() {
+  var select=document.getElementById("tvUiStyle");select.disabled=true;
+  api("/api/tv-ui",{id:select.value},function(error){
+    select.disabled=false;if(error)toast(error.message,true);else toast("电视界面已切换");loadTvUi();
+  },30000);
+}
+function installTvUi() {
+  var input=document.getElementById("tvUiJar"),file=input.files[0];if(!file)return;
+  if(file.size>512*1024){toast("界面 JAR 不能超过 512 KB",true);input.value="";return;}
+  var xhr=new XMLHttpRequest();xhr.open("POST","/api/tv-ui",true);xhr.timeout=30000;
+  xhr.setRequestHeader("Content-Type","application/octet-stream");
+  xhr.onload=function(){try{var r=JSON.parse(xhr.responseText);if(xhr.status!==200||!r.ok)throw new Error(r.error||"导入失败");toast("界面插件已导入，可在上方切换");loadTvUi();}catch(e){toast(e.message,true);}input.value="";};
+  xhr.onerror=xhr.ontimeout=function(){input.value="";toast("界面插件导入失败",true);};xhr.send(file);
+}
 function updatePlaybackPlugins() {
   var button = document.getElementById("updatePlaybackPlugins");
   if (button.disabled) return;
@@ -11,64 +31,39 @@ function updatePlaybackPlugins() {
     refresh();
   }, 120000);
 }
-function toggleRadioUiOptions() {
-  var panel = document.getElementById("radioUiOptions");
-  var open = panel.style.display === "none";
-  panel.style.display = open ? "block" : "none";
-  var button = document.getElementById("radioUiToggle");
-  button.textContent = open ? "收起" : "设置";
-  button.setAttribute("aria-expanded", open ? "true" : "false");
-}
-function resetRadioUiUrl() {
-  document.getElementById("radioUiUrl").value="";
-  saveRadioUiUrl(false);
-}
-function saveRadioUiUrl(download) {
-  api("/api/radio-ui", {url: document.getElementById("radioUiUrl").value, download: download}, function(error, result) {
-    if(error){toast(error.message,true);return;}
-    toast(download ? "电台界面已更新" : "界面地址已保存");
-    loadRadioUiUrl();
-  }, download ? 120000 : 15000);
-}
-function loadRadioUiUrl() {
-  api("/api/radio-ui", null, function(error,result) {
-    var status = document.getElementById("radioUiStatus");
+var radioUiSaving=false, radioUiSequence=0, radioUiTimer=null, radioUiOptionsSignature="";
+function loadRadioUi() {
+  if(radioUiSaving)return;
+  var sequence=++radioUiSequence;clearTimeout(radioUiTimer);
+  api("/api/radio-ui",null,function(error,result){
+    if(sequence!==radioUiSequence||radioUiSaving)return;
+    var status=document.getElementById("radioUiStatus"),select=document.getElementById("radioUiStyle");
     if(error){status.textContent=error.message;return;}
-    document.getElementById("radioUiUrl").value=result.url || result.defaultUrl || "";
-    var styles = result.styles || ["classic"], select = document.getElementById("radioUiStyle");
-    for(var i=0;i<select.options.length;i++) select.options[i].disabled=styles.indexOf(select.options[i].value)<0;
-    select.value=result.style || "classic";
-    status.textContent=(result.loaded ? "已安装 · 版本 " + result.version : "未安装") + (result.error ? " · " + result.error : "");
+    var choices=result.choices||[],current=result.selected||result.style||"classic";
+    var signature=JSON.stringify(choices);
+    if(signature!==radioUiOptionsSignature){
+      select.innerHTML="";
+      for(var i=0;i<choices.length;i++){var option=document.createElement("option");option.value=choices[i].id;option.textContent=choices[i].name;select.appendChild(option);}
+      radioUiOptionsSignature=signature;
+    }
+    select.value=current;select.disabled=false;
+    status.textContent=result.error || (result.catalogRefreshing ? "正在刷新可选界面…" : result.catalogError || "选择后立即切换，已下载的界面离线可用");
+    document.getElementById("radioUiRefresh").disabled=!!result.catalogRefreshing;
+    if(result.catalogRefreshing)radioUiTimer=setTimeout(loadRadioUi,1000);
   });
 }
 function saveRadioUiStyle() {
-  var select=document.getElementById("radioUiStyle");
-  select.disabled=true;
-  api("/api/radio-ui", {style:select.value}, function(error) {
-    select.disabled=false;
-    if(error)toast(error.message,true);else toast("唱片样式已保存");
-    loadRadioUiUrl();
-  });
+  if(radioUiSaving)return;
+  var select=document.getElementById("radioUiStyle");radioUiSaving=true;radioUiSequence++;clearTimeout(radioUiTimer);select.disabled=true;
+  document.getElementById("radioUiStatus").textContent="正在应用界面，首次使用会下载…";
+  api("/api/radio-ui",{id:select.value},function(error){
+    radioUiSaving=false;select.disabled=false;
+    toast(error?error.message:"电台界面已切换",!!error);loadRadioUi();
+  },40000);
 }
-function installRadioUi() {
-  var file = document.getElementById("radioUiJar").files[0];
-  if (!file) { toast("请选择电台界面 JAR", true); return; }
-  if (file.size > 2 * 1024 * 1024) { toast("JAR 不能超过 2 MB", true); return; }
-  var xhr = new XMLHttpRequest();
-  xhr.open("POST", "/api/radio-ui", true);
-  xhr.timeout = 30000;
-  xhr.setRequestHeader("Content-Type", "application/octet-stream");
-  xhr.onload = function () {
-    try {
-      var result = JSON.parse(xhr.responseText);
-      if (xhr.status !== 200 || !result.ok) throw new Error(result.error || "导入失败");
-      toast("电台界面已替换，版本 " + result.version);
-      loadRadioUiUrl();
-    } catch (error) { toast(error.message, true); }
-  };
-  xhr.onerror = xhr.ontimeout = function () { toast("电台界面导入失败", true); };
-  toast("正在导入电台界面…");
-  xhr.send(file);
+function refreshRadioUiChoices() {
+  var button=document.getElementById("radioUiRefresh");if(button.disabled||radioUiSaving)return;button.disabled=true;
+  api("/api/radio-ui",{refresh:true},function(error){if(error){button.disabled=false;toast(error.message,true);}else loadRadioUi();});
 }
 function saveReverse() {
   var reverse = document.getElementById("reverse");
@@ -219,4 +214,5 @@ function saveGithubProxy() {
 document.getElementById("githubProxyUrl").oninput = function () { this._dirty = true; };
 startPage();
 
-loadRadioUiUrl();
+loadRadioUi();
+loadTvUi();

@@ -533,57 +533,81 @@ public final class CjsPluginRuntime {
         }
     }
 
+    static boolean retryableDownloadFailure(Throwable error) {
+        if(Thread.currentThread().isInterrupted()) return false;
+        for(Throwable cause=error;cause!=null;cause=cause.getCause()) {
+            if(cause instanceof SocketException || cause instanceof EOFException
+                    || cause instanceof SocketTimeoutException) return true;
+            String message=cause.getMessage();
+            if(message!=null) {
+                String text=message.toLowerCase(Locale.US);
+                if(text.contains("stream was reset") || text.contains("unexpected end of stream")
+                        || text.contains("connection shutdown") || text.equals("canceled")
+                        || text.equals("cancelled")) return true;
+            }
+        }
+        return false;
+    }
+
     private static byte[] download(String originalUrl, int maxBytes) throws IOException {
-        final long startedAt = android.os.SystemClock.elapsedRealtime();
-        final String resource = new URL(originalUrl).getPath();
-        Log.i(TAG, "Download begin resource=" + resource);
-        String url = originalUrl;
-        if (url.contains("github.com/") || url.contains("raw.githubusercontent.com/")) {
-            url = GithubProxy.apply(url);
-        }
-        HttpURLConnection connection = NetworkClient.openComponent(new URL(url), resource.endsWith(".so"));
-        connection.setConnectTimeout(10000);
-        connection.setReadTimeout(20000);
-        connection.setInstanceFollowRedirects(true);
-        connection.setRequestProperty("Accept-Encoding", "identity");
-        try {
-            int status = connection.getResponseCode();
-            final long headersAt = android.os.SystemClock.elapsedRealtime();
-            if (status < 200 || status >= 300) {
-                throw new IOException("插件下载失败：HTTP " + status);
-            }
-            int length = connection.getContentLength();
-            if (length > maxBytes) throw new IOException("插件文件过大");
-            InputStream input = connection.getInputStream();
+        final long startedAt=android.os.SystemClock.elapsedRealtime();
+        final String resource=new URL(originalUrl).getPath();
+        final int budgetMs=resource.endsWith(".so") ? 30000 : 8000;
+        String url=GithubProxy.apply(originalUrl);
+        Log.i(TAG,"Download begin resource="+resource);
+        for(int attempt=0;attempt<2;attempt++) {
+            if(Thread.currentThread().isInterrupted()) throw new InterruptedIOException("Plugin download cancelled");
+            long remaining=budgetMs-(android.os.SystemClock.elapsedRealtime()-startedAt);
+            if(remaining<=0) throw new SocketTimeoutException("Plugin download timeout");
             try {
-                ByteArrayOutputStream output = new ByteArrayOutputStream(
-                        length > 0 ? Math.min(length, maxBytes) : 16384);
-                byte[] buffer = new byte[32 * 1024];
-                int total = 0;
-                int count;
-                while ((count = input.read(buffer)) != -1) {
-                    total += count;
-                    if (total > maxBytes) throw new IOException("插件文件过大");
-                    output.write(buffer, 0, count);
+                return downloadAttempt(url,maxBytes,attempt>0,(int)remaining);
+            } catch(IOException error) {
+                if(attempt!=0 || !retryableDownloadFailure(error)
+                        || android.os.SystemClock.elapsedRealtime()-startedAt>=budgetMs) {
+                    Log.w(TAG,"Download failed resource="+resource+" elapsedMs="
+                            +(android.os.SystemClock.elapsedRealtime()-startedAt),error);
+                    throw error;
                 }
-                byte[] data = output.toByteArray();
-                long finishedAt = android.os.SystemClock.elapsedRealtime();
-                Log.i(TAG, "Download complete resource=" + resource + " bytes=" + total
-                        + " waitMs=" + (headersAt - startedAt)
-                        + " bodyMs=" + (finishedAt - headersAt)
-                        + " elapsedMs=" + (finishedAt - startedAt)
-                        + " host=" + connection.getURL().getHost());
-                return data;
-            } finally {
-                input.close();
+                Log.w(TAG,"Plugin download interrupted; retry once over HTTP/1.1: "+resource,error);
             }
-        } catch (IOException error) {
-            Log.w(TAG, "Download failed resource=" + resource + " elapsedMs="
-                    + (android.os.SystemClock.elapsedRealtime() - startedAt), error);
-            throw error;
-        } finally {
-            connection.disconnect();
         }
+        throw new IOException("Plugin download failed");
+    }
+
+    static final class DownloadHttpException extends IOException {
+        final int status;
+        DownloadHttpException(int status) { super("插件下载失败：HTTP " + status); this.status = status; }
+    }
+
+    private static byte[] downloadAttempt(String url,int maxBytes,boolean http1,int remainingMs) throws IOException {
+        long startedAt=android.os.SystemClock.elapsedRealtime();
+        HttpURLConnection connection=NetworkClient.openComponent(new URL(url),http1,remainingMs);
+        connection.setConnectTimeout(Math.min(10000,remainingMs));
+        connection.setReadTimeout(Math.min(20000,remainingMs));
+        connection.setInstanceFollowRedirects(true);
+        connection.setRequestProperty("Accept-Encoding","identity");
+        try {
+            int status=connection.getResponseCode();
+            long headersAt=android.os.SystemClock.elapsedRealtime();
+            if(status<200 || status>=300) throw new DownloadHttpException(status);
+            int length=connection.getContentLength();
+            if(length>maxBytes) throw new IOException("插件文件过大");
+            try(InputStream input=connection.getInputStream()) {
+                ByteArrayOutputStream output=new ByteArrayOutputStream(length>0?Math.min(length,maxBytes):16384);
+                byte[] buffer=new byte[32*1024];int count,total=0;
+                while((count=input.read(buffer))!=-1) {
+                    if(Thread.currentThread().isInterrupted()) throw new InterruptedIOException("Plugin download cancelled");
+                    total+=count;
+                    if(total>maxBytes) throw new IOException("插件文件过大");
+                    output.write(buffer,0,count);
+                }
+                if(length>=0 && total!=length) throw new EOFException("Unexpected end of stream downloading plugin");
+                Log.i(TAG,"Download complete bytes="+total+" http1Retry="+http1
+                        +" waitMs="+(headersAt-startedAt)+" bodyMs="+(android.os.SystemClock.elapsedRealtime()-headersAt)
+                        +" host="+connection.getURL().getHost());
+                return output.toByteArray();
+            }
+        } finally {connection.disconnect();}
     }
 
     private static String cacheBustedUrl(String url) {

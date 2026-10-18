@@ -27,11 +27,14 @@
         <div class="browser-settings-list">
           <div class="browser-setting-row">
             <div class="browser-setting-copy">
-              <b>画面比例</b><span>自适应保持原始比例，拉伸会铺满屏幕</span>
+              <b>画面比例</b><span>自适应保留完整画面，填充等比铺满并居中裁剪，拉伸会改变比例</span>
             </div>
             <select id="videoScale" aria-label="画面比例" onchange="saveDisplay()">
               <option value="fit">自适应（默认）</option>
               <option value="stretch">拉伸</option>
+              <option value="fill">填充（居中裁剪）</option>
+              <option value="16:9">16:9</option>
+              <option value="4:3">4:3</option>
             </select>
           </div>
           <div class="browser-setting-row">
@@ -106,11 +109,11 @@
             />
           </div>
           <div class="browser-setting-row">
-            <div class="browser-setting-copy"><b>显示色彩和解码器信息</b><span>在调试信息第三行显示 HDR、位深、色域和解码器，默认关闭</span></div>
+            <div class="browser-setting-copy"><b>显示色彩和解码器信息</b><span>显示 HDR、位深、色域和解码器，可自动换行，默认关闭</span></div>
             <input id="showColorDebugInfo" class="source-toggle" aria-label="显示色彩和解码器信息" type="checkbox" onchange="saveColorDebugInfo()" />
           </div>
           <div class="browser-setting-row">
-            <div class="browser-setting-copy"><b>显示加载耗时</b><span>在调试信息第四行显示解析、下载、解密、准备和首帧耗时，默认关闭</span></div>
+            <div class="browser-setting-copy"><b>显示加载耗时</b><span>显示解析、下载、解密、准备和首帧耗时，可自动换行，默认关闭</span></div>
             <input id="showLoadTiming" class="source-toggle" aria-label="显示加载耗时" type="checkbox" onchange="saveLoadTiming()" />
           </div>
           <div class="browser-setting-row">
@@ -124,6 +127,10 @@
               type="checkbox"
               onchange="saveNetworkSpeed()"
             />
+          </div>
+          <div class="browser-setting-row">
+            <div class="browser-setting-copy"><b>显示播放进度</b><span>右上角显示播放位置与总时长，在时间左侧排列；直播不显示，默认关闭</span></div>
+            <input id="showPlaybackPosition" class="source-toggle" aria-label="显示播放进度" type="checkbox" onchange="savePlaybackPosition()" />
           </div>
           <div class="browser-setting-row">
             <div class="browser-setting-copy">

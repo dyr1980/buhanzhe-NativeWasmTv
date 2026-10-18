@@ -26,5 +26,18 @@ final class HdrDisplayPolicy {
         return mode != 3 && sdk >= 31;
     }
 
+    static boolean rawYuv(int sdk,String version,String extensions){
+        return sdk>=29 && version!=null && (version.startsWith("OpenGL ES 3.")||version.startsWith("OpenGL ES 4."))
+                && extensions!=null && (" "+extensions+" ").contains(" GL_EXT_YUV_target ");
+    }
+    /** Column-major digital YUV -> encoded RGB plus digital offsets (8/10/12 bit). */
+    static float[] yuvColor(int standard,int range,int depth){
+        depth=depth==10||depth==12?depth:8;float shift=1<<(depth-8),max=(1<<depth)-1;
+        float yScale=range==1?1:max/(219f*shift),cScale=range==1?1:max/(224f*shift);
+        float kr=standard==6?.2627f:standard==1?.2126f:.299f,kb=standard==6?.0593f:standard==1?.0722f:.114f,kg=1-kr-kb;
+        return new float[]{yScale,yScale,yScale,0,-2*kb*(1-kb)/kg*cScale,2*(1-kb)*cScale,
+                2*(1-kr)*cScale,-2*kr*(1-kr)/kg*cScale,0,range==1?0:16*shift/max,128*shift/max,128*shift/max};
+    }
+
     private HdrDisplayPolicy() {}
 }

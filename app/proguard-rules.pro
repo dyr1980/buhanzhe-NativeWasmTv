@@ -21,6 +21,7 @@
 -dontobfuscate
 -keep class xiao.bu.tv.PlayerRootLayout { public <init>(...); }
 -keep interface xiao.bu.tv.radio.RadioUi { *; }
+-keep interface xiao.bu.tv.skin.TvUi { *; }
 
 # Ku9, web resolvers and the in-app remote invoke these methods from JavaScript.
 -keepclassmembers class * {
@@ -54,3 +55,8 @@
 
 # Called from the native MediaCodec output bridge.
 -keep class xiao.bu.tv.NativeHdrOutput { public *; }
+
+-keep interface xiao.bu.tv.skin.TvUi$Events { *; }
+
+# Theme DEX subclasses call this shared renderer through the parent class loader.
+-keep public abstract class xiao.bu.tv.skin.SharedTvUi { public protected *; }

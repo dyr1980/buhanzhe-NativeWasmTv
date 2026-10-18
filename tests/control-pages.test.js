@@ -10,9 +10,10 @@ function browser(page) {
   const elements = new Map(), requests = [], timers = new Map(), events = {};
   let timerId = 0, domWrites = 0;
   function element(tag) {
-    const node = { tagName: tag, value: '', style: {}, children: [], textContent: '', disabled: false,
+    const node = { tagName: tag, value: '', style: {}, children: [], textContent: '', disabled: false, selectedIndex: -1, options: [], parentNode: {insertBefore() {}},
       attributes: {}, setAttribute(key, value) { this.attributes[key] = value; },
       getAttribute(key) { return this.attributes[key]; },
+      removeAttribute(key) { delete this.attributes[key]; },
       focus() {}, appendChild(child) { this.children.push(child); domWrites++; } };
     Object.defineProperty(node, 'innerHTML', { set() { node.children = []; node.htmlWrites = (node.htmlWrites || 0) + 1; domWrites++; } });
     if (tag === 'a') Object.defineProperty(node, 'href', { set(value) { node.hostname = new URL(value).hostname; } });
@@ -60,14 +61,18 @@ test('browser settings save core options without exposing rule details', () => {
     webViewCacheBytes:0}});
   assert.equal(b.elements.get('webViewBrowserVersion').value,'128');
   assert.equal(b.elements.get('webViewAdBlock').checked,true);
+  assert.equal(b.elements.get('webViewPageCover').checked,false);
   assert.ok(!html.includes('webViewAutoCloseSniffed'));
   assert.equal(b.elements.get('webViewWebRtcEnabled').checked,false);
   b.elements.get('webViewBrowserVersion').value='138';
   b.elements.get('webViewWebRtcEnabled').checked=true;
+  b.elements.get('webViewPageCover').checked=true;
   c.saveWebViewSettings();
   const save=b.requests.find(r=>r.url==='/api/settings');
   assert.equal(JSON.parse(save.body).webViewBrowserVersion,'138');
   assert.equal(JSON.parse(save.body).webViewWebRtcEnabled,true);
+  assert.equal(JSON.parse(save.body).webViewPageCover,true);
+  assert.match(html,/aria-label="开启网页遮罩"/);
   assert.equal('webViewAutoCloseSniffed' in JSON.parse(save.body),false);
   assert.equal('webViewUserScript' in JSON.parse(save.body),false);
 });
@@ -929,7 +934,7 @@ test('volume follows the finger in real time and release commits the latest valu
   assert.equal(request.url,'/api/media/control');
   assert.deepEqual(JSON.parse(request.body),{action:'volume',volume:12});
   request.respond({volume:12,volumeMax:15,volumeAvailable:true});
-  assert.equal(c.mediaVolumeEditing,false);
+  assert.equal(c.mediaLevels.volume.editing,false);
   c.mediaState.volumeAvailable=false;c.mediaRenderVolume();
   assert.equal(input.disabled,true);
   assert.equal(c.document.getElementById('mediaVolumeValue').textContent,'--');
@@ -942,14 +947,52 @@ test('cancelled volume gesture restores receiver state including mute', () => {
   c.mediaRenderVolume();const input=c.document.getElementById('mediaVolume');
   assert.equal(input.getAttribute('aria-valuetext'),'静音');
   input.value='20';c.mediaVolumePreview(input);c.mediaVolumeCancel();
-  assert.equal(input.value,'0');assert.equal(c.mediaVolumeEditing,true);
+  assert.equal(input.value,'0');assert.equal(c.mediaLevels.volume.editing,true);
   let request=b.requests[b.requests.length-1];
   assert.deepEqual(JSON.parse(request.body),{action:'volume',volume:20});
   request.respond({volume:20,volumeMax:25,volumeAvailable:true});
   request=b.requests[b.requests.length-1];
   assert.deepEqual(JSON.parse(request.body),{action:'volume',volume:0});
   request.respond({volume:0,volumeMax:25,volumeAvailable:true});
-  assert.equal(input.value,'0');assert.equal(c.mediaVolumeEditing,false);
+  assert.equal(input.value,'0');assert.equal(c.mediaLevels.volume.editing,false);
+});
+
+test('brightness defaults to 50 percent, coalesces drag and keeps the release value across polls', () => {
+  const b=browser('media'), c=b.context;
+  c.mediaControllerOpen=true;
+  c.mediaState={brightnessAvailable:true,volume:6,volumeMax:15,volumeAvailable:true};
+  const level=c.mediaLevels.brightness, input=c.document.getElementById('mediaBrightness');
+  level.render();
+  assert.equal(input.value,'50');
+  assert.equal(c.document.getElementById('mediaBrightnessValue').textContent,'50%');
+  input.value='70';level.preview(input);
+  const first=b.requests[b.requests.length-1];
+  assert.deepEqual(JSON.parse(first.body),{action:'brightness',brightness:70});
+  input.value='85';level.preview(input);level.commit(input);
+  c.mediaState.brightness=40;level.render();assert.equal(input.value,'85');
+  first.respond({brightness:70,brightnessAvailable:true});
+  const final=b.requests[b.requests.length-1];
+  assert.deepEqual(JSON.parse(final.body),{action:'brightness',brightness:85});
+  final.respond({brightness:85,brightnessAvailable:true});
+  assert.equal(level.editing,false);assert.equal(input.value,'85');assert.equal(c.mediaState.volume,6);
+});
+
+test('brightness cancellation restores its start and closed-session replies cannot alter a new drag', () => {
+  const b=browser('media'),c=b.context;c.mediaControllerOpen=true;
+  c.mediaState={brightness:50,brightnessAvailable:true};
+  const level=c.mediaLevels.brightness,input=c.document.getElementById('mediaBrightness');
+  level.render();input.value='90';level.preview(input);level.cancel();
+  const first=b.requests[b.requests.length-1];first.respond({brightness:90});
+  const restore=b.requests[b.requests.length-1];assert.equal(JSON.parse(restore.body).brightness,50);
+  restore.respond({brightness:50});assert.equal(input.value,'50');
+  level.sentAt=0;input.value='65';level.preview(input);
+  const stale=b.requests[b.requests.length-1];
+  c.setMediaControllerActive(false);assert.equal(stale.aborted,true);
+  c.mediaControllerOpen=true;c.mediaControllerGeneration++;
+  input.value='80';level.preview(input);const current=b.requests[b.requests.length-1];
+  stale.respond({brightness:65});assert.equal(level.sending,true);assert.equal(level.request,current);
+  level.commit(input);current.respond({brightness:80});
+  b.requests[b.requests.length-1].respond({brightness:80});assert.equal(input.value,'80');
 });
 
 test('screenshot entry follows current receiver capability across channel changes', () => {
@@ -1064,4 +1107,26 @@ test('web playback command uses explicit action and page/media identity', () => 
   assert.equal(body.action,'toggle'); assert.equal('webPageKey' in body,false);
 });
 
+test('playback position switch defaults off and saves independently', () => {
+  const b=browser('playback'),c=b.context;b.requests[0].respond({settings:{}});
+  const input=b.elements.get('showPlaybackPosition');assert.equal(input.checked,false);
+  c.state.settings.showPlaybackPosition=true;c.renderPageState();assert.equal(input.checked,true);
+  c.savePlaybackPosition();const save=b.requests.find(r=>r.url==='/api/settings');
+  assert.deepEqual(JSON.parse(save.body),{showPlaybackPosition:true});save.respond({ok:true});
+  assert.equal(c.state.settings.showDateTime,undefined);
+});
+test('playback position switch rolls back on failed save', () => {
+  const b=browser('playback'),c=b.context;b.requests[0].respond({settings:{}});
+  const input=b.elements.get('showPlaybackPosition');input.checked=true;c.savePlaybackPosition();
+  b.requests.find(r=>r.url==='/api/settings').respond({error:'failed'},500);assert.equal(input.checked,false);
+});
+test('fill mode saves and remains selected alongside existing aspect modes', () => {
+  const html=fs.readFileSync(path.join(root,'pages/playback.html'),'utf8');
+  for(const mode of ['fit','stretch','fill','16:9','4:3']) assert.ok(html.includes('value="'+mode+'"'));
+  const b=browser('playback'),c=b.context;b.requests[0].respond({settings:{videoScaleMode:'fill'}});
+  assert.equal(b.elements.get('videoScale').value,'fill');c.saveDisplay();
+  const save=b.requests.find(r=>r.url==='/api/settings');assert.equal(JSON.parse(save.body).videoScaleMode,'fill');
+  save.respond({ok:true});c.state.settings.videoScaleMode='4:3';c.renderPageState();
+  assert.equal(b.elements.get('videoScale').value,'4:3');
+});
 console.log('All ' + passed + ' control-page regression scenarios passed.');

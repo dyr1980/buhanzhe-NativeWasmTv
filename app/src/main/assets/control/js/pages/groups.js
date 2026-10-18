@@ -1,4 +1,4 @@
-var playlistGroups = [], groupSignature = '', groupBusy = false,
+var playlistGroups = [], groupSignature = '', groupBusy = false, groupDrag = null,
   channelEditor = null, channelLoad = null, channelLoadSequence = 0, channelRowHeight = 60;
 function groupElement(tag, className, text) {
   var el = document.createElement(tag);
@@ -16,7 +16,20 @@ function renderPlaylistGroupSettings() {
   for (var i = 0; i < playlistGroups.length; i++) {
     var group = playlistGroups[i], card = groupElement('div', 'group-card'),
       item = groupElement('div', 'group-item'), copy = groupElement('div', 'group-copy'),
-      enabled = document.createElement('input'), manage = groupElement('button', 'group-manage', '管理频道');
+      enabled = document.createElement('input'), manage = groupElement('button', 'group-manage', '管理频道'),
+      handle = groupElement('button', 'channel-drag-handle group-drag-handle');
+    handle.type = 'button'; handle._index = i; handle._card = card;
+    handle.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="8" cy="5" r="1.6"/><circle cx="16" cy="5" r="1.6"/><circle cx="8" cy="12" r="1.6"/><circle cx="16" cy="12" r="1.6"/><circle cx="8" cy="19" r="1.6"/><circle cx="16" cy="19" r="1.6"/></svg>';
+    handle.setAttribute('aria-label', '拖动排序 ' + group.name);
+    handle.title = '拖动排序，也可用上下方向键移动';
+    handle.onpointerdown = window.PointerEvent ? beginGroupDrag : null;
+    handle.onmousedown = !window.PointerEvent ? beginGroupDrag : null;
+    handle.ontouchstart = !window.PointerEvent ? beginGroupDrag : null;
+    handle.onkeydown = function (event) {
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        event.preventDefault(); movePlaylistGroup(this._index, this._index + (event.key === 'ArrowUp' ? -1 : 1), 'handle');
+      }
+    };
     copy.appendChild(groupElement('b', '', group.name || '未命名分组'));
     copy.appendChild(groupElement('span', '', String(group.channelCount || 0) + ' 个频道'));
     enabled.type = 'checkbox'; enabled.className = 'source-toggle'; enabled.checked = group.enabled !== false;
@@ -24,14 +37,94 @@ function renderPlaylistGroupSettings() {
     enabled.onchange = function () { savePlaylistGroupState(this); };
     manage.type = 'button'; manage._group = group; manage._card = card;
     manage.setAttribute('aria-expanded', 'false'); manage.onclick = function () { openGroupChannels(this); };
-    item.appendChild(copy); item.appendChild(manage); item.appendChild(enabled); card.appendChild(item); fragment.appendChild(card);
+    item.appendChild(handle); item.appendChild(copy); item.appendChild(manage); item.appendChild(enabled); card.appendChild(item); fragment.appendChild(card);
   }
   list.appendChild(fragment);
 }
 function setGroupBusy(busy) {
   groupBusy = busy;
-  var controls = document.getElementById('playlistGroupSettings').querySelectorAll('.group-manage, .source-toggle');
-  for (var i = 0; i < controls.length; i++) controls[i].disabled = busy;
+  var controls = document.getElementById('playlistGroupSettings').querySelectorAll('button, .source-toggle');
+  for (var i = 0; i < controls.length; i++) {
+    if (busy) { controls[i]._wasDisabled = controls[i].disabled; controls[i].disabled = true; }
+    else controls[i].disabled = !!controls[i]._wasDisabled;
+  }
+}
+function movePlaylistGroup(from, target, direction) {
+  if (groupBusy || from < 0 || target < 0 || from >= playlistGroups.length || target >= playlistGroups.length || from === target) return;
+  if (channelEditor && channelEditor.dirty) { toast('请先保存或取消频道修改', true); return; }
+  var groups = playlistGroups.slice(), moved = groups.splice(from, 1)[0]; groups.splice(target, 0, moved);
+  var previous = playlistGroups;
+  closeGroupChannels(); playlistGroups = groups; renderPlaylistGroupSettings(); setGroupBusy(true);
+  api('/api/settings', { playlistGroupOrder: groups.map(function (group) { return group.id; }) }, function (error, result) {
+    setGroupBusy(false);
+    if (error) { playlistGroups = previous; renderPlaylistGroupSettings(); toast(error.message, true); refresh(); return; }
+    groupSignature = JSON.stringify(groups);
+    var buttons = document.getElementById('playlistGroupSettings').querySelectorAll('.group-drag-handle'), focus = buttons[target];
+    if (focus && !focus.disabled) focus.focus();
+    refresh(); toast(result.message || '分组顺序已保存');
+  });
+}
+function beginGroupDrag(event) {
+  if (groupBusy || groupDrag || (event.button !== undefined && event.button !== 0)) return;
+  if (channelEditor && channelEditor.dirty) { toast('请先保存或取消频道修改', true); return; }
+  if (event.touches && event.touches.length !== 1) return;
+  closeGroupChannels();
+  var touch = event.touches ? event.touches[0] : event, list = document.getElementById('playlistGroupSettings'), cards = Array.prototype.slice.call(list.children), rects = [];
+  for (var i = 0; i < cards.length; i++) { var rect = cards[i].getBoundingClientRect(); rects.push({top:rect.top + window.pageYOffset, height:rect.height}); }
+  groupDrag = {from:this._index, target:this._index, handle:this, card:this._card, cards:cards, rects:rects,
+    startY:touch.clientY + window.pageYOffset, y:touch.clientY, pointerId:event.pointerId};
+  this._card.className += ' group-sorting';
+  if (event.pointerId !== undefined && this.setPointerCapture) this.setPointerCapture(event.pointerId);
+  if (window.PointerEvent) {
+    document.addEventListener('pointermove', moveGroupDrag, false); document.addEventListener('pointerup', finishGroupDrag, false); document.addEventListener('pointercancel', cancelGroupDrag, false);
+  } else {
+    document.addEventListener('mousemove', moveGroupDrag, false); document.addEventListener('mouseup', finishGroupDrag, false);
+    document.addEventListener('touchmove', moveGroupDrag, false); document.addEventListener('touchend', finishGroupDrag, false); document.addEventListener('touchcancel', cancelGroupDrag, false);
+  }
+  groupDrag.frame = requestAnimationFrame(groupDragFrame); event.preventDefault();
+}
+function moveGroupDrag(event) {
+  var drag = groupDrag; if (!drag || (event.pointerId !== undefined && event.pointerId !== drag.pointerId)) return;
+  if (event.touches && event.touches.length !== 1) { endGroupDrag(true); return; }
+  drag.y = (event.touches ? event.touches[0] : event).clientY;
+  if (event.cancelable) event.preventDefault();
+}
+function groupDropTarget(drag) {
+  var center = drag.rects[drag.from].top + drag.rects[drag.from].height/2 + drag.y + window.pageYOffset - drag.startY, target = 0;
+  for (var i=0;i<drag.rects.length;i++) {
+    var other = drag.rects[i].top + drag.rects[i].height/2;
+    if (i!==drag.from && (center>other || i>drag.from && Math.abs(center-other)<1)) target++;
+  }
+  return target;
+}
+function groupDragFrame() {
+  var drag = groupDrag; if (!drag) return;
+  var edge = 64, speed = drag.y < edge ? -Math.ceil((edge-drag.y)/6) : drag.y > innerHeight-edge ? Math.ceil((drag.y-innerHeight+edge)/6) : 0;
+  if (speed) window.scrollBy(0, Math.max(-12,Math.min(12,speed)));
+  var delta = drag.y + window.pageYOffset - drag.startY, target = groupDropTarget(drag);
+  drag.target = target;
+  for (var n=0;n<drag.cards.length;n++) {
+    var shift = n===drag.from ? delta : n>drag.from && n<=target ? drag.rects[n-1].top-drag.rects[n].top : n<drag.from && n>=target ? drag.rects[n+1].top-drag.rects[n].top : 0;
+    drag.cards[n].style.transform = 'translateY('+shift+'px)';
+  }
+  drag.frame = requestAnimationFrame(groupDragFrame);
+}
+function finishGroupDrag(event) {
+  var drag = groupDrag; if (!drag || (event.pointerId !== undefined && event.pointerId !== drag.pointerId)) return;
+  var touch = event.changedTouches ? event.changedTouches[0] : event;
+  if (touch && typeof touch.clientY === 'number') drag.y = touch.clientY;
+  drag.target=groupDropTarget(drag);endGroupDrag(false);
+}
+function cancelGroupDrag() { endGroupDrag(true); }
+function endGroupDrag(cancel) {
+  var drag=groupDrag;if(!drag)return;groupDrag=null;cancelAnimationFrame(drag.frame);
+  if (drag.pointerId !== undefined && drag.handle.hasPointerCapture && drag.handle.hasPointerCapture(drag.pointerId)) drag.handle.releasePointerCapture(drag.pointerId);
+  document.removeEventListener('pointermove',moveGroupDrag,false);document.removeEventListener('pointerup',finishGroupDrag,false);document.removeEventListener('pointercancel',cancelGroupDrag,false);
+  document.removeEventListener('mousemove',moveGroupDrag,false);document.removeEventListener('mouseup',finishGroupDrag,false);
+  document.removeEventListener('touchmove',moveGroupDrag,false);document.removeEventListener('touchend',finishGroupDrag,false);document.removeEventListener('touchcancel',cancelGroupDrag,false);
+  for(var i=0;i<drag.cards.length;i++)drag.cards[i].style.transform='';
+  drag.card.className=drag.card.className.replace(' group-sorting','');
+  if(!cancel)movePlaylistGroup(drag.from,drag.target,'handle');
 }
 function savePlaylistGroupState(input) {
   var group = input._group, enabled = input.checked;
@@ -372,7 +465,7 @@ function endChannelDrag(cancel) {
   markChannelDropTarget(); updateChannelEditor();
 }
 function renderPageState() {
-  if (groupBusy || (channelEditor && (channelEditor.dirty || channelEditor.drag || channelEditor.fullscreen))) return;
+  if (groupBusy || groupDrag || (channelEditor && (channelEditor.dirty || channelEditor.drag || channelEditor.fullscreen))) return;
   var groups = state.settings.playlistGroups || [], signature = JSON.stringify(groups);
   if (signature === groupSignature) return;
   closeGroupChannels(); groupSignature = signature; playlistGroups = groups; renderPlaylistGroupSettings();
@@ -380,9 +473,11 @@ function renderPageState() {
 window.addEventListener('keydown', channelEditorKeydown, false);
 window.addEventListener('resize', refreshChannelLayout, false);
 window.addEventListener('blur', cancelChannelDrag, false);
+window.addEventListener('blur', cancelGroupDrag, false);
+window.addEventListener('pagehide', cancelGroupDrag, false);
 window.addEventListener('pagehide', cancelChannelDrag, false);
 window.addEventListener('beforeunload', function (event) {
   if (channelEditor && (channelEditor.dirty || channelEditor.saving)) { event.preventDefault(); event.returnValue = '频道修改尚未保存'; return event.returnValue; }
 }, false);
-document.addEventListener('visibilitychange', function () { if (isPageHidden()) cancelChannelDrag(); }, false);
+document.addEventListener('visibilitychange', function () { if (isPageHidden()) { cancelChannelDrag(); cancelGroupDrag(); } }, false);
 startPage();

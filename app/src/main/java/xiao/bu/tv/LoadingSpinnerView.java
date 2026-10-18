@@ -15,13 +15,14 @@ public final class LoadingSpinnerView extends View {
     private final Paint trackPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint arcPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF bounds = new RectF();
+    private boolean attached, framePosted;
     private final Runnable nextFrame = new Runnable() {
         @Override
         public void run() {
-            if (isShown()) {
-                invalidate();
-                postDelayed(this, 16L);
-            }
+            framePosted = false;
+            if (!canAnimate()) return;
+            invalidate();
+            scheduleFrame();
         }
     };
 
@@ -42,6 +43,8 @@ public final class LoadingSpinnerView extends View {
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
+        // A parent can become visible after this child was attached while hidden.
+        scheduleFrame();
         float stroke = Math.max(2f, Math.min(getWidth(), getHeight()) * 0.085f);
         float inset = stroke / 2f + 1f;
         bounds.set(inset, inset, getWidth() - inset, getHeight() - inset);
@@ -56,29 +59,44 @@ public final class LoadingSpinnerView extends View {
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
+        attached = true;
         restartAnimation();
     }
 
     @Override
     protected void onDetachedFromWindow() {
-        removeCallbacks(nextFrame);
+        attached = false;
+        restartAnimation();
         super.onDetachedFromWindow();
     }
 
     @Override
     protected void onVisibilityChanged(View changedView, int visibility) {
         super.onVisibilityChanged(changedView, visibility);
-        if (visibility == VISIBLE) {
-            restartAnimation();
-        } else {
-            removeCallbacks(nextFrame);
+        restartAnimation();
+    }
+
+    @Override
+    protected void onWindowVisibilityChanged(int visibility) {
+        super.onWindowVisibilityChanged(visibility);
+        restartAnimation();
+    }
+
+    private boolean canAnimate() {
+        return attached && getWindowVisibility() == VISIBLE && isShown();
+    }
+
+    private void scheduleFrame() {
+        if (nextFrame != null && !framePosted && canAnimate()) {
+            framePosted = true;
+            postDelayed(nextFrame, 16L);
         }
     }
 
     private void restartAnimation() {
+        if (nextFrame == null) return;
         removeCallbacks(nextFrame);
-        if (isShown()) {
-            post(nextFrame);
-        }
+        framePosted = false;
+        scheduleFrame();
     }
 }

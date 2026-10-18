@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
     <title>高级设置 · nTv</title>
     <script src="/js/theme.js"></script>
-    <link rel="stylesheet" href="/css/common.css?v=20261016" />
-    <link rel="stylesheet" href="/css/night.css?v=20261016" />
+    <link rel="stylesheet" href="/css/common.css?v=20261017-radio-select" />
+    <link rel="stylesheet" href="/css/night.css?v=20261017-radio-select" />
   </head>
   <body data-parent="/index.html">
     <main class="secondary-page channel-config-page">
@@ -142,31 +142,33 @@
         <button id="updatePlaybackPlugins" type="button" class="primary wide" onclick="updatePlaybackPlugins()">更新播放插件</button>
       </section>
       <section class="radio-ui-section">
-        <div class="radio-ui-row">
-          <strong>电台界面</strong>
-          <span id="radioUiStatus" class="hint">读取中…</span>
-          <button type="button" id="radioUiToggle" aria-expanded="false" aria-controls="radioUiOptions" onclick="toggleRadioUiOptions()">设置</button>
-        </div>
-        <div id="radioUiOptions" style="display:none">
-          <label for="radioUiStyle">唱片样式</label>
-          <select id="radioUiStyle" onchange="saveRadioUiStyle()">
-            <option value="classic">经典唱片（默认）</option>
-            <option value="optical" disabled>柔光唱片</option>
-          </select>
-          <input id="radioUiUrl" type="url" aria-label="界面下载地址" placeholder="留空使用默认地址" />
-          <div class="radio-ui-actions">
-            <button type="button" onclick="saveRadioUiUrl(false)">保存</button>
-            <button type="button" onclick="saveRadioUiUrl(true)">下载更新</button>
-            <button type="button" onclick="resetRadioUiUrl()">默认</button>
-            <button type="button" onclick="document.getElementById('radioUiJar').click()">导入 JAR</button>
-          </div>
-          <input id="radioUiJar" type="file" accept=".jar" style="display:none" onchange="installRadioUi()" />
-        </div>
+        <strong>界面主题</strong>
+        <label for="tvUiStyle">界面样式</label>
+        <select id="tvUiStyle" onchange="saveTvUiStyle()">
+          <option value="builtin">原版界面</option>
+          <option value="ui2">青色圆角</option>
+          <option value="ui3">蓝色卡片</option>
+          <option value="ui4">简洁侧栏</option>
+          <option value="ui5">清透极简</option>
+          <option value="ui6">影院红黑</option>
+        </select>
+        <p class="hint">全部界面均以 JAR 随包提供，离线可切换；切换不重启播放器。</p>
+        <button type="button" onclick="document.getElementById('tvUiJar').click()">导入界面 JAR</button>
+        <input id="tvUiJar" type="file" accept=".jar" hidden onchange="installTvUi()" />
+        <span id="tvUiStatus" class="hint" role="status"></span>
+      </section>
+      <section class="radio-ui-section">
+        <div class="section-head"><strong>电台界面</strong><button type="button" id="radioUiRefresh" onclick="refreshRadioUiChoices()">刷新选项</button></div>
+        <label for="radioUiStyle">界面样式</label>
+        <select id="radioUiStyle" onchange="saveRadioUiStyle()" disabled>
+          <option value="classic">经典唱片</option><option value="optical">柔光唱片</option>
+        </select>
+        <p id="radioUiStatus" class="hint" role="status">读取中…</p>
       </section>
     </main>
     <div id="message" class="message"></div>
     <script src="/js/navigation.js?v=20260926"></script>
     <script src="/js/common.js?v=20260926-nav"></script>
-    <script src="/js/pages/advanced.js"></script>
+    <script src="/js/pages/advanced.js?v=20261017-radio-select"></script>
   </body>
 </html>

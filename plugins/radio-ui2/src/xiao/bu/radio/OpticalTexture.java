@@ -2,50 +2,25 @@ package xiao.bu.radio;
 
 import android.graphics.*;
 
-/** Software rasterization happens only on artwork changes, never during rotation. */
+/** Immutable brushed-metal spindle. Artwork stays available to the host. */
 final class OpticalTexture {
-    static final int SIZE = 1024;
-    static final float COVER_RADIUS = .300f;
-
-    static Bitmap cover(Bitmap cover) {
-        int size = Math.round(SIZE * COVER_RADIUS * 2);
-        Bitmap image = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
-        Canvas canvas = new Canvas(image);
-        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
-        float c = size * .5f, radius = c - 1f;
-        if (cover != null && !cover.isRecycled()) {
-            BitmapShader shader = new BitmapShader(cover, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
-            Matrix matrix = new Matrix();
-            float scale = radius * 2f / Math.min(cover.getWidth(), cover.getHeight());
-            matrix.setScale(scale, scale);
-            matrix.postTranslate(c - cover.getWidth() * scale * .5f, c - cover.getHeight() * scale * .5f);
-            shader.setLocalMatrix(matrix);
-            p.setShader(shader);
-        } else {
-            p.setShader(new RadialGradient(c, c, radius,
-                    new int[]{0xff4d6c82, 0xff1d3444, 0xff101f2a}, null, Shader.TileMode.CLAMP));
-        }
-        canvas.drawCircle(c, c, radius, p);
-        p.setShader(null);
-        p.setStyle(Paint.Style.STROKE);
-        p.setStrokeWidth(1.2f);
-        p.setColor(0xe0fff5fc);
-        canvas.drawCircle(c, c, radius, p);
-        return image;
+    static final int SIZE=1024;
+    static final float COVER_RADIUS=.110f;
+    private static Bitmap spindle;
+    static synchronized Bitmap cover(Bitmap ignored){
+        if(spindle!=null&&!spindle.isRecycled())return spindle;
+        int size=Math.round(SIZE*COVER_RADIUS*2);float c=size*.5f,r=c-1f;
+        Bitmap image=Bitmap.createBitmap(size,size,Bitmap.Config.ARGB_8888);Canvas canvas=new Canvas(image);Paint p=new Paint(3);
+        SweepGradient metal=new SweepGradient(c,c,new int[]{0xff55667e,0xff465873,0xff2e3e57,
+                0xff354862,0xff586b83,0xff60748a,0xff465b76,0xff30445e,0xff55667e},
+                new float[]{0f,.12f,.24f,.38f,.50f,.61f,.74f,.88f,1f});
+        Matrix matrix=new Matrix();matrix.setRotate(-60.6f,c,c);metal.setLocalMatrix(matrix);p.setShader(metal);canvas.drawCircle(c,c,r,p);p.setShader(null);
+        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(.55f);
+        for(float radius=24f;radius<r;radius+=.95f){p.setColor(0x0bd3dfeb);canvas.drawCircle(c,c,radius,p);}
+        p.setStrokeWidth(1.5f);p.setColor(0x8fc0d2e1);canvas.drawCircle(c,c,r-.6f,p);
+        p.setStyle(Paint.Style.FILL);p.setColor(0xff031427);canvas.drawCircle(c,c,size*(23f/220f),p);
+        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(1.1f);p.setColor(0x759db4cb);canvas.drawCircle(c,c,size*(23f/220f),p);
+        spindle=image;return image;
     }
-
-    static int tone(Bitmap cover) {
-        if (cover == null || cover.isRecycled()) return 0xff65545f;
-        long r = 0, g = 0, b = 0;
-        int count = 0;
-        // A bounded sample, independent of the downloaded image dimensions.
-        for (int y = 0; y < 8; y++) for (int x = 0; x < 8; x++) {
-            int color = cover.getPixel((x * 2 + 1) * cover.getWidth() / 16,
-                    (y * 2 + 1) * cover.getHeight() / 16);
-            if (Color.alpha(color) < 128) continue;
-            r += Color.red(color); g += Color.green(color); b += Color.blue(color); count++;
-        }
-        if (count == 0) return 0xff365462;
-        return Color.rgb((int)(r / count), (int)(g / count), (int)(b / count));
-    }
+    static int tone(Bitmap ignored){return 0xff0b2350;}
 }

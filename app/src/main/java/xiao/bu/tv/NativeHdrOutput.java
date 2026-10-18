@@ -4,6 +4,8 @@ import android.content.Context;
 import android.graphics.SurfaceTexture;
 import android.media.MediaFormat;
 import android.media.MediaCodec;
+import android.media.MediaCrypto;
+import java.util.LinkedHashMap;
 import android.opengl.EGL14;
 import android.opengl.EGLConfig;
 import android.opengl.EGLContext;
@@ -35,12 +37,15 @@ public final class NativeHdrOutput implements SurfaceTexture.OnFrameAvailableLis
     private static volatile Display targetDisplay;
     private static volatile NativeHdrOutput active;
     private static volatile String outputRoute = "";
+    private static final LinkedHashMap<String,Boolean> rejectedMapping = new LinkedHashMap<>();
     private final CountDownLatch stopped = new CountDownLatch(1);
     private final HandlerThread thread = new HandlerThread("nTv HDR output");
     private Handler handler;
     private final Surface target;
     private final int width, height, transfer;
-    private final int configuredStandard;
+    private final int configuredStandard, configuredRange, sourceDepth;
+    private boolean rawYuv;
+    private int yuvMatrix, yuvOffset;
     private final boolean forceBt709;
     private final float peak;
     private volatile boolean closed;
@@ -101,6 +106,7 @@ public final class NativeHdrOutput implements SurfaceTexture.OnFrameAvailableLis
         }
         int transfer = integer(format, "color-transfer", 0);
         int mode = integer(format, "ntv-hdr-mode", HdrMode.nativeValue(HdrMode.DEFAULT));
+        if(mode==3||mode==2||integer(format,"ntv-force-gpu",0)!=0)format.setInteger("color-transfer-request",0);
         int sourceTransfer = integer(format,"ntv-source-transfer",transfer);
         int sourceStandard = integer(format,"ntv-source-standard",1);
         boolean forceBt709 = mode == 2 && (sourceTransfer == 6 || sourceTransfer == 7
@@ -121,6 +127,7 @@ public final class NativeHdrOutput implements SurfaceTexture.OnFrameAvailableLis
         if (ctx == null) throw new IllegalStateException("HDR output context is unavailable");
         // Do not silently tag PQ/HLG as SDR. New codecs may perform real tone mapping.
         if (!forceBt709 && !wideGamut
+                && integer(format,"ntv-force-gpu",0)==0
                 && HdrDisplayPolicy.decoderToneMapping(mode, Build.VERSION.SDK_INT)) {
             format.setInteger("color-transfer-request", 3);
             outputRoute = "解码器→SDR";
@@ -133,13 +140,50 @@ public final class NativeHdrOutput implements SurfaceTexture.OnFrameAvailableLis
         int renderTransfer = forceBt709 ? 0 : wideGamut ? (transfer == 1 ? 1 : 3) : transfer;
         NativeHdrOutput bridge = new NativeHdrOutput(surface, integer(format, "width", 0),
                 integer(format, "height", 0), renderTransfer, peak, forceBt709,
-                integer(format, "color-standard", sourceStandard));
+                integer(format, "color-standard", sourceStandard),integer(format,"color-range",2),
+                integer(format,"ntv-source-depth","video/hevc".equals(format.getString("mime"))
+                        && integer(format,"profile",0)==2?10:8));
         if (wideGamut) Log.i(TAG, "BT.2020 -> BT.709 gamut conversion; source transfer=" + sourceTransfer);
         Log.i(TAG, "GPU HDR output mode=" + mode + " transfer=" + transfer
                 + " display=" + (targetDisplay == null ? "unknown" : targetDisplay.getDisplayId()));
         active = bridge;
         outputRoute = forceBt709 ? "GPU BT.709" : "GPU→SDR";
         return bridge;
+    }
+
+    /** Configure once, or retry the same hardware codec with GPU mapping if its SDR request is rejected. */
+    public static NativeHdrOutput configure(MediaCodec codec,MediaFormat format,Surface surface,MediaCrypto crypto,int flags) {
+        String key=null;
+        if(Build.VERSION.SDK_INT>=31){
+            key=codec.getName()+":"+format.getString("mime")+":"+integer(format,"color-standard",0)+":"+integer(format,"color-range",0)
+                    +":"+integer(format,"ntv-source-transfer",integer(format,"color-transfer",0))
+                    +":"+integer(format,"profile",0)+":"+integer(format,"width",0)+"x"+integer(format,"height",0);
+            synchronized(rejectedMapping){if(rejectedMapping.containsKey(key))format.setInteger("ntv-force-gpu",1);}
+        }
+        NativeHdrOutput bridge=create(format,surface);
+        boolean requested=integer(format,"color-transfer-request",0)==3;
+        try{
+            codec.configure(format,bridge==null?surface:bridge.getSurface(),crypto,flags);
+            verifyToneMapping(codec,format);
+            return bridge;
+        }catch(RuntimeException original){
+            if(bridge!=null)bridge.release();
+            if(!requested||bridge!=null||Build.VERSION.SDK_INT<31)throw original;
+            // Do not turn a missing colour-conversion capability into a software decoder fallback.
+            synchronized(rejectedMapping){
+                if(rejectedMapping.size()>=32)rejectedMapping.remove(rejectedMapping.keySet().iterator().next());
+                rejectedMapping.put(key,Boolean.TRUE);
+            }
+            Log.w(TAG,"Codec SDR mapping rejected; retry hardware with GPU output",original);
+            format.setInteger("color-transfer-request",0);format.setInteger("ntv-force-gpu",1);
+            try{
+                codec.reset();
+                bridge=create(format,surface);
+                if(bridge==null)throw new IllegalStateException("HDR GPU fallback unavailable");
+                codec.configure(format,bridge.getSurface(),crypto,flags);
+                return bridge;
+            }catch(RuntimeException fallback){if(bridge!=null)bridge.release();fallback.addSuppressed(original);throw fallback;}
+        }
     }
 
     private static float peak(MediaFormat format, float fallback) {
@@ -163,9 +207,9 @@ public final class NativeHdrOutput implements SurfaceTexture.OnFrameAvailableLis
         catch (RuntimeException ignored) { return fallback; }
     }
 
-    private NativeHdrOutput(Surface surface, int w, int h, int trc, float max, boolean bt709, int standard) {
+    private NativeHdrOutput(Surface surface, int w, int h, int trc, float max, boolean bt709, int standard, int range, int depth) {
         target = surface; width = w; height = h; transfer = trc; peak = max;
-        configuredStandard = standard;
+        configuredStandard = standard;configuredRange=range;sourceDepth=depth;
         forceBt709 = bt709;
         vertices.put(new float[]{-1,-1, 0,0, 1,-1, 1,0, -1,1, 0,1, 1,1, 1,1}).position(0);
         thread.start(); handler = new Handler(thread.getLooper());
@@ -183,7 +227,8 @@ public final class NativeHdrOutput implements SurfaceTexture.OnFrameAvailableLis
             throw new IllegalStateException("HDR GPU output initialization failed", failure);
         }
         Log.i(TAG, (forceBt709 ? "GPU BT.709 override " : transfer < 6 ? "GPU BT.2020 -> BT.709 " : "GPU HDR -> SDR ")
-                + width + "x" + height + " transfer=" + transfer + " peak=" + peak);
+                + width + "x" + height + " transfer=" + transfer + " peak=" + peak
+                + " sampling=" + (rawYuv ? "raw YUV" : "RGB compatibility"));
     }
 
     public Surface getSurface() { return input; }
@@ -233,8 +278,9 @@ public final class NativeHdrOutput implements SurfaceTexture.OnFrameAvailableLis
         if (!closed) handler.post(() -> {
             if (closed || program == 0) return;
             GLES20.glUseProgram(program);
+            updateYuvColor(forceBt709?1:outputStandard,integer(format,"color-range",configuredRange));
             if (forceBt709) {
-                GLES20.glUniform1f(GLES20.glGetUniformLocation(program,"ntvBt709Source"),outputStandard);
+                GLES20.glUniform1f(GLES20.glGetUniformLocation(program,"ntvBt709Source"),rawYuv?1:outputStandard);
                 return;
             }
             GLES20.glUniform1f(GLES20.glGetUniformLocation(program,"ntvPeak"),outputPeak);
@@ -281,7 +327,11 @@ public final class NativeHdrOutput implements SurfaceTexture.OnFrameAvailableLis
                 EGL14.EGL_SURFACE_TYPE,EGL14.EGL_WINDOW_BIT,EGL14.EGL_NONE};
         if (!EGL14.eglChooseConfig(display, attrs, 0, configs, 0, 1, count, 0) || count[0] == 0)
             throw new IllegalStateException("eglChooseConfig");
-        eglContext = EGL14.eglCreateContext(display, configs[0], EGL14.EGL_NO_CONTEXT,
+        if(Build.VERSION.SDK_INT>=29){
+            eglContext=EGL14.eglCreateContext(display,configs[0],EGL14.EGL_NO_CONTEXT,
+                    new int[]{EGL14.EGL_CONTEXT_CLIENT_VERSION,3,EGL14.EGL_NONE},0);
+        }
+        if(eglContext==EGL14.EGL_NO_CONTEXT)eglContext = EGL14.eglCreateContext(display, configs[0], EGL14.EGL_NO_CONTEXT,
                 new int[]{EGL14.EGL_CONTEXT_CLIENT_VERSION,2,EGL14.EGL_NONE}, 0);
         window = EGL14.eglCreateWindowSurface(display, configs[0], target, new int[]{EGL14.EGL_NONE}, 0);
         if (window == EGL14.EGL_NO_SURFACE || eglContext == EGL14.EGL_NO_CONTEXT
@@ -291,28 +341,28 @@ public final class NativeHdrOutput implements SurfaceTexture.OnFrameAvailableLis
         int[] size = new int[1];
         EGL14.eglQuerySurface(display, window, EGL14.EGL_WIDTH, size, 0); renderWidth = size[0];
         EGL14.eglQuerySurface(display, window, EGL14.EGL_HEIGHT, size, 0); renderHeight = size[0];
-        String vertex = "attribute vec2 position; attribute vec2 texcoord; uniform mat4 transform;"
-                + "varying vec2 uv; void main(){ gl_Position=vec4(position,0.0,1.0);"
-                + "uv=(transform*vec4(texcoord,0.0,1.0)).xy; }";
+        String extensions=GLES20.glGetString(GLES20.GL_EXTENSIONS);
+        String versionString=GLES20.glGetString(GLES20.GL_VERSION);
+        rawYuv=HdrDisplayPolicy.rawYuv(Build.VERSION.SDK_INT,versionString,extensions);
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         try (InputStream source = context.getResources().openRawResource(R.raw.hdr_tonemap)) {
             byte[] buffer = new byte[4096]; int n;
             while ((n = source.read(buffer)) > 0) bytes.write(buffer, 0, n);
         }
-        String fragment = "#extension GL_OES_EGL_image_external : require\nprecision highp float;\n"
-                + "uniform samplerExternalOES video; varying vec2 uv;\n" + bytes.toString("UTF-8")
-                + "\nvoid main(){gl_FragColor=vec4(ntvToSdr(texture2D(video,uv).rgb),1.0);}";
-        int vs = shader(GLES20.GL_VERTEX_SHADER, vertex), fs = shader(GLES20.GL_FRAGMENT_SHADER, fragment);
-        program = GLES20.glCreateProgram(); GLES20.glAttachShader(program, vs); GLES20.glAttachShader(program, fs);
-        GLES20.glLinkProgram(program); GLES20.glDeleteShader(vs); GLES20.glDeleteShader(fs);
-        int[] linked = new int[1]; GLES20.glGetProgramiv(program, GLES20.GL_LINK_STATUS, linked, 0);
-        if (linked[0] == 0) throw new IllegalStateException(GLES20.glGetProgramInfoLog(program));
+        String tone=bytes.toString("UTF-8");
+        try{program=buildProgram(tone,rawYuv);}catch(RuntimeException failure){
+            if(!rawYuv)throw failure;
+            Log.w(TAG,"Raw YUV shader unavailable; use legacy RGB compatibility output",failure);
+            rawYuv=false;program=buildProgram(tone,false);
+        }
         position = GLES20.glGetAttribLocation(program,"position"); texcoord = GLES20.glGetAttribLocation(program,"texcoord");
         transform = GLES20.glGetUniformLocation(program,"transform"); GLES20.glUseProgram(program);
         GLES20.glUniform1f(GLES20.glGetUniformLocation(program,"ntvTransfer"), transfer);
         GLES20.glUniform1f(GLES20.glGetUniformLocation(program,"ntvBt709Source"),forceBt709 ? 1f : 0f);
         GLES20.glUniform1f(GLES20.glGetUniformLocation(program,"ntvPeak"), peak);
         GLES20.glUniform1i(GLES20.glGetUniformLocation(program,"video"), 0);
+        yuvMatrix=GLES20.glGetUniformLocation(program,"yuvMatrix");yuvOffset=GLES20.glGetUniformLocation(program,"yuvOffset");
+        updateYuvColor(forceBt709?1:configuredStandard,configuredRange);
         int[] textures = new int[1]; GLES20.glGenTextures(1, textures, 0); textureId = textures[0];
         GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureId);
         GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES,GLES20.GL_TEXTURE_MIN_FILTER,GLES20.GL_LINEAR);
@@ -321,6 +371,26 @@ public final class NativeHdrOutput implements SurfaceTexture.OnFrameAvailableLis
         GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES,GLES20.GL_TEXTURE_WRAP_T,GLES20.GL_CLAMP_TO_EDGE);
         texture = new SurfaceTexture(textureId); texture.setDefaultBufferSize(width,height);
         texture.setOnFrameAvailableListener(this); input = new Surface(texture);
+    }
+
+    private int buildProgram(String tone,boolean yuv){
+        String vertex=yuv?"#version 300 es\nin vec2 position;in vec2 texcoord;uniform mat4 transform;out vec2 uv;void main(){gl_Position=vec4(position,0.,1.);uv=(transform*vec4(texcoord,0.,1.)).xy;}":
+                "attribute vec2 position;attribute vec2 texcoord;uniform mat4 transform;varying vec2 uv;void main(){gl_Position=vec4(position,0.,1.);uv=(transform*vec4(texcoord,0.,1.)).xy;}";
+        String fragment=yuv?"#version 300 es\n#extension GL_EXT_YUV_target : require\nprecision highp float;uniform highp __samplerExternal2DY2YEXT video;uniform mat3 yuvMatrix;uniform vec3 yuvOffset;in vec2 uv;out vec4 pixel;\n"+tone+"\nvoid main(){pixel=vec4(ntvToSdr(yuvMatrix*(texture(video,uv).xyz-yuvOffset)),1.);}":
+                "#extension GL_OES_EGL_image_external : require\nprecision highp float;uniform samplerExternalOES video;varying vec2 uv;\n"+tone+"\nvoid main(){gl_FragColor=vec4(ntvToSdr(texture2D(video,uv).rgb),1.);}";
+        int vs=0,fs=0,id=0;
+        try{
+            vs=shader(GLES20.GL_VERTEX_SHADER,vertex);fs=shader(GLES20.GL_FRAGMENT_SHADER,fragment);
+            id=GLES20.glCreateProgram();GLES20.glAttachShader(id,vs);GLES20.glAttachShader(id,fs);GLES20.glLinkProgram(id);
+            int[] linked=new int[1];GLES20.glGetProgramiv(id,GLES20.GL_LINK_STATUS,linked,0);
+            if(linked[0]==0)throw new IllegalStateException(GLES20.glGetProgramInfoLog(id));return id;
+        }catch(RuntimeException error){if(id!=0)GLES20.glDeleteProgram(id);throw error;}
+        finally{if(vs!=0)GLES20.glDeleteShader(vs);if(fs!=0)GLES20.glDeleteShader(fs);}
+    }
+    private void updateYuvColor(int standard,int range){
+        if(!rawYuv)return;
+        float[] color=HdrDisplayPolicy.yuvColor(standard,range,sourceDepth);
+        GLES20.glUniformMatrix3fv(yuvMatrix,1,false,color,0);GLES20.glUniform3fv(yuvOffset,1,color,9);
     }
 
     private static int shader(int kind, String text) {

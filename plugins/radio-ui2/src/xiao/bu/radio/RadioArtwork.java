@@ -19,10 +19,12 @@ import android.widget.ImageView;
 import android.view.View;
 import android.view.TextureView;
 
-/** Compose the record once; animation rotates a texture instead of clipping a shader every frame. */
+/** Shared host contract; the optical scene has one clock and two particle depth passes. */
 public final class RadioArtwork extends FrameLayout implements RadioUi {
     private final ClassLoader assets;
     private final boolean optical;
+    private final GlassParticles particles;
+    private float opticalFrameTime;
     public View view() { return this; }
     public void dispose() { setTransitionListener(null); setActive(false); removeCallbacks(exitTimeout); clear(false); }
     private Bitmap loadVinyl() {
@@ -37,6 +39,7 @@ public final class RadioArtwork extends FrameLayout implements RadioUi {
     private int backgroundHeight;
     private int backgroundTone;
     private final Paint halo = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint mist = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF disc = new RectF();
     private Bitmap vinyl, cover, record;
     private int coverRevision;
@@ -106,16 +109,17 @@ public final class RadioArtwork extends FrameLayout implements RadioUi {
         private Bitmap bitmap;
         private boolean legacyAnimating;
         private float discRotation;
-        RecordView(Context context, boolean optical) {
+        RecordView(Context context, boolean optical, ClassLoader assets) {
             super(context);
             this.optical = optical;
-            motionView = optical ? new OpticalMotionView(context) : null;
+            motionView = optical ? new OpticalMotionView(context, assets) : null;
             if (motionView != null) {
                 setClipChildren(false);setClipToPadding(false);
                 addView(motionView,new FrameLayout.LayoutParams(-1,-1));
             }
             staticView = new DiscTextureView(context);
             addView(staticView, new FrameLayout.LayoutParams(-1, -1));
+            if(optical)motionView.setFrameListener(() -> setDiscRotation(motionView.seconds()*18f));
             if (android.os.Build.VERSION.SDK_INT <= 15) {
                 textureView = new TextureView(context);
                 textureView.setOpaque(false);
@@ -140,19 +144,20 @@ public final class RadioArtwork extends FrameLayout implements RadioUi {
         }
         View rotationTarget() { return optical ? staticView : this; }
         Bitmap snapshot(Bitmap cover, float degrees) {
-            Bitmap result=Bitmap.createBitmap(OpticalTexture.SIZE,OpticalTexture.SIZE,Bitmap.Config.ARGB_8888);
+            int size=Math.min(OpticalTexture.SIZE,Math.max(256,getWidth()));
+            Bitmap result=Bitmap.createBitmap(size,size,Bitmap.Config.ARGB_8888);
             Canvas canvas=new Canvas(result);
-            motionView.drawSnapshot(canvas,OpticalTexture.SIZE);
-            canvas.rotate(degrees,OpticalTexture.SIZE*.5f,OpticalTexture.SIZE*.5f);
-            canvas.drawBitmap(cover,(OpticalTexture.SIZE-cover.getWidth())*.5f,
-                    (OpticalTexture.SIZE-cover.getHeight())*.5f,texturePaint);
+            motionView.drawSnapshot(canvas,size);
+            canvas.rotate(degrees,size*.5f,size*.5f);
+            float inset=size*.39f;
+            canvas.drawBitmap(cover,null,new RectF(inset,inset,size-inset,size-inset),texturePaint);
             return result;
         }
         @Override protected void onMeasure(int widthSpec, int heightSpec) {
             super.onMeasure(widthSpec, heightSpec);
             if (optical) {
-                staticView.measure(MeasureSpec.makeMeasureSpec(Math.round(getMeasuredWidth() * .6f), MeasureSpec.EXACTLY),
-                        MeasureSpec.makeMeasureSpec(Math.round(getMeasuredHeight() * .6f), MeasureSpec.EXACTLY));
+                staticView.measure(MeasureSpec.makeMeasureSpec(Math.round(getMeasuredWidth() * .22f), MeasureSpec.EXACTLY),
+                        MeasureSpec.makeMeasureSpec(Math.round(getMeasuredHeight() * .22f), MeasureSpec.EXACTLY));
             }
         }
         @Override protected void onLayout(boolean changed, int l, int t, int r, int b) {
@@ -188,8 +193,8 @@ public final class RadioArtwork extends FrameLayout implements RadioUi {
                 if (bitmap != null) {
                     int w=textureView.getWidth(),h=textureView.getHeight();
                     canvas.drawBitmap(bitmap, null, new android.graphics.Rect(
-                            optical ? Math.round(w*.2f) : 0, optical ? Math.round(h*.2f) : 0,
-                            optical ? Math.round(w*.8f) : w, optical ? Math.round(h*.8f) : h), texturePaint);
+                            optical ? Math.round(w*.39f) : 0, optical ? Math.round(h*.39f) : 0,
+                            optical ? Math.round(w*.61f) : w, optical ? Math.round(h*.61f) : h), texturePaint);
                 }
             } catch (RuntimeException error) {
                 android.util.Log.w("AudioArtworkView", "Unable to update record texture", error);
@@ -231,10 +236,11 @@ public final class RadioArtwork extends FrameLayout implements RadioUi {
         super(context);
         this.assets = assets;
         optical = "optical".equals(context.getSharedPreferences("radio_ui", 0).getString("style", "classic"));
-        if (optical) rotationDuration = 18000L;
+        particles=optical?new GlassParticles():null;
+        if (optical) rotationDuration = 20000L;
         setWillNotDraw(false);
         if (optical) {setClipChildren(false);setClipToPadding(false);}
-        recordView = new RecordView(context, optical);
+        recordView = new RecordView(context, optical, assets);
         if (android.os.Build.VERSION.SDK_INT >= 16)
             recordView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         addView(recordView, new FrameLayout.LayoutParams(1, 1));
@@ -269,7 +275,7 @@ public final class RadioArtwork extends FrameLayout implements RadioUi {
         dragging = false;
         title = name == null ? "" : name;
         kind = live ? "音乐电台 · 直播" : "音乐";
-        recordView.setDiscRotation(0f);
+        recordView.setDiscRotation(optical?recordView.motionView.seconds()*18f:0f);
         setCover(initialCover);
         setVisibility(VISIBLE);
         cancelSlides();
@@ -590,7 +596,13 @@ public final class RadioArtwork extends FrameLayout implements RadioUi {
                 && getWindowVisibility() == VISIBLE;
     }
     private void updateAnimation() {
-        if (optical) recordView.motionView.setRunning(shouldRotate());
+        if (optical) {
+            boolean running=shouldRotate();
+            recordView.motionView.setRunning(running);
+            recordView.setDiscRotation(recordView.motionView.seconds()*18f);
+            if(android.os.Build.VERSION.SDK_INT<=15)recordView.setLegacyAnimating(running);
+            return;
+        }
         if (android.os.Build.VERSION.SDK_INT <= 15) {
             if (shouldRotate()) {
                 if (legacyRotationRunning) return;
@@ -639,8 +651,8 @@ public final class RadioArtwork extends FrameLayout implements RadioUi {
     }
 
     @Override protected void onSizeChanged(int w, int h, int oldw, int oldh) {
-        float size = Math.min(w * (optical ? .92f : .68f), h * .68f);
-        float top = (h - size) * (optical ? .26f : .31f);
+        float size = Math.min(w * (optical ? .9259259f : .68f), h * .68f);
+        float top = (h - size) * (optical ? .282857f : .31f);
         disc.set((w - size) / 2, top, (w + size) / 2, top + size);
         textSize = Math.min(w * 0.045f, h * 0.04f);
         updateBackground(h);
@@ -660,9 +672,10 @@ public final class RadioArtwork extends FrameLayout implements RadioUi {
         for (int y = 0; y < height; y++) {
             float fraction = y / (float) Math.max(1, height - 1);
             float strength = .27f - .12f * fraction;
-            float red = optical ? 25 + android.graphics.Color.red(tone) * strength : 55 - 25 * fraction;
-            float green = optical ? 23 + android.graphics.Color.green(tone) * strength : 70 - 32 * fraction;
-            float blue = optical ? 28 + android.graphics.Color.blue(tone) * strength : 94 - 43 * fraction;
+            float ambient=optical?(float)Math.sin(Math.PI*fraction):0f;
+            float red = optical ? 4-fraction : 55 - 25 * fraction;
+            float green = optical ? 20-fraction+2*ambient : 70 - 32 * fraction;
+            float blue = optical ? 49-5*fraction+8*ambient : 94 - 43 * fraction;
             for (int x = 0; x < width; x++) {
                 random ^= random << 13;
                 random ^= random >>> 17;
@@ -681,15 +694,18 @@ public final class RadioArtwork extends FrameLayout implements RadioUi {
     private void updateHalo() {
         if (!optical) return;
         halo.setShader(new android.graphics.RadialGradient(disc.centerX(), disc.centerY(),
-                Math.max(1f, disc.width() * .64f),
-                new int[]{0x00ffedf7, 0x00ffedf7, 0x3bdbb6cf, 0x00dbb6cf},
-                new float[]{0f, .45f, .65f, 1f}, Shader.TileMode.CLAMP));
+                Math.max(1f, disc.width() * .90f),
+                new int[]{0x441b4389,0x30254f9a,0x242b58a4,0x00142f68},
+                new float[]{0f, .35f, .64f, 1f}, Shader.TileMode.CLAMP));
+        mist.setShader(new android.graphics.RadialGradient(0f,0f,Math.max(1f,disc.width()*.65f),
+                new int[]{0x24315cb1,0x1423428a,0x00132a61},
+                new float[]{0f,.45f,1f},Shader.TileMode.CLAMP));
         // The shader owns its data; no bitmap is recycled while a display list refers to it.
     }
 
     @Override protected void onMeasure(int widthSpec, int heightSpec) {
         super.onMeasure(widthSpec, heightSpec);
-        int size = Math.round(Math.min(getMeasuredWidth() * (optical ? .92f : .68f), getMeasuredHeight() * .68f));
+        int size = Math.round(Math.min(getMeasuredWidth() * (optical ? .9259259f : .68f), getMeasuredHeight() * .68f));
         int exact = MeasureSpec.makeMeasureSpec(size, MeasureSpec.EXACTLY);
         recordView.measure(exact, exact);
         outgoingView.measure(exact, exact);
@@ -712,6 +728,7 @@ public final class RadioArtwork extends FrameLayout implements RadioUi {
         canvas.clipRect(0f, 0f, getWidth(), optical ? getHeight() : disc.bottom);
         super.dispatchDraw(canvas);
         canvas.restoreToCount(save);
+        if (optical && (record != null||isTransitionRunning())) particles.draw(canvas,getWidth(),getHeight(),disc,opticalFrameTime,true);
         if (optical && record != null) drawMetadata(canvas);
     }
 
@@ -748,11 +765,25 @@ public final class RadioArtwork extends FrameLayout implements RadioUi {
 
     private Bitmap previewRecordBitmap(Bitmap art) {
         Bitmap bitmap = composeRecordBitmap(art);
-        return optical ? recordView.snapshot(bitmap,0f) : bitmap;
+        return optical ? recordView.snapshot(bitmap,recordView.motionView.seconds()*18f) : bitmap;
     }
 
     @Override protected void onDraw(Canvas canvas) {
         canvas.drawRect(0, 0, getWidth(), getHeight(), background);
+        if (optical && (record!=null||isTransitionRunning())) {
+            opticalFrameTime=recordView.motionView.seconds();
+            canvas.drawCircle(disc.centerX(),disc.centerY(),disc.width()*.90f,halo);
+            float pulse=.5f+.5f*(float)Math.sin(opticalFrameTime*Math.PI*.5f);
+            int mistSave=canvas.save();
+            canvas.translate(disc.centerX()-disc.width()*.34f,disc.centerY()-disc.width()*.47f);
+            mist.setAlpha(Math.round(65f+160f*pulse));canvas.drawCircle(0f,0f,disc.width()*.65f,mist);
+            canvas.restoreToCount(mistSave);
+            mistSave=canvas.save();
+            canvas.translate(disc.centerX()+disc.width()*.38f,disc.centerY()+disc.width()*.20f);
+            mist.setAlpha(Math.round(65f+160f*(1f-pulse)));canvas.drawCircle(0f,0f,disc.width()*.65f,mist);
+            canvas.restoreToCount(mistSave);
+            particles.draw(canvas,getWidth(),getHeight(),disc,opticalFrameTime,false);
+        }
         if (record == null) return;
         if (!optical) drawMetadata(canvas);
     }

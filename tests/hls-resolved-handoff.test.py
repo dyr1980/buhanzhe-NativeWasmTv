@@ -20,7 +20,7 @@ class HttpStreamResolver {static boolean isExplicitHlsUrl(String u){return u.end
 }}
 class HlsProxyServer {
  static final Charset UTF_8=StandardCharsets.UTF_8;
- volatile boolean running=true;volatile int requests;int rewrites;CountDownLatch gate,started;
+ volatile boolean running=true,playbackSuspended;volatile int requests;int rewrites;CountDownLatch gate,started;
  final HlsStartupPlaylistCache startupPlaylists=new HlsStartupPlaylistCache(),resolvedPlaylists=new HlsStartupPlaylistCache();
  final Map<String,Boolean> knownHlsPlaylists=new HashMap<>();
  boolean needsSpecialDecrypt(String url){return url.contains("encrypted");}
@@ -61,6 +61,10 @@ class HlsProxyServer {
   q.gate.countDown();a.join(2000);b.join(2000);q.manifestAheadWorker.shutdownNow();
   check(!a.isAlive()&&!b.isAlive()&&errors[0]==null&&errors[1]==null,"Reload join did not finish");
   check(joined[0]!=null&&joined[0]==joined[1]&&q.requests==1,"Concurrent reloads duplicated the gateway request");
+  p.playbackSuspended=true;int before=p.requests;
+  try{p.fetch(url);throw new AssertionError("Background fetch reached the network");}
+  catch(InterruptedIOException expected){}
+  check(p.requests==before,"Suspended handoff opened another request");
   System.out.println("PASS dynamic live reload overlaps playback and joins one GET");
   System.out.println("PASS exact-URL one-shot manifest handoff, rewriting, reload, expiry and encrypted/plugin isolation");
  }

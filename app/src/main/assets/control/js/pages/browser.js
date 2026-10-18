@@ -23,6 +23,7 @@ function saveWebViewSettings(includeScript) {
     webRtc = document.getElementById("webViewWebRtcEnabled");
   var payload = {
     webViewMinimalMode: document.getElementById("webViewMinimalMode").checked,
+    webViewPageCover: document.getElementById("webViewPageCover").checked,
     webViewResolution: resolution.value,
     webViewPageScale: Number(pageScale.value),
     webViewUserAgent: userAgent.value,
@@ -48,6 +49,7 @@ function saveWebViewSettings(includeScript) {
 function renderPageState() {
   var s = state.settings;
   document.getElementById("webViewMinimalMode").checked = s.webViewMinimalMode === true;
+  document.getElementById("webViewPageCover").checked = s.webViewPageCover === true;
   document.getElementById("webViewResolution").value = s.webViewResolution || "720p";
   document.getElementById("webViewPageScale").value = String(s.webViewPageScale || 1);
   document.getElementById("webViewUserAgent").value = s.webViewUserAgent || "windows";

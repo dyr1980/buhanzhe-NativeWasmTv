@@ -26,6 +26,13 @@
         <div class="browser-settings-list">
           <div class="browser-setting-row">
             <div class="browser-setting-copy">
+              <b>开启网页遮罩</b><span>初始关闭；开启后打开网页频道时自动遮罩，网页继续加载和解析，可点击“显示网页”临时查看</span>
+            </div>
+            <input id="webViewPageCover" class="source-toggle" aria-label="开启网页遮罩"
+              type="checkbox" onchange="saveWebViewSettings()" />
+          </div>
+          <div class="browser-setting-row">
+            <div class="browser-setting-copy">
               <b>极简模式</b><span>强制隐藏顶部网页标签和地址栏，默认关闭</span>
             </div>
             <input id="webViewMinimalMode" class="source-toggle" type="checkbox"
@@ -148,6 +155,6 @@
     <div id="message" class="message"></div>
     <script src="/js/navigation.js?v=20260926"></script>
     <script src="/js/common.js?v=20260926-nav"></script>
-    <script src="/js/pages/browser.js?v=20260926-retention"></script>
+    <script src="/js/pages/browser.js?v=20261017-cover"></script>
   </body>
 </html>

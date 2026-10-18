@@ -7,12 +7,17 @@ def method(start,end): return src[src.index(start):src.index(end,src.index(start
 methods=method('    private void handleUnavailableSource(', '    private boolean isDeviceNetworkDisconnected(')
 methods+=method('    private void showPlaybackForbidden(', '    private void dispatchFlyMouseButtonDown(')
 
-java=r'''import java.util.concurrent.Executor;
+java=r'''import java.util.concurrent.Executor;import java.io.IOException;
 class ChannelSourceFailureCheck {
- static class Channel {String name="target";int count;Channel(int n){count=n;}int sourceCount(){return count;}}
+ static class Channel {String name="target";int count;Channel(int n){count=n;}int sourceCount(){return count;}String sourceUrl(int i){return "";}IptvCatchup catchupFor(int i){return null;}}
  static class PlaybackHttpError {static final String FORBIDDEN_MESSAGE="forbidden";static boolean isForbidden(String s){return "403".equals(s);}}
  static class Toast {static final int LENGTH_LONG=1;static Toast makeText(Object a,String b,int c){return new Toast();}void show(){}}
  final Executor PROXY_SWITCH_WORKER=Runnable::run;
+ static class EpgManager {static class Program {long startMillis,stopMillis;String catchupId;}}
+ static class IptvCatchup {String url(String u,long s,long e,long n,String id)throws IOException{return u;}}
+ EpgManager.Program catchupProgram;
+ int catchupSource(Channel c,EpgManager.Program p,int preferred,int direction){throw new AssertionError("Live regression entered catchup path");}
+ void startChannel(int index,EpgManager.Program p,String url){throw new AssertionError("Live regression entered catchup path");}
  boolean autoSwitchSource,offline,released;
  Channel channel;int currentChannelIndex=7,currentSourceIndex,triedCustomSources=1,starts;String status="";
  ChannelSourceFailureCheck(int count){channel=new Channel(count);}

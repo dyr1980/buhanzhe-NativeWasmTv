@@ -1,8 +1,8 @@
 """Build an API14 DEX JAR; Android resources are ordinary JAR entries."""
-import argparse,json,pathlib,subprocess,zipfile,hashlib,os
+import argparse,json,pathlib,subprocess,zipfile,hashlib,os,sys
 root=pathlib.Path(__file__).resolve().parents[3]
 plugin=pathlib.Path(__file__).resolve().parents[1]
-parser=argparse.ArgumentParser();parser.add_argument('--version',type=int,default=4)
+parser=argparse.ArgumentParser();parser.add_argument('--version',type=int,default=5)
 parser.add_argument('--sdk',default=os.environ.get('ANDROID_SDK_ROOT','D:/android/sdk'))
 parser.add_argument('--java-home',default=os.environ.get('JAVA_HOME','C:/Users/Administrator/.jdks/corretto-1.8.0_492'))
 args=parser.parse_args()
@@ -10,6 +10,7 @@ sdk=pathlib.Path(args.sdk); java=pathlib.Path(args.java_home)/'bin'
 out=root/'.codex-tmp/radio-ui2/build';out.mkdir(parents=True,exist_ok=True)
 classes=out/('classes-'+str(args.version));classes.mkdir(exist_ok=True)
 def run(command):subprocess.run([str(x) for x in command],check=True)
+run([sys.executable,plugin/'src/bake_silver.py'])
 api=root/'app/src/main/java/xiao/bu/tv/radio/RadioUi.java'
 sources=list((plugin/'src/xiao').rglob('*.java'))
 run([java/'javac.exe','-source','8','-target','8','-encoding','UTF-8','-cp',sdk/'platforms/android-30/android.jar','-d',classes,api,*sources])
@@ -24,9 +25,12 @@ jar=target/'radio-ui2.jar'
 with zipfile.ZipFile(jar,'w',compression=zipfile.ZIP_DEFLATED) as archive:
     archive.write(dex/'classes.dex','classes.dex')
     archive.writestr('radio-ui.json',json.dumps(dict(api=1,version=args.version,minSdk=14,
-            entry='xiao.bu.radio.RadioArtwork',styles=['classic','optical'])))
+            entry='xiao.bu.radio.RadioArtwork',styles=['optical'] if args.version>=5 else ['classic','optical'])))
     for p in (plugin/'assets').rglob('*'):
-        if p.is_file():archive.write(p,p.relative_to(plugin/'assets').as_posix())
+        name=p.relative_to(plugin/'assets').as_posix()
+        # Classic remains pinned to its original JAR; this download only serves optical.
+        if args.version>=5 and name=='radio/vinyl.png':continue
+        if p.is_file():archive.write(p,name)
 sha=hashlib.sha256(jar.read_bytes()).hexdigest()
 jar.with_suffix('.sha256').write_text(sha+'\n',encoding='ascii')
 print('Built',jar,'bytes=',jar.stat().st_size,'sha256=',sha)

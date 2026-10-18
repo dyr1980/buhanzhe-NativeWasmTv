@@ -446,6 +446,7 @@ require('./apply-video-info-patches.cjs')(root);
 require('./apply-deinterlace-patches.cjs')(root);
 require('./apply-vod-buffer-patches.cjs')(root);
 require('./apply-codec-input-patches.cjs')(root);
+require('./apply-complete-input-patches.cjs')(root);
 // Interactive RTSP audio stays video master, but a slow audio-device clock
 // must not turn a small initial delay into seconds of receiver backlog.
 edit(player, 'static int synchronize_audio(VideoState *is, int nb_samples)\n{',

@@ -47,21 +47,16 @@
         android:visibility="gone"
         tools:ignore="RtlHardcoded" />
 
-    <View
-        android:id="@+id/channel_switch_blackout"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:background="#FF000000"
-        android:visibility="gone" />
 
-    <ImageView
-        android:id="@+id/channel_swipe_snapshot"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:background="#FF000000"
-        android:scaleType="fitCenter"
+    <TextView
+        android:id="@+id/video_position"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|right"
+        android:includeFontPadding="false"
+        android:singleLine="true"
         android:visibility="gone"
-        tools:ignore="ContentDescription" />
+        tools:ignore="HardcodedText,RtlHardcoded" />
 
     <TextView
         android:id="@+id/video_clock"

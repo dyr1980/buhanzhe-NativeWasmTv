@@ -11,8 +11,12 @@ final class EpgDisplayCache {
     private List<EpgManager.Program> source;
     private List<EpgManager.Program> displayed = Collections.emptyList();
     private long displayedDay;
+    private double displayedDays;
 
     List<EpgManager.Program> programsFor(List<EpgManager.Program> programs) {
+        return programsFor(programs,0);
+    }
+    List<EpgManager.Program> programsFor(List<EpgManager.Program> programs,double catchupDays) {
         // EpgManager publishes complete snapshots, never mutating a published list.
         // Identity is an O(1) cache check; a refreshed guide has new list identities.
         long day = EpgManager.dayStart(System.currentTimeMillis());
@@ -20,7 +24,7 @@ final class EpgDisplayCache {
         end.setTimeInMillis(day);
         end.add(java.util.Calendar.DATE, 1);
         long nextDay = end.getTimeInMillis();
-        if (source == programs && displayedDay == day) {
+        if (source == programs && displayedDay == day && displayedDays==catchupDays) {
             return displayed;
         }
         List<EpgManager.Program> result = programs;
@@ -30,7 +34,7 @@ final class EpgDisplayCache {
             Set<Key> seen = new HashSet<Key>();
             ArrayList<EpgManager.Program> unique = new ArrayList<EpgManager.Program>();
             for (EpgManager.Program program : programs) {
-                if (program.stopMillis > day && program.startMillis < nextDay
+                if (program.stopMillis > day-(long)(catchupDays*86400000L) && program.startMillis < nextDay
                         && seen.add(new Key(program))) {
                     unique.add(program);
                 }
@@ -43,6 +47,7 @@ final class EpgDisplayCache {
         }
         source = programs;
         displayedDay = day;
+        displayedDays=catchupDays;
         displayed = result;
         return displayed;
     }

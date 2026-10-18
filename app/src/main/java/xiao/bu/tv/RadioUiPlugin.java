@@ -1,195 +1,159 @@
 package xiao.bu.tv;
 
 import android.content.Context;
+import android.content.ContextWrapper;
+import android.content.SharedPreferences;
 import android.os.*;
 import dalvik.system.DexClassLoader;
 import xiao.bu.tv.radio.RadioUi;
-import org.json.JSONObject;
-import org.json.JSONArray;
+import org.json.*;
 import java.io.*;
 import java.lang.ref.WeakReference;
-import java.lang.reflect.Constructor;
+import java.lang.reflect.*;
 import java.security.MessageDigest;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.zip.*;
 
-/** Immutable JAR paths permit replacing a View while its old DEX is still loaded. */
+/** Cached, immutable DEX JARs; selecting artwork never replaces the audio player. */
 final class RadioUiPlugin {
-    static final String DEFAULT_URL = "https://raw.githubusercontent.com/buhanzhe/NativeWasmTv/master/plugins/radio-ui2/dist/radio-ui2.jar";
-    static final int MAX_BYTES = 2 * 1024 * 1024;
-    private static final ExecutorService worker = Executors.newSingleThreadExecutor();
-    private static final List<WeakReference<AudioArtworkView>> views = new ArrayList<WeakReference<AudioArtworkView>>();
-    private static final Handler main = new Handler(Looper.getMainLooper());
+    static final int MAX_BYTES=2*1024*1024;
+    private static final ExecutorService worker=Executors.newSingleThreadExecutor();
+    static void execute(Runnable task){worker.execute(task);}
+    private static final Handler main=new Handler(Looper.getMainLooper());
+    private static final List<WeakReference<AudioArtworkView>> views=new ArrayList<>();
+    private static final Map<String,Factory> factories=new HashMap<>();
+    private static final Object INSTALL_LOCK=new Object();
     private static volatile Factory active;
     private static boolean requested;
-    private static volatile String failure = "";
-    private static final Object INSTALL_LOCK = new Object();
+    private static volatile long retryAfter;
+    private static volatile String failure="";
     static final class Factory {
-        final ClassLoader loader;
-        final Constructor<?> constructor;
-        final String sha;
-        final int version;
-        final boolean supportsOptical;
-        Factory(ClassLoader loader, Constructor<?> constructor, String sha, int version, boolean supportsOptical) {
-            this.loader=loader; this.constructor=constructor; this.sha=sha; this.version=version;
-            this.supportsOptical=supportsOptical;
+        final ClassLoader loader; final Constructor<?> constructor; final String sha; final int version;
+        final Set<String> styles; final Set<String> validatedStyles=new HashSet<>();
+        Factory(ClassLoader loader,Constructor<?> constructor,String sha,int version,Set<String> styles){
+            this.loader=loader;this.constructor=constructor;this.sha=sha;this.version=version;this.styles=styles;
         }
-        RadioUi create(Context context) throws Exception { return (RadioUi) constructor.newInstance(context, loader); }
+        RadioUi create(Context c)throws Exception{return (RadioUi)constructor.newInstance(c,loader);}
     }
-    private static File root(Context context) { return new File(context.getFilesDir(), "radio-ui"); }
-    static synchronized void request(final AudioArtworkView view) {
+    private static SharedPreferences prefs(Context c){return c.getSharedPreferences("radio_ui",0);}
+    private static File root(Context c){return new File(c.getFilesDir(),"radio-ui");}
+    static String style(Context c){return prefs(c).getString("style","classic");}
+    private static String selected(Context c){return prefs(c).getString("selected",style(c));}
+    static synchronized void request(AudioArtworkView view){
         boolean known=false;
-        for (Iterator<WeakReference<AudioArtworkView>> it=views.iterator();it.hasNext();) {
-            AudioArtworkView value=it.next().get(); if(value==null)it.remove(); else if(value==view)known=true;
-        }
-        if(!known)views.add(new WeakReference<AudioArtworkView>(view));
+        for(Iterator<WeakReference<AudioArtworkView>> it=views.iterator();it.hasNext();){AudioArtworkView v=it.next().get();if(v==null)it.remove();else if(v==view)known=true;}
+        if(!known)views.add(new WeakReference<>(view));
         if(active!=null){view.replacePlugin(active);return;}
-        if(requested)return;
-        requested=true;
-        final Context context=view.getContext().getApplicationContext();
-        worker.execute(new Runnable(){public void run(){try {
-            String sha=context.getSharedPreferences("radio_ui",0).getString("active","");
-            if(!sha.matches("[a-f0-9]{64}")){installUrl(context, sourceUrl(context));return;}
-            Factory cached=load(context,new File(root(context),sha+".jar"),sha);
-            synchronized(RadioUiPlugin.class){if(active==null)publish(cached);}
-        }catch(Exception error){failure=error.toString();}}});
+        if(requested||SystemClock.elapsedRealtime()<retryAfter)return;
+        requested=true;final Context c=view.getContext().getApplicationContext();
+        worker.execute(()->{try{synchronized(INSTALL_LOCK){if(active==null){
+            RadioUiCatalog.Entry saved=savedEntry(c);
+            // A catalog refresh must not turn a working cached selection into a mandatory update.
+            selectLocked(c,saved!=null&&new File(root(c),saved.sha+".jar").isFile()?saved:entry(c,selected(c)));
+        }}}
+            catch(Exception e){failure=message(e);retryAfter=SystemClock.elapsedRealtime()+60000;}
+            finally{synchronized(RadioUiPlugin.class){requested=false;}}});
     }
-    private static Factory load(Context context, File jar, String sha) throws Exception {
-        if(jar.length()==0 || jar.length()>MAX_BYTES)throw new IOException("JAR 文件大小无效");
-        MessageDigest digest=MessageDigest.getInstance("SHA-256");
-        try(InputStream input=new FileInputStream(jar)){byte[] block=new byte[8192];int count;while((count=input.read(block))!=-1)digest.update(block,0,count);}
-        StringBuilder actual=new StringBuilder();for(byte b:digest.digest())actual.append(String.format(Locale.US,"%02x",b&255));
-        if(!sha.equals(actual.toString()))throw new IOException("界面插件校验失败");
-        JSONObject metadata;
-        try(ZipFile zip=new ZipFile(jar)) {
-            ZipEntry dex=zip.getEntry("classes.dex"), info=zip.getEntry("radio-ui.json");
-            if(dex==null || info==null || dex.getSize()>4*1024*1024 || info.getSize()>4096)
-                throw new IOException("不是有效的电台界面 JAR");
-            ByteArrayOutputStream bytes=new ByteArrayOutputStream();
-            try(InputStream in=zip.getInputStream(info)) { int b;while((b=in.read())!=-1){if(bytes.size()>=4096)throw new IOException("插件配置过大");bytes.write(b);} }
-            metadata=new JSONObject(bytes.toString("UTF-8"));
+    private static void publish(final Factory factory){
+        active=factory;failure="";retryAfter=0L;
+        main.post(()->{synchronized(RadioUiPlugin.class){
+            if(active!=factory)return;
+            for(Iterator<WeakReference<AudioArtworkView>> it=views.iterator();it.hasNext();){AudioArtworkView v=it.next().get();if(v==null)it.remove();else v.replacePlugin(factory);}
+        }});
+    }
+    static String configure(Context c,JSONObject config)throws Exception {
+        if(Looper.myLooper()==Looper.getMainLooper())throw new IOException("请在后台切换电台界面");
+        if(config.has("url")||config.has("download"))throw new IOException("请直接选择电台界面，无需填写地址");
+        if(config.optBoolean("refresh",false))RadioUiCatalog.refresh(c,true);
+        if(config.has("id")||config.has("style")){
+            synchronized(INSTALL_LOCK){try{selectLocked(c,config.optString("id",config.optString("style")));}catch(Exception e){failure=message(e);throw e;}}
         }
-        if(metadata.getInt("api")!=1 || metadata.getInt("version")<1 || metadata.getInt("minSdk")>Build.VERSION.SDK_INT)
-            throw new IOException("电台界面版本不兼容");
-        File optimized=new File(root(context),"dex"); if(!optimized.isDirectory()&&!optimized.mkdirs())throw new IOException("无法创建 DEX 目录");
-        DexClassLoader loader=new DexClassLoader(jar.getAbsolutePath(),optimized.getAbsolutePath(),null,RadioUi.class.getClassLoader());
-        Class<?> type=loader.loadClass(metadata.getString("entry"));
-        if(!RadioUi.class.isAssignableFrom(type))throw new IOException("插件接口不兼容");
-        JSONArray styles=metadata.optJSONArray("styles");boolean optical=false;
-        if(styles!=null)for(int i=0;i<styles.length();i++)if("optical".equals(styles.optString(i)))optical=true;
-        return new Factory(loader,type.getConstructor(Context.class,ClassLoader.class),sha,metadata.getInt("version"),optical);
+        return status(c);
     }
-    private static synchronized void publish(final Factory factory) {
-        active=factory; failure="";
-        main.post(new Runnable(){public void run(){synchronized(RadioUiPlugin.class){
-            for(Iterator<WeakReference<AudioArtworkView>> it=views.iterator();it.hasNext();) {
-                AudioArtworkView view=it.next().get();if(view==null)it.remove();else view.replacePlugin(factory);
-            }
-        }}});
+    private static RadioUiCatalog.Entry savedEntry(Context c){
+        try{RadioUiCatalog.Entry e=new RadioUiCatalog.Entry(new JSONObject(prefs(c).getString("selected_entry","")));return selected(c).equals(e.id)?e:null;}catch(Exception ignored){return null;}
     }
-    /** Called on a control-server worker, never on the UI thread. */
-    static String install(final Context context, byte[] bytes) throws Exception {
-        synchronized(INSTALL_LOCK){return installLocked(context,bytes);}
+    private static RadioUiCatalog.Entry entry(Context c,String id)throws Exception {
+        RadioUiCatalog.Entry e=RadioUiCatalog.find(c,id);
+        if(e==null&&id.equals(selected(c)))e=savedEntry(c);
+        if(e==null)throw new IOException("此界面不在可选列表中，请刷新列表");return e;
     }
-    private static String installLocked(final Context context, byte[] bytes) throws Exception {
-        if(Looper.myLooper()==Looper.getMainLooper())throw new IOException("插件安装需要后台线程");
-        if(bytes.length==0 || bytes.length>MAX_BYTES)throw new IOException("JAR 不能超过 2 MB");
-        StringBuilder digest=new StringBuilder();for(byte b:MessageDigest.getInstance("SHA-256").digest(bytes))digest.append(String.format(Locale.US,"%02x",b&255));
-        String sha=digest.toString();File dir=root(context);if(!dir.isDirectory()&&!dir.mkdirs())throw new IOException("无法创建插件目录");
-        File jar=new File(dir,sha+".jar");
-        if(!jar.isFile()) {
-            File temp=new File(dir,sha+".tmp");
-            try(FileOutputStream out=new FileOutputStream(temp)){out.write(bytes);out.getFD().sync();}
-            if(!temp.setReadOnly()||!temp.renameTo(jar))throw new IOException("无法保存界面插件");
-        }
-        // Verify content, API and constructor before switching the persistent active pointer.
-        final Factory factory;
-        try { factory=load(context,jar,sha); }
-        catch(Exception error) {
-            if(!sha.equals(context.getSharedPreferences("radio_ui",0).getString("active","")))jar.delete();
-            throw error;
-        }
-        final CountDownLatch done=new CountDownLatch(1);final Throwable[] error={null};
-        main.post(new Runnable(){public void run(){try{RadioUi ui=factory.create(context);ui.show("",true,null);ui.dispose();}catch(Throwable e){error[0]=e;}finally{done.countDown();}}});
-        if(!done.await(10,TimeUnit.SECONDS))throw new IOException("界面初始化超时");
-        if(error[0]!=null)throw new IOException("界面初始化失败",error[0]);
-        android.content.SharedPreferences.Editor preferences=context.getSharedPreferences("radio_ui",0).edit().putString("active",sha);
-        if(!factory.supportsOptical)preferences.putString("style","classic");
-        if(!preferences.commit())throw new IOException("无法保存插件版本");
+    private static void selectLocked(Context c,String id)throws Exception {
+        selectLocked(c,entry(c,id));
+    }
+    private static void selectLocked(Context c,RadioUiCatalog.Entry e)throws Exception {
+        Factory factory=ensure(c,e);
+        if(!factory.styles.contains(e.style))throw new IOException("插件不支持所选电台样式");
+        if(!factory.validatedStyles.contains(e.style)){validate(c,factory,e.style);factory.validatedStyles.add(e.style);}
+        if(!prefs(c).edit().putString("selected",e.id).putString("selected_entry",e.json().toString())
+                .putString("style",e.style).putString("active",factory.sha).commit())throw new IOException("无法保存电台界面");
         publish(factory);
-        return new JSONObject().put("ok",true).put("version",factory.version).put("sha256",sha).toString();
     }
-    static String sourceUrl(Context context) {
-        return context.getSharedPreferences("radio_ui",0).getString("url",DEFAULT_URL);
+    private static Factory ensure(Context c,RadioUiCatalog.Entry e)throws Exception {
+        Factory cached=factories.get(e.sha);if(cached!=null)return cached;
+        File dir=root(c);if(!dir.isDirectory()&&!dir.mkdirs())throw new IOException("无法创建界面目录");
+        File jar=new File(dir,e.sha+".jar");
+        if(jar.isFile()){
+            try{Factory f=load(c,jar,e.sha);factories.put(e.sha,f);return f;}
+            catch(Exception invalid){if(!jar.delete())throw new IOException("无法修复损坏的界面缓存",invalid);}
+        }
+        byte[] bytes=RadioUiCatalog.download(e.url,MAX_BYTES,25000);
+        if(!e.sha.equals(sha(bytes)))throw new IOException("界面文件校验失败，已保留原界面");
+        File temp=File.createTempFile("install-",".tmp",dir);
+        try{
+            try(FileOutputStream out=new FileOutputStream(temp)){out.write(bytes);out.getFD().sync();}
+            if(!temp.setReadOnly()||!temp.renameTo(jar))throw new IOException("无法保存电台界面");
+        }finally{temp.delete();}
+        final Factory f;
+        try{f=load(c,jar,e.sha);}catch(Exception invalid){jar.delete();throw invalid;}
+        if(factories.size()>=6)factories.clear();factories.put(e.sha,f);return f;
     }
-    static String configure(Context context, JSONObject config) throws Exception {
-        synchronized(INSTALL_LOCK){return configureLocked(context,config);}
+    private static Factory load(Context c,File jar,String sha)throws Exception {
+        if(jar.length()==0||jar.length()>MAX_BYTES)throw new IOException("界面文件大小无效");
+        try(InputStream in=new FileInputStream(jar)){if(!sha.equals(sha(RadioUiCatalog.read(in,MAX_BYTES))))throw new IOException("界面缓存已损坏");}
+        JSONObject metadata;
+        try(ZipFile zip=new ZipFile(jar)){
+            Set<String> names=new HashSet<>();long total=0;
+            for(Enumeration<? extends ZipEntry> it=zip.entries();it.hasMoreElements();){ZipEntry e=it.nextElement();if(!names.add(e.getName())||e.getSize()<0||e.getSize()>4*1024*1024||(total+=e.getSize())>8*1024*1024)throw new IOException("界面文件内容超限");}
+            ZipEntry dex=zip.getEntry("classes.dex"),info=zip.getEntry("radio-ui.json");if(dex==null||dex.getSize()==0||info==null)throw new IOException("不是有效的电台界面");
+            try(InputStream in=zip.getInputStream(info)){metadata=new JSONObject(new String(RadioUiCatalog.read(in,4096),"UTF-8"));}
+        }
+        String name=metadata.getString("entry");
+        if(metadata.getInt("api")!=1||metadata.getInt("version")<1||metadata.getInt("minSdk")<14||metadata.getInt("minSdk")>Build.VERSION.SDK_INT||!name.startsWith("xiao.bu.radio."))throw new IOException("电台界面版本不兼容");
+        if(!jar.setReadOnly())throw new IOException("界面文件必须只读");
+        File optimized=new File(root(c),"dex");if(!optimized.isDirectory()&&!optimized.mkdirs())throw new IOException("无法创建界面缓存");
+        try{
+            ClassLoader loader=new DexClassLoader(jar.getAbsolutePath(),optimized.getAbsolutePath(),null,RadioUi.class.getClassLoader());Class<?> type=loader.loadClass(name);
+            if(!RadioUi.class.isAssignableFrom(type))throw new IOException("电台界面接口不兼容");
+            Set<String> styles=new HashSet<>();JSONArray list=metadata.optJSONArray("styles");
+            if(list==null)styles.add("classic");else for(int i=0;i<list.length();i++)styles.add(list.getString(i));
+            return new Factory(loader,type.getConstructor(Context.class,ClassLoader.class),sha,metadata.getInt("version"),styles);
+        }catch(LinkageError error){throw new IOException("电台界面无法加载",error);}
     }
-    static String style(Context context) {
-        return "optical".equals(context.getSharedPreferences("radio_ui",0).getString("style","classic")) ? "optical" : "classic";
+    private static void validate(Context c,Factory factory,String style)throws Exception {
+        // Probe the requested variant without changing the persisted style beneath the visible UI.
+        final SharedPreferences original=prefs(c);
+        final SharedPreferences overlay=(SharedPreferences)Proxy.newProxyInstance(SharedPreferences.class.getClassLoader(),new Class<?>[]{SharedPreferences.class},(proxy,method,args)->{
+            if("getString".equals(method.getName())&&"style".equals(args[0]))return style;
+            return method.invoke(original,args);
+        });
+        final Context context=new ContextWrapper(c){@Override public SharedPreferences getSharedPreferences(String name,int mode){return "radio_ui".equals(name)?overlay:super.getSharedPreferences(name,mode);}};
+        final CountDownLatch done=new CountDownLatch(1);final Throwable[] failure={null};
+        main.post(()->{RadioUi ui=null;try{ui=factory.create(context);ui.show("",true,null);}catch(Throwable e){failure[0]=e;}finally{try{if(ui!=null)ui.dispose();}catch(Throwable e){if(failure[0]==null)failure[0]=e;}finally{done.countDown();}}});
+        if(!done.await(10,TimeUnit.SECONDS))throw new IOException("电台界面初始化超时");
+        if(failure[0]!=null)throw new IOException("电台界面初始化失败",failure[0]);
     }
-    private static String configureLocked(Context context, JSONObject config) throws Exception {
-        String style=config.optString("style",style(context));
-        if(!("classic".equals(style)||"optical".equals(style)))throw new IOException("电台界面样式无效");
+    private static String sha(byte[] bytes)throws Exception {StringBuilder value=new StringBuilder();for(byte b:MessageDigest.getInstance("SHA-256").digest(bytes))value.append(String.format(Locale.US,"%02x",b&255));return value.toString();}
+    private static String message(Exception e){return e.getMessage()==null?"电台界面切换失败":e.getMessage();}
+    static String status(Context c)throws Exception {
+        RadioUiCatalog.refresh(c,false);
+        JSONArray choices=new JSONArray(),styles=new JSONArray();boolean found=false;String selected=selected(c);
+        for(RadioUiCatalog.Entry e:RadioUiCatalog.choices(c)){choices.put(new JSONObject().put("id",e.id).put("name",e.name));styles.put(e.id);if(e.id.equals(selected))found=true;}
+        if(!found){try{RadioUiCatalog.Entry e=entry(c,selected);choices.put(new JSONObject().put("id",e.id).put("name",e.name));styles.put(e.id);}catch(Exception ignored){}}
         Factory current=active;
-        if(config.has("style") && current==null) {
-            String sha=context.getSharedPreferences("radio_ui",0).getString("active","");
-            if(sha.matches("[a-f0-9]{64}"))current=load(context,new File(root(context),sha+".jar"),sha);
-        }
-        if(config.has("style")&&"optical".equals(style)&&(current==null||!current.supportsOptical))
-            throw new IOException("请先导入支持柔光唱片的电台界面插件");
-        String url=config.optString("url",sourceUrl(context)).trim();
-        if(url.length()==0)url=DEFAULT_URL;
-        java.net.URL parsed=new java.net.URL(url);
-        if(!("http".equalsIgnoreCase(parsed.getProtocol()) || "https".equalsIgnoreCase(parsed.getProtocol()))
-                || parsed.getHost().length()==0 || parsed.getUserInfo()!=null || url.length()>4096)
-            throw new IOException("请输入有效的 HTTP/HTTPS 界面地址");
-        android.content.SharedPreferences.Editor editor=context.getSharedPreferences("radio_ui",0).edit().putString("url",url);
-        if(config.has("style"))editor.putString("style",style);
-        if(!editor.commit())
-            throw new IOException("无法保存界面地址");
-        if(config.has("style")&&current!=null)publish(current);
-        if(config.optBoolean("download",false))return installUrl(context,url);
-        return status(context);
-    }
-    private static String installUrl(Context context,String url) throws Exception {
-        java.net.HttpURLConnection connection=NetworkClient.openComponent(new java.net.URL(url),true);
-        try {
-            connection.setConnectTimeout(10000);connection.setReadTimeout(15000);
-            int status=connection.getResponseCode();
-            if(status<200 || status>=300)throw new IOException("界面下载 HTTP "+status);
-            if(connection.getContentLength()>MAX_BYTES)throw new IOException("JAR 不能超过 2 MB");
-            ByteArrayOutputStream bytes=new ByteArrayOutputStream();
-            try(InputStream input=connection.getInputStream()) {
-                byte[] block=new byte[8192];int count;
-                while((count=input.read(block))!=-1) {
-                    if(bytes.size()+count>MAX_BYTES)throw new IOException("JAR 不能超过 2 MB");
-                    bytes.write(block,0,count);
-                }
-            }
-            return install(context,bytes.toByteArray());
-        } catch(Exception error) {failure=error.toString();throw error;}
-        finally {connection.disconnect();}
-    }
-    static String status(Context context) throws Exception {
-        Factory installed=active;
-        if(installed==null) {
-            synchronized(INSTALL_LOCK) {
-                installed=active;
-                String sha=context.getSharedPreferences("radio_ui",0).getString("active","");
-                if(installed==null&&sha.matches("[a-f0-9]{64}")) {
-                    try {installed=load(context,new File(root(context),sha+".jar"),sha);publish(installed);}
-                    catch(Exception error){failure=error.toString();}
-                }
-            }
-        }
-        JSONArray styles=new JSONArray().put("classic");
-        if(installed!=null&&installed.supportsOptical)styles.put("optical");
-        return new JSONObject().put("ok",true).put("loaded",active!=null)
-                .put("style",style(context)).put("styles",styles)
-                .put("url",sourceUrl(context)).put("defaultUrl",DEFAULT_URL)
-                .put("version",active==null?0:active.version).put("error",failure)
-                .put("sha256",context.getSharedPreferences("radio_ui",0).getString("active","")).toString();
+        return new JSONObject().put("ok",true).put("selected",selected).put("style",style(c)).put("choices",choices).put("styles",styles)
+                .put("loaded",current!=null).put("version",current==null?0:current.version).put("sha256",current==null?"":current.sha)
+                .put("error",failure).put("catalogRefreshing",RadioUiCatalog.refreshing()).put("catalogError",RadioUiCatalog.failure()).toString();
     }
 }

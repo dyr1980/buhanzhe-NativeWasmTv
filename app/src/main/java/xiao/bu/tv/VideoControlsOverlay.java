@@ -12,12 +12,10 @@ import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.LayerDrawable;
 import android.graphics.drawable.ClipDrawable;
 import android.media.AudioManager;
-import android.provider.Settings;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
-import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.SeekBar;
@@ -27,6 +25,9 @@ import android.widget.TextView;
 final class VideoControlsOverlay extends FrameLayout {
     interface Playback {
         boolean playing();
+        boolean completed();
+        String status();
+        boolean loading();
         long duration();
         long position();
         void toggle();
@@ -35,25 +36,34 @@ final class VideoControlsOverlay extends FrameLayout {
         boolean speedSupported();
         float speed();
         void speed(float value);
+        boolean catchup();
+        void live();
     }
     private final Activity activity;
     private final Playback playback;
     private final boolean touchAdjustments;
     private final Icon toggle;
     private final TextView time, feedback, speed, title;
+    private final TextView returnLive;
     private final LinearLayout speedOptions;
     private final SeekBar seek;
+    private final LinearLayout loadPanel;
+    private final LoadingSpinnerView loadSpinner;
+    private final TextView loadText;
+    private final Paint shade = new Paint();
+    private String loadStatus="";
     private float downX, downY, startBrightness;
     private int startVolume;
     private long startPosition, gestureDuration, seekPosition;
     private int gestureAxis;
     private boolean moved, dragging;
-    private final Runnable dismiss = new Runnable() { public void run() { hide(); } };
+    private final Runnable dismiss = new Runnable() { public void run() {if(playback.completed())return;if(playback.loading()){postDelayed(this,1000L);return;}hide();} };
     private final Runnable tick = new Runnable() {
         public void run() {
             if (getVisibility() != VISIBLE) return;
             refresh();
-            postDelayed(this, 500L);
+            removeCallbacks(this);
+            if (!playback.completed()) postDelayed(this, 500L);
         }
     };
 
@@ -65,6 +75,11 @@ final class VideoControlsOverlay extends FrameLayout {
         setWillNotDraw(false);
         setClickable(true);
         setVisibility(GONE);
+        loadPanel=new LinearLayout(owner);loadPanel.setOrientation(LinearLayout.HORIZONTAL);loadPanel.setGravity(Gravity.CENTER);loadPanel.setPadding(dp(14),dp(10),dp(14),dp(10));
+        GradientDrawable loadingBackground=new GradientDrawable();loadingBackground.setColor(0xcc101820);loadingBackground.setCornerRadius(dp(10));loadPanel.setBackgroundDrawable(loadingBackground);
+        loadSpinner=new LoadingSpinnerView(owner);loadPanel.addView(loadSpinner,new LinearLayout.LayoutParams(dp(24),dp(24)));
+        loadText=label("",16);loadText.setMaxLines(3);loadText.setPadding(dp(12),0,0,0);loadPanel.addView(loadText,new LinearLayout.LayoutParams(-2,-2));
+        LayoutParams loadBounds=new LayoutParams(-2,-2,Gravity.CENTER);loadBounds.leftMargin=dp(24);loadBounds.rightMargin=dp(24);addView(loadPanel,loadBounds);loadPanel.setVisibility(GONE);
         toggle = new Icon(owner, "pause");
         toggle.setContentDescription("暂停");
         addView(toggle, new LayoutParams(dp(88), dp(88), Gravity.CENTER));
@@ -84,6 +99,10 @@ final class VideoControlsOverlay extends FrameLayout {
         LayoutParams heading = new LayoutParams(-1, dp(48), Gravity.TOP);
         heading.topMargin = dp(20); heading.leftMargin = dp(84); heading.rightMargin = dp(32);
         addView(title, heading);
+        returnLive=label("回到直播",16);returnLive.setContentDescription("回到直播");
+        LayoutParams liveBounds=new LayoutParams(dp(100),dp(48),Gravity.TOP|Gravity.RIGHT);
+        liveBounds.topMargin=dp(20);liveBounds.rightMargin=dp(24);addView(returnLive,liveBounds);
+        returnLive.setOnClickListener(v->playback.live());returnLive.setVisibility(GONE);
         if (touchAdjustments) {
             Icon volume = new Icon(owner, "volume"), brightness = new Icon(owner, "sun");
             LayoutParams left = new LayoutParams(dp(48), dp(48), Gravity.LEFT | Gravity.CENTER_VERTICAL);
@@ -158,7 +177,7 @@ final class VideoControlsOverlay extends FrameLayout {
         view.setGravity(Gravity.CENTER); return view;
     }
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
-    void show() { title.setText(playback.title()); feedback.setText(""); speedOptions.setVisibility(GONE); setVisibility(VISIBLE); bringToFront(); refresh(); removeCallbacks(tick); post(tick); arm(); }
+    void show() { LayoutParams heading=(LayoutParams)title.getLayoutParams();heading.rightMargin=dp(playback.catchup()?132:32);title.setLayoutParams(heading);title.setText(playback.title()); feedback.setText(""); speedOptions.setVisibility(GONE); setVisibility(VISIBLE); bringToFront(); refresh(); removeCallbacks(tick); post(tick); arm(); }
     void hide() { setVisibility(GONE); removeCallbacks(tick); removeCallbacks(dismiss); dragging = false; gestureAxis = 0; }
     void step(long delta) {
         long duration = playback.duration();
@@ -167,10 +186,23 @@ final class VideoControlsOverlay extends FrameLayout {
         refresh(); arm();
     }
     boolean visible() { return getVisibility() == VISIBLE; }
-    private void arm() { removeCallbacks(dismiss); postDelayed(dismiss, 5000L); }
+    private void arm() {
+        removeCallbacks(dismiss);
+        if (!playback.completed()) {
+            postDelayed(dismiss, 5000L);
+            removeCallbacks(tick); if (visible()) postDelayed(tick, 500L);
+        }
+    }
     private void refresh() {
+        returnLive.setVisibility(playback.catchup()?VISIBLE:GONE);
+        boolean completed = playback.completed();
+        if (completed) feedback.setText("播放完成 · 重新播放");
+        else if ("播放完成 · 重新播放".contentEquals(feedback.getText())) feedback.setText("");
+        String status=completed ? "" : playback.status();boolean loading=!completed && playback.loading();
+        if(!status.equals(loadStatus)){loadStatus=status;loadText.setText(status);if(!loading&&!status.isEmpty())arm();}
+        loadPanel.setVisibility(status.isEmpty()?GONE:VISIBLE);loadSpinner.setVisibility(loading?VISIBLE:GONE);loadText.setTextColor(loading?0xffffffff:0xffffd5ad);toggle.setVisibility(status.isEmpty()?VISIBLE:INVISIBLE);
         toggle.kind = playback.playing() ? "pause" : "play"; toggle.invalidate();
-        toggle.setContentDescription(playback.playing() ? "暂停" : "播放");
+        toggle.setContentDescription(completed ? "重新播放" : playback.playing() ? "暂停" : "播放");
         speed.setText(playback.speed() == 1f ? "倍速" : playback.speed() + "×");
         speed.setEnabled(playback.speedSupported());
         speed.setAlpha(playback.speedSupported() ? 1f : 0.4f);
@@ -189,12 +221,12 @@ final class VideoControlsOverlay extends FrameLayout {
     }
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-        Paint shade = new Paint();
-        shade.setShader(new LinearGradient(0, 0, 0, getHeight(),
+        if(shade.getShader()==null)shade.setShader(new LinearGradient(0, 0, 0, getHeight(),
                 new int[] {0x88000000, 0x08000000, 0x00000000, 0x99000000},
                 new float[] {0f, 0.3f, 0.6f, 1f}, Shader.TileMode.CLAMP));
         canvas.drawRect(0, 0, getWidth(), getHeight(), shade);
     }
+    @Override protected void onSizeChanged(int w,int h,int oldw,int oldh){super.onSizeChanged(w,h,oldw,oldh);shade.setShader(null);}
     /** Small native vector shapes keep icons sharp even on Android 4.x. */
     private static final class Icon extends View {
         String kind;
@@ -251,10 +283,7 @@ final class VideoControlsOverlay extends FrameLayout {
                 seekPosition = startPosition;
                 if (!touchAdjustments) return true;
                 startVolume = audio == null ? 0 : audio.getStreamVolume(AudioManager.STREAM_MUSIC);
-                startBrightness = activity.getWindow().getAttributes().screenBrightness;
-                if (startBrightness < 0) {
-                    startBrightness = Settings.System.getInt(activity.getContentResolver(), Settings.System.SCREEN_BRIGHTNESS, 128) / 255f;
-                }
+                startBrightness = PlaybackBrightness.percent(activity) / 100f;
                 return true;
             case MotionEvent.ACTION_MOVE:
                 float dx = event.getX() - downX;
@@ -283,9 +312,8 @@ final class VideoControlsOverlay extends FrameLayout {
                     audio.setStreamVolume(AudioManager.STREAM_MUSIC, value, 0);
                     feedback.setText("音量 " + (max > 0 ? value * 100 / max : 0) + "%");
                 } else if (downX < getWidth() / 2f) {
-                    float value = Math.max(0.02f, Math.min(1f, startBrightness + delta));
-                    WindowManager.LayoutParams params = activity.getWindow().getAttributes();
-                    params.screenBrightness = value; activity.getWindow().setAttributes(params);
+                    float value = Math.max(0.01f, Math.min(1f, startBrightness + delta));
+                    PlaybackBrightness.apply(activity, Math.round(value * 100f));
                     feedback.setText("亮度 " + Math.round(value * 100f) + "%");
                 }
                 return true;
@@ -299,5 +327,13 @@ final class VideoControlsOverlay extends FrameLayout {
                 return true;
             default: return true;
         }
+    }
+
+    boolean handleSurfaceGesture(MotionEvent event) {
+        removeCallbacks(dismiss);
+        boolean handled = onTouchEvent(event);
+        if (event.getActionMasked() == MotionEvent.ACTION_UP
+                || event.getActionMasked() == MotionEvent.ACTION_CANCEL) arm();
+        return handled;
     }
 }

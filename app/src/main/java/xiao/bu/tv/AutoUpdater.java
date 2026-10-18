@@ -98,7 +98,7 @@ final class AutoUpdater {
         liteUpdate = null;
         liteChecking = true;
         liteState = "checking";
-        liteMessage = "正在读取最新 Release…";
+        liteMessage = "正在检查更新…";
         liteVersionCode = 0;
         liteVersionName = "";
         liteArchitectureUpgrade = false;

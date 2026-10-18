@@ -15,7 +15,8 @@ java=r'''import java.io.*;import java.net.*;import java.util.*;import java.util.
 public class HlsStreamFailureCheck {
  static class Build {static class VERSION {static final int SDK_INT=19;}}
  static class android {static class os {static class Build {static class VERSION {static final int SDK_INT=19;}}}}
- boolean sourceVideoProbeEnabled,byteRangeMediaPlaylist;byte[] screenshotSegment;long lastMediaSegmentServedAt;
+ boolean sourceVideoProbeEnabled,byteRangeMediaPlaylist,playbackSuspended,finiteMedia;byte[] screenshotSegment;long lastMediaSegmentServedAt;
+ final PlaybackReplayCache replayCache=new PlaybackReplayCache(null);
  boolean isTransportStream(String u,String t){return false;}void sampleSourceVideo(byte[] b){}
  final Set<Socket> clientSockets=new HashSet<>();
  final Set<String> dolbyInitUrls=new HashSet<>();
@@ -118,7 +119,7 @@ public class HlsStreamFailureCheck {
    HlsStreamFailureCheck transport=new HlsStreamFailureCheck();transport.pacedFixture=true;transport.fixtureLength=300;
    transport.pacedSink=new ByteArrayOutputStream();transport.byteRangeMediaPlaylist=hls;
    if(hls)transport.segmentDurations.put("https://fixture.test/all.ts",2.0);
-   transport.streamUpstream("https://fixture.test/all.ts","bytes=0-299",new BufferedOutputStream(transport.pacedSink));
+   transport.streamUpstream("https://fixture.test/all.ts","bytes=0-299",new BufferedOutputStream(transport.pacedSink),false);
    check(hls?transport.connectionHeader==null:"close".equals(transport.connectionHeader),"HLS range pooling or legacy non-HLS guard changed");
   }
   HlsStreamFailureCheck prefetch=new HlsStreamFailureCheck();
@@ -140,7 +141,7 @@ public class HlsStreamFailureCheck {
     BoundedResponseReader.read(new ByteArrayInputStream(new byte[0]),large.largeFile.length(),16*1024*1024);
     throw new AssertionError("Whole-response path unexpectedly accepted the oversized TS");
    }catch(IOException expected){check(expected.getMessage().contains("上游响应超过"),"Unexpected whole-response failure");}
-   large.streamUpstream("http://fixture/large.ts?servicetype=1",null,new BufferedOutputStream(large.largeSink));
+   large.streamUpstream("http://fixture/large.ts?servicetype=1",null,new BufferedOutputStream(large.largeSink),false);
    byte[] wire=large.largeSink.toByteArray();int header=-1;
    for(int n=0;n+3<wire.length;n++)if(wire[n]==13&&wire[n+1]==10&&wire[n+2]==13&&wire[n+3]==10){header=n+4;break;}
    check(header>0&&wire.length-header==large.largeFile.length()&&large.streamedResponseCount.get()==1,"Large TS was truncated or rejected");
@@ -170,7 +171,7 @@ public class HlsStreamFailureCheck {
    HlsStreamFailureCheck live=new HlsStreamFailureCheck();live.pacedFixture=true;
    live.fixtureType=kind==0?"video/x-flv":kind==1?"application/octet-stream":kind==2?"audio/aac":kind==4?"video/mp2t":"video/x-flv";
    live.fixtureLength=kind==3||kind>=5?300:-1;live.pacedSink=new ByteArrayOutputStream();
-   live.streamUpstream(kind==4?"https://fixture.test/opaque":"http://fixture.test/live.flv?token=test",null,new BufferedOutputStream(live.pacedSink));
+   live.streamUpstream(kind==4?"https://fixture.test/opaque":"http://fixture.test/live.flv?token=test",null,new BufferedOutputStream(live.pacedSink),kind==4);
    String delivered=new String(live.pacedSink.toByteArray(),UTF_8);
    check(delivered.endsWith("CCCC")&&live.streamedResponseBytes.get()==300,"Paced stream payload changed");
   }
@@ -220,7 +221,8 @@ java += (root/'app/src/main/java/xiao/bu/tv/PlaybackHttpError.java').read_text(e
 out=root/'.codex-tmp/hls-stream-failure-test';out.mkdir(parents=True,exist_ok=True)
 f=out/'HlsStreamFailureCheck.java';f.write_text(java,encoding='utf-8');b=Path(os.environ['JAVA_HOME'])/'bin'
 bounded=out/'BoundedResponseReader.java';bounded.write_text((root/'app/src/main/java/xiao/bu/tv/BoundedResponseReader.java').read_text(encoding='utf-8').replace('package xiao.bu.tv;',''),encoding='utf-8')
-subprocess.run([str(b/'javac.exe'),'-encoding','UTF-8',str(f),str(bounded)],check=True)
+replay=out/'PlaybackReplayCache.java';replay.write_text((root/'app/src/main/java/xiao/bu/tv/PlaybackReplayCache.java').read_text(encoding='utf-8').replace('package xiao.bu.tv;',''),encoding='utf-8')
+subprocess.run([str(b/'javac.exe'),'-encoding','UTF-8',str(f),str(bounded),str(replay)],check=True)
 large=out/'large-clear.ts'
 with large.open('wb') as stream:
     for _ in range(17):stream.write(bytes(range(256))*4096)

@@ -36,22 +36,28 @@ final class Ku9PageResultTest {
             test.runOnMainSync(() -> {
                 page[0] = new WebSourceView(activity);
                 ((ViewGroup) activity.findViewById(android.R.id.content)).addView(page[0], new ViewGroup.LayoutParams(320, 180));
-                page[0].open(100, url, "window.times=(window.times||0)+1;document.title='injected-'+window.times;");
+                page[0].open(100, url, "window.times=(window.times||0)+1;document.title='injected-'+window.times;", false, "", "");
             });
             awaitTitle(test, page[0], "injected-1");
-            Field browser = member(WebView.class); browser.setAccessible(true);
-            Field client = member(WebViewClient.class); client.setAccessible(true);
-            test.runOnMainSync(() -> {
-                try { ((WebViewClient) client.get(page[0])).onPageFinished((WebView) browser.get(page[0]), url); }
-                catch (Exception e) { throw new RuntimeException(e); }
-            });
+            // API 14-25 owns the browser in LegacyWebActivity's process. Read
+            // the facade state there; a local WebView field is intentionally null.
+            if(android.os.Build.VERSION.SDK_INT>=26){
+                Field browser = member(WebView.class); browser.setAccessible(true);
+                Field client = member(WebViewClient.class); client.setAccessible(true);
+                test.runOnMainSync(() -> {
+                    try { ((WebViewClient) client.get(page[0])).onPageFinished((WebView) browser.get(page[0]), url); }
+                    catch (Exception e) { throw new RuntimeException(e); }
+                });
+            }
             SystemClock.sleep(200);
             awaitTitle(test, page[0], "injected-1");
-            test.runOnMainSync(() -> { page[0].closePage(); page[0].open(101, url + "next", ""); });
+            test.runOnMainSync(() -> { page[0].closePage(); page[0].open(101, url + "next", "", false, "", ""); });
             awaitTitle(test, page[0], "plain");
             SystemClock.sleep(200);
             awaitTitle(test, page[0], "plain");
-            return "PASS webview/jscode: executes once, duplicate callback guarded, next channel has no script\n";
+            return android.os.Build.VERSION.SDK_INT>=26
+                    ?"PASS webview/jscode: executes once, duplicate callback guarded, next channel has no script\n"
+                    :"PASS webview/jscode: executes once, legacy IPC title lifecycle, next channel has no script\n";
         } finally {
             server.close();
             test.runOnMainSync(() -> {
@@ -66,11 +72,10 @@ final class Ku9PageResultTest {
         throw new NoSuchFieldException(type.getName());
     }
     private static void awaitTitle(Instrumentation test, WebSourceView page, String expected) throws Exception {
-        Field browser = member(WebView.class); browser.setAccessible(true);
         String[] title = {null};
         for (int i = 0; i < 100; i++) {
             test.runOnMainSync(() -> {
-                try { WebView view = (WebView) browser.get(page); title[0] = view == null ? null : view.getTitle(); }
+                try { title[0] = page.currentPageTitle(); }
                 catch (Exception e) { throw new RuntimeException(e); }
             });
             if (expected.equals(title[0])) return;

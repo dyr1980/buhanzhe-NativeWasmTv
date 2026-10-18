@@ -11,10 +11,13 @@ import android.widget.FrameLayout;
 /** Direct video surface, preserving native video resolution independently of the UI layer. */
 public final class DirectVideoView extends FrameLayout implements SurfaceHolder.Callback {
     private final SurfaceView surfaceView;
+    private android.view.View frameCover;
     private SurfaceCallback callback;
     private SurfaceHolder activeHolder;
+    private float aspectRatio;
+    void setAspectRatio(float value){if(aspectRatio!=value){aspectRatio=value;requestLayout();}}
     private int videoWidth, videoHeight, sarNum = 1, sarDen = 1;
-    private boolean stretchVideo, legacySurfaceMode, viewportBufferMode, appliedViewportBufferMode;
+    private boolean stretchVideo, fillVideo, legacySurfaceMode, viewportBufferMode, appliedViewportBufferMode;
 
     public DirectVideoView(Context context) { this(context, null); }
 
@@ -29,6 +32,17 @@ public final class DirectVideoView extends FrameLayout implements SurfaceHolder.
     }
 
     SurfaceView getSurfaceView() { return surfaceView; }
+    boolean isFrameCovered() { return frameCover != null && frameCover.getVisibility() == VISIBLE; }
+    void setFrameCovered(boolean covered) {
+        if (frameCover == null) {
+            if (!covered) return;
+            frameCover = new android.view.View(getContext());
+            frameCover.setBackgroundColor(android.graphics.Color.BLACK);
+            addView(frameCover, new LayoutParams(-1, -1));
+        }
+        // Keep the Surface attached: INVISIBLE/GONE can destroy its native output.
+        frameCover.setVisibility(covered ? VISIBLE : GONE);
+    }
     void setLegacySurfaceMode(boolean enabled) {
         if (legacySurfaceMode == enabled) return;
         legacySurfaceMode = enabled;
@@ -61,6 +75,14 @@ public final class DirectVideoView extends FrameLayout implements SurfaceHolder.
     void setStretchVideo(boolean enabled) {
         if (stretchVideo == enabled) return;
         stretchVideo = enabled;
+        updateBufferSize();
+        requestLayout();
+    }
+
+    void setFillVideo(boolean enabled) {
+        if (fillVideo == enabled) return;
+        fillVideo = enabled;
+        updateBufferSize();
         requestLayout();
     }
 
@@ -79,29 +101,73 @@ public final class DirectVideoView extends FrameLayout implements SurfaceHolder.
         this.sarNum = sarNum;
         this.sarDen = sarDen;
         appliedViewportBufferMode = viewportBufferMode;
-        if (surfaceView != null) {
-            if (!viewportBufferMode && videoWidth > 0 && videoHeight > 0)
-                surfaceView.getHolder().setFixedSize(videoWidth, videoHeight);
-            else surfaceView.getHolder().setSizeFromLayout();
-        }
+        updateBufferSize();
         requestLayout();
     }
 
     void setViewportBufferMode(boolean enabled) { viewportBufferMode = enabled; }
 
+    private void updateBufferSize() {
+        if (viewportBufferMode && fillVideo && !stretchVideo && videoWidth > 0 && videoHeight > 0
+                && getParent() instanceof android.view.View) {
+            android.view.View parent = (android.view.View) getParent();
+            if (parent.getWidth() > 0 && parent.getHeight() > 0) {
+                setFillBufferSize(parent.getWidth(), parent.getHeight());
+                return;
+            }
+        }
+        if (!viewportBufferMode && videoWidth > 0 && videoHeight > 0)
+            surfaceView.getHolder().setFixedSize(videoWidth, videoHeight);
+        else surfaceView.getHolder().setSizeFromLayout();
+    }
+
+    private void setFillBufferSize(int width, int height) {
+        // Cropped portrait video can extend far beyond the screen. Limit low-RAM
+        // software output independently of the displayed Surface rectangle.
+        float ratio = (float) videoWidth * sarNum / ((float) videoHeight * sarDen);
+        surfaceView.getHolder().setFixedSize(
+                Math.min(width, Math.max(1, Math.round(height * ratio))),
+                Math.min(height, Math.max(1, Math.round(width / ratio))));
+    }
+
     @Override protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         int availableWidth = MeasureSpec.getSize(widthMeasureSpec);
         int availableHeight = MeasureSpec.getSize(heightMeasureSpec);
         int width = availableWidth, height = availableHeight;
+        int fillWidth = 0, fillHeight = 0;
         if (!stretchVideo && videoWidth > 0 && videoHeight > 0
                 && availableWidth > 0 && availableHeight > 0) {
-            float videoAspect = (float) videoWidth * sarNum / ((float) videoHeight * sarDen);
-            if ((float) availableWidth / availableHeight > videoAspect)
-                width = Math.round(availableHeight * videoAspect);
-            else height = Math.round(availableWidth / videoAspect);
+            float videoAspect = aspectRatio>0?aspectRatio:(float) videoWidth * sarNum / ((float) videoHeight * sarDen);
+            if (fillVideo) {
+                // Resize the actual Surface rectangle: View transforms do not move
+                // SurfaceView on older Android. Keep its parent at viewport size
+                // so swipe animations and the frame cover still use screen bounds.
+                if ((float) availableWidth / availableHeight > videoAspect)
+                    fillHeight = (int) Math.ceil(availableWidth / (double) videoAspect);
+                else fillWidth = (int) Math.ceil(availableHeight * (double) videoAspect);
+                fillWidth = Math.max(availableWidth, fillWidth);
+                fillHeight = Math.max(availableHeight, fillHeight);
+                // Also handle a changed viewport (rotation / window resize).
+                if (viewportBufferMode) setFillBufferSize(availableWidth, availableHeight);
+            } else {
+                if ((float) availableWidth / availableHeight > videoAspect)
+                    width = Math.round(availableHeight * videoAspect);
+                else height = Math.round(availableWidth / videoAspect);
+            }
         }
         super.onMeasure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
                 MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
+        if (fillWidth > 0 && fillHeight > 0)
+            surfaceView.measure(MeasureSpec.makeMeasureSpec(fillWidth, MeasureSpec.EXACTLY),
+                    MeasureSpec.makeMeasureSpec(fillHeight, MeasureSpec.EXACTLY));
+    }
+
+    @Override protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+        int x = (getMeasuredWidth() - surfaceView.getMeasuredWidth()) / 2;
+        int y = (getMeasuredHeight() - surfaceView.getMeasuredHeight()) / 2;
+        surfaceView.layout(x, y, x + surfaceView.getMeasuredWidth(), y + surfaceView.getMeasuredHeight());
+        if (frameCover != null && frameCover.getVisibility() != GONE)
+            frameCover.layout(0, 0, getMeasuredWidth(), getMeasuredHeight());
     }
 
     @Override public void surfaceCreated(SurfaceHolder holder) {

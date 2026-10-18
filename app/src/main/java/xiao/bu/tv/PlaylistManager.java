@@ -20,6 +20,8 @@ import java.net.URL;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -44,6 +46,8 @@ final class PlaylistManager {
     private static final String CHANNEL_SETTINGS = "playlist_channel_settings_v1";
     private static final String MERGED_CHANNEL_SETTINGS = "merged_playlist_channel_settings_v1";
     private static final String DISABLED_MERGED_GROUPS = "disabled_merged_playlist_groups_v1";
+    private static final String MERGED_GROUP_ORDER = "merged_playlist_group_order_v1";
+    private static final String FAVORITES_GROUP_VISIBLE = "favorites_group_visible";
     private static final String EMBEDDED_EPG_URL = "embedded_epg_url";
     private static final String LEGACY_CACHE_FILE = "online-playlist.txt";
     private static final String CACHE_PREFIX = "online-playlist-";
@@ -125,7 +129,7 @@ final class PlaylistManager {
     synchronized JSONArray getGroupSettingsJson() {
         Set<String> disabled = getDisabledGroups();
         JSONArray result = new JSONArray();
-        for (ChannelCatalog.Group group : managementGroups) {
+        for (ChannelCatalog.Group group : orderedManagementGroups()) {
             try {
                 result.put(new JSONObject().put("id", mergedGroupId(group))
                         .put("name", group.title).put("channelCount", group.channels.length)
@@ -133,6 +137,43 @@ final class PlaylistManager {
             } catch (JSONException impossible) { }
         }
         return result;
+    }
+
+    boolean isFavoritesGroupVisible() { return preferences.getBoolean(FAVORITES_GROUP_VISIBLE, true); }
+
+    synchronized ChannelCatalog.Group[] updateFavoritesGroupVisible(boolean visible) throws IOException {
+        if (!preferences.edit().putBoolean(FAVORITES_GROUP_VISIBLE, visible).commit())
+            throw new IOException("收藏分组设置保存失败，请重试");
+        return visibleGroups;
+    }
+
+    synchronized ChannelCatalog.Group[] updateGroupOrder(JSONArray order) throws IOException {
+        if (order == null || order.length() != managementGroups.length)
+            throw new IOException("频道分组已变化，请刷新后重试");
+        Set<String> available = new HashSet<String>();
+        for (ChannelCatalog.Group group : managementGroups) available.add(mergedGroupId(group));
+        for (int i = 0; i < order.length(); i++)
+            if (!available.remove(order.optString(i)))
+                throw new IOException("频道分组顺序无效，请刷新后重试");
+        if (!preferences.edit().putString(MERGED_GROUP_ORDER, order.toString()).commit())
+            throw new IOException("分组顺序保存失败，请重试");
+        visibleGroups = filterGroups(getDisabledGroups(), readChannelSettings());
+        return visibleGroups;
+    }
+
+    private List<ChannelCatalog.Group> orderedManagementGroups() {
+        final Map<String, Integer> ranks = new HashMap<String, Integer>();
+        try {
+            JSONArray order = new JSONArray(preferences.getString(MERGED_GROUP_ORDER, "[]"));
+            for (int i = 0; i < order.length(); i++) ranks.put(order.optString(i), i);
+        } catch (JSONException ignored) { }
+        List<ChannelCatalog.Group> groups = new ArrayList<ChannelCatalog.Group>(Arrays.asList(managementGroups));
+        Collections.sort(groups, (a, b) -> {
+            Integer left = ranks.get(mergedGroupId(a)), right = ranks.get(mergedGroupId(b));
+            int l = left == null ? Integer.MAX_VALUE : left, r = right == null ? Integer.MAX_VALUE : right;
+            return l < r ? -1 : l == r ? 0 : 1;
+        });
+        return groups;
     }
 
     synchronized ChannelCatalog.Group[] updateGroupStates(JSONArray states) throws IOException {
@@ -563,7 +604,7 @@ final class PlaylistManager {
 
     private ChannelCatalog.Group[] filterGroups(Set<String> disabled, JSONObject settings) {
         List<ChannelCatalog.Group> visible = new ArrayList<ChannelCatalog.Group>();
-        for (ChannelCatalog.Group group : managementGroups) {
+        for (ChannelCatalog.Group group : orderedManagementGroups()) {
             String id = mergedGroupId(group);
             if (disabled.contains(id)) continue;
             Channel[] channels = configuredChannels(group.channels, settings.optJSONObject(id), false);
@@ -1498,6 +1539,8 @@ final class PlaylistManager {
         String pendingEpgId = null;
         String pendingLogo = null;
         boolean pendingRadio = false;
+        IptvCatchup pendingCatchup=null;
+        Map<String,String> catchupDefaults=java.util.Collections.emptyMap();
         String pendingSubtitles = "";
         int count = 0;
         int lineStart = 0;
@@ -1518,7 +1561,9 @@ final class PlaylistManager {
                 }
                 continue;
             }
+            if(line.startsWith("#EXTM3U"))catchupDefaults=IptvCatchup.attributes(line);
             if (line.startsWith("#EXTINF:")) {
+                pendingCatchup=IptvCatchup.from(line,catchupDefaults,base);
                 pendingName = attribute(line, "tvg-name");
                 pendingGroup = attribute(line, "group-title");
                 pendingEpgId = attribute(line, "tvg-id");
@@ -1548,7 +1593,7 @@ final class PlaylistManager {
             }
             if (pendingName != null && isStreamUrl(line)) {
                 String groupName = emptyToDefault(pendingGroup, currentGroup);
-                add(groups, groupName, pendingName, line, pendingEpgId, pendingLogo, pendingSubtitles, pendingRadio, count++);
+                add(groups, groupName, pendingName, line, pendingEpgId, pendingLogo, pendingSubtitles, pendingRadio, pendingCatchup, count++);
                 pendingName = null;
                 pendingGroup = null;
                 pendingEpgId = null;
@@ -1568,7 +1613,7 @@ final class PlaylistManager {
                 if (value.matches("(?i)#genre#(?:\\s*,\\s*)*")) {
                     currentGroup = name.length() == 0 ? "在线频道" : name;
                 } else if (isStreamUrl(value)) {
-                    add(groups, currentGroup, name, value, null, null, "", false, count++);
+                    add(groups, currentGroup, name, value, null, null, "", false, null, count++);
                 }
             }
             if (lineEnd == text.length()) {
@@ -1601,7 +1646,7 @@ final class PlaylistManager {
     }
 
     private static void add(Map<String, ChannelBucket> groups, String groupName,
-            String name, String url, String epgId, String logoUrl, String subtitles, boolean radio, int index) {
+            String name, String url, String epgId, String logoUrl, String subtitles, boolean radio, IptvCatchup catchup, int index) {
         String safeGroup = normalizeGroupTitle(groupName);
         ChannelBucket bucket = groups.get(safeGroup);
         if (bucket == null) {
@@ -1614,7 +1659,7 @@ final class PlaylistManager {
                 bucket.channels.size() + 1),
                 safeName, "custom_" + index, url, null, null, null,
                 epgId == null || epgId.trim().length() == 0 ? safeName : epgId.trim());
-        bucket.add(incoming.withLogo(logoUrl).withSubtitles(subtitles).withRadio(radio));
+        bucket.add(incoming.withLogo(logoUrl).withSubtitles(subtitles).withRadio(radio).withCatchup(url,catchup));
     }
 
     private static String channelNumber(String name, String epgId, int fallback) {
@@ -1668,7 +1713,7 @@ final class PlaylistManager {
             if (existing.logoUrl.length() == 0 && incoming.logoUrl.length() > 0)
                 existing = existing.withLogo(incoming.logoUrl);
             existing = existing.withSubtitles(incoming.subtitleUrlsText());
-            existing = existing.withRadio(existing.radio || incoming.radio);
+            existing = existing.withRadio(existing.radio || incoming.radio).withCatchups(incoming.catchupText());
             for (String url : incoming.urls) {
                 existing = existing.withAdditionalUrl(url);
             }

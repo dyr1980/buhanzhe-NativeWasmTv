@@ -164,6 +164,54 @@ public final class WebSourceView extends FrameLayout {
     private int pageLoadTerminalGeneration = -1;
 
     private boolean remoteMouseHoverDispatch;
+    private WebPageCover pageCover;
+    private boolean pageCovered;
+    private boolean defaultPageCovered;
+    private boolean pageLoading;
+    private String pageCoverError;
+
+    void applyPageCover(boolean enabled) {
+        defaultPageCovered = enabled;
+        if (legacy != null) {
+            legacy.configuration.putBoolean("pageCover", enabled);
+            android.os.Bundle data = new android.os.Bundle();data.putBoolean("enabled", enabled);
+            legacy.send("pageCover", data);
+            return;
+        }
+        if (pageActive) setPageCovered(enabled);
+    }
+
+    private void setPageCovered(boolean covered) {
+        Log.d(TAG, "Web page cover enabled=" + covered);
+        pageCovered = covered;
+        tabBar.setPageCovered(covered);
+        if (covered) {
+            tabBar.dismissTransientPanels();
+            dismissSmartContextPopup();
+            if (pageCover == null) {
+                pageCover = new WebPageCover(getContext(), v -> setPageCovered(false));
+                pageCover.setInterfaceScale(interfaceScale);
+                addView(pageCover, new LayoutParams(-1, -1));
+            }
+            pageCover.setVisibility(VISIBLE);
+            updatePageCover();
+            pageCover.focusReveal();
+        } else if (pageCover != null) {
+            pageCover.setVisibility(GONE);
+            if (webView != null) webView.requestFocus();
+        }
+        loadingOverlay.setVisibility(pageLoading && !covered ? VISIBLE : GONE);
+    }
+
+    private void updatePageCover() {
+        if (!pageCovered || pageCover == null) return;
+        pageCover.update(pageUrl, pageLoading, pageCoverError);
+        LayoutParams params = (LayoutParams) pageCover.getLayoutParams();
+        params.topMargin = fullscreenView == null ? tabBarHeight : 0;
+        pageCover.setLayoutParams(params);
+        pageCover.bringToFront();
+        if (fullscreenView == null) tabBar.bringToFront();
+    }
 
     private boolean hostResumed;
     private int rendererRetries;
@@ -184,6 +232,7 @@ public final class WebSourceView extends FrameLayout {
         setClipChildren(true);
         tabBar = new WebTabBar(context, new WebTabBar.Callback() {
             @Override public void onReload() { reloadPage(); }
+            @Override public void onTogglePageCover() { setPageCovered(!pageCovered); }
             @Override public void onNavigate(String value) { navigateAddress(value); }
             @Override public void onChannel(int groupIndex, int channelIndex) {
                 if (listener != null) listener.onBrowserChannel(groupIndex, channelIndex);
@@ -349,6 +398,8 @@ public final class WebSourceView extends FrameLayout {
                 nextWebView.setVisibility(View.INVISIBLE);
 
                 view.requestFocus();
+                updatePageCover();
+                if (pageCovered) pageCover.focusReveal();
                 // Stay in the same hierarchy so fullscreen content and cursor hit-testing
                 // and the fixed landscape viewport continue to work in fullscreen.
             }
@@ -910,10 +961,11 @@ public final class WebSourceView extends FrameLayout {
     }
 
     private void setLoadingVisible(boolean visible) {
-        loadingOverlay.setVisibility(visible ? View.VISIBLE : View.GONE);
-        if (visible) {
-            loadingOverlay.bringToFront();
-        }
+        pageLoading = visible;
+        if (visible) pageCoverError = null;
+        loadingOverlay.setVisibility(visible && !pageCovered ? View.VISIBLE : View.GONE);
+        if (visible && !pageCovered) loadingOverlay.bringToFront();
+        updatePageCover();
     }
 
     private void beginPageLoad(final WebView view) {
@@ -979,6 +1031,7 @@ public final class WebSourceView extends FrameLayout {
         String current = view.getUrl();
         if (isWebPage(current)) pageUrl = current;
         tabBar.updateActive(pageUrl, view.getTitle());
+        updatePageCover();
         controllerPageTitle = safe(view.getTitle());
         Log.i(TAG, "Web page usable reason=" + reason + " progress=" + view.getProgress()
                 + " url=" + pageUrl);
@@ -1164,6 +1217,7 @@ public final class WebSourceView extends FrameLayout {
         int next = browserFullscreen ? 0 : tabBar.heightPx();
         if (next == tabBarHeight) return;
         tabBarHeight = next;
+        updatePageCover();
         LayoutParams toolbar = (LayoutParams) tabBar.getLayoutParams();
         toolbar.height = tabBarHeight;
         tabBar.setLayoutParams(toolbar);
@@ -1195,6 +1249,7 @@ public final class WebSourceView extends FrameLayout {
         tabBar.setVisibility(enabled || !pageActive ? View.GONE : View.VISIBLE);
         removeCallbacks(hideFullscreenExit);
         fullscreenExitButton.setVisibility(View.GONE);
+        updatePageCover();
         updateDesktopViewport(getWidth(), getHeight());
         requestLayout();
         if (pageActive) scheduleDesktopViewport(100L);
@@ -1218,6 +1273,7 @@ public final class WebSourceView extends FrameLayout {
     }
 
     boolean exitBrowserFullscreen() {
+        if (pageCovered) { setPageCovered(false); return true; }
         if (minimalBrowserMode) return false;
         if (legacy != null) {
             if (!legacy.visible || !legacy.state.getBoolean("fullscreen")) return false;
@@ -1283,6 +1339,7 @@ public final class WebSourceView extends FrameLayout {
         if (legacy != null) {
             android.os.Bundle data = new android.os.Bundle();
             data.putBoolean("minimalMode", minimalBrowserMode);
+            data.putBoolean("pageCover", defaultPageCovered);
             data.putString("viewport", requestedViewportMode); data.putBoolean("images", requestedLoadImages);
             data.putString("ua", requestedUserAgentMode); data.putString("version", requestedBrowserVersionMode);
             data.putFloat("pageScale", requestedPageScale); data.putBoolean("ads", requestedAdBlock);
@@ -1411,7 +1468,7 @@ public final class WebSourceView extends FrameLayout {
 
     boolean handleMinimalChannelListKey(KeyEvent event) {
         int key = event.getKeyCode();
-        if (!minimalBrowserMode || !pageActive || (key != KeyEvent.KEYCODE_DPAD_CENTER
+        if (pageCovered || !minimalBrowserMode || !pageActive || (key != KeyEvent.KEYCODE_DPAD_CENTER
                 && key != KeyEvent.KEYCODE_ENTER && key != KeyEvent.KEYCODE_NUMPAD_ENTER)) return false;
         if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0
                 && listener != null) listener.onBrowserChannelList();
@@ -1419,11 +1476,30 @@ public final class WebSourceView extends FrameLayout {
     }
 
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
-        return handleMinimalChannelListKey(event) || super.dispatchKeyEvent(event);
+        if (pageCovered && event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+            if (event.getAction() == KeyEvent.ACTION_UP) setPageCovered(false);
+            return true;
+        }
+        keepCoverFocus();
+        boolean handled = (!pageCovered && handleMinimalChannelListKey(event))
+                || super.dispatchKeyEvent(event);
+        keepCoverFocus();
+        return pageCovered || handled;
+    }
+
+    private void keepCoverFocus() {
+        if (!pageCovered || pageCover == null) return;
+        View focused = findFocus();
+        while (focused != null && focused != this) {
+            if (focused == pageCover || focused == tabBar) return;
+            android.view.ViewParent parent = focused.getParent();
+            focused = parent instanceof View ? (View) parent : null;
+        }
+        pageCover.focusReveal();
     }
 
     @Override public boolean dispatchTouchEvent(MotionEvent event) {
-        if (minimalBrowserMode && pageActive && event != null) {
+        if (!pageCovered && minimalBrowserMode && pageActive && event != null) {
             int action = event.getActionMasked();
             if (action == MotionEvent.ACTION_DOWN) {
                 minimalTapX = event.getX(); minimalTapY = event.getY();
@@ -1493,6 +1569,7 @@ public final class WebSourceView extends FrameLayout {
         tab.channelEntryGroup = safe(channelGroup);
         releaseTabWebView(tab, false);
         openPage(newRequestId, url);
+        setPageCovered(defaultPageCovered);
     }
 
     private void openPage(int newRequestId, String url) {
@@ -1614,6 +1691,8 @@ public final class WebSourceView extends FrameLayout {
                 && (!restoreTab || webView.restoreState(targetTab.state) == null)) {
             webView.loadUrl(url);
         }
+        if (enteringPage) setPageCovered(defaultPageCovered);
+        else updatePageCover();
     }
 
     private void navigateAddress(String value) {
@@ -1822,6 +1901,7 @@ public final class WebSourceView extends FrameLayout {
         clearInitialHistory = false;
         requestId = -1;
         pageUrl = null;
+        setPageCovered(false);
         loadedTab = null;
         sourceClient = null;
         controllerPageTitle = "";
@@ -1901,7 +1981,8 @@ public final class WebSourceView extends FrameLayout {
         fullscreenExitButton.setVisibility(View.GONE);
         updatePageLifecycle();
         setMultimediaPaused(false);
-        webView.requestFocus();
+        updatePageCover();
+        if (pageCovered) pageCover.focusReveal(); else webView.requestFocus();
         updateDesktopViewport(getWidth(), getHeight());
         return true;
     }
@@ -1950,6 +2031,7 @@ public final class WebSourceView extends FrameLayout {
         if (webView == null || !isPageVisible() || destroyed || !pageActive) {
             return false;
         }
+        if (pageCovered) { setPageCovered(false); return true; }
         if (fullscreenView != null) {
             final View exiting = fullscreenView;
             WebFullscreenCompatibility.beforeNativeExit(webView, () -> {
@@ -2010,6 +2092,16 @@ public final class WebSourceView extends FrameLayout {
             webView.requestFocus();
         }
         if (callback != null) callback.onCustomViewHidden();
+        updatePageCover();
+        if (pageCovered) pageCover.focusReveal();
+    }
+
+    void setPlaybackBrightness(int percent) {
+        if (legacy != null) {
+            legacy.send("brightness", LegacyWebSession.bundle("brightness", percent));
+        } else if (getContext() instanceof android.app.Activity) {
+            PlaybackBrightness.apply((android.app.Activity) getContext(), percent);
+        }
     }
 
     void setInterfaceScale(float scale) {
@@ -2031,11 +2123,19 @@ public final class WebSourceView extends FrameLayout {
         loadingOverlay.setScaleX(1f);
         loadingOverlay.setScaleY(1f);
         applyLoadingOverlayMetrics(loadingOverlay, safeScale);
+        if (pageCover != null) pageCover.setInterfaceScale(safeScale);
     }
 
     void dispatchRemoteKey(int keyCode, int metaState) {
         if (legacy != null) { android.os.Bundle data = new android.os.Bundle(); data.putInt("key", keyCode); data.putInt("meta", metaState); legacy.send("key", data); return; }
         if (webView == null || !isPageVisible()) {
+            return;
+        }
+        if (pageCovered) {
+            if (keyCode == KeyEvent.KEYCODE_BACK) { setPageCovered(false); return; }
+            long now = android.os.SystemClock.uptimeMillis();
+            dispatchKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0, metaState));
+            dispatchKeyEvent(new KeyEvent(now, now + 24L, KeyEvent.ACTION_UP, keyCode, 0, metaState));
             return;
         }
         webView.requestFocus();
@@ -2048,7 +2148,7 @@ public final class WebSourceView extends FrameLayout {
 
     void inputTextRemote(String text) {
         if (legacy != null) { legacy.send("text", LegacyWebSession.bundle("text", text)); return; }
-        if (webView == null || !isPageVisible() || text == null || text.length() == 0) {
+        if (pageCovered || webView == null || !isPageVisible() || text == null || text.length() == 0) {
             return;
         }
         String script = "(function(t){var e=document.activeElement;if(!e||e===document.body)"
@@ -2072,14 +2172,27 @@ public final class WebSourceView extends FrameLayout {
     }
 
     void clearBrowserCache() {
+        clearBrowserCache(error->{if(error!=null)Log.w(TAG,"Browser cache clear failed: "+error);});
+    }
+
+    void clearBrowserCache(MediaControlResult done) {
         if (legacy != null) {
-            if (legacy.active) legacy.command("cache");
-            else getContext().startService(new android.content.Intent(getContext(), LegacyWebCacheService.class));
-            cachedBrowserCacheBytes = 0L; browserCacheMeasuredAt = 0L; return;
-        }
-        if (destroyed) {
+            browserCacheMeasuredAt=0L;
+            if (legacy.active) legacy.clearCache(done);
+            else {
+                android.os.ResultReceiver receiver=new android.os.ResultReceiver(new android.os.Handler(android.os.Looper.getMainLooper())){
+                    protected void onReceiveResult(int code,android.os.Bundle data){done.complete(data==null?"缓存服务返回异常":data.getString("error"));}
+                };
+                try { getContext().startService(new android.content.Intent(getContext(),LegacyWebCacheService.class).putExtra("result",receiver)); }
+                catch(RuntimeException e){done.complete(e.getMessage()==null?"无法启动缓存服务":e.getMessage());}
+            }
             return;
         }
+        if (destroyed) {
+            done.complete("网页组件已关闭");
+            return;
+        }
+        try {
         if (webView != null) {
             webView.clearCache(true);
             webView.clearHistory();
@@ -2095,14 +2208,14 @@ public final class WebSourceView extends FrameLayout {
                 cleaner.clearFormData();
             } catch (RuntimeException error) {
                 Log.w(TAG, "Unable to initialize WebView cache cleaner", error);
+                done.complete(error.getMessage()==null?"无法启动网页清理组件":error.getMessage());return;
             } finally {
                 if (cleaner != null) cleaner.destroy();
             }
         }
         android.webkit.WebStorage.getInstance().deleteAllData();
-        deleteObsoleteProxyCache(new File(getContext().getCacheDir(), "browser"));
-        cachedBrowserCacheBytes = 0L;
-        browserCacheMeasuredAt = android.os.SystemClock.elapsedRealtime();
+        browserCacheMeasuredAt=0L;done.complete(null);
+        }catch(RuntimeException error){done.complete(error.getMessage()==null?"网页缓存清理失败":error.getMessage());}
     }
 
     synchronized long browserCacheSizeBytes() {
@@ -2110,15 +2223,12 @@ public final class WebSourceView extends FrameLayout {
         if (browserCacheMeasuredAt > 0L && now - browserCacheMeasuredAt < 30000L) {
             return cachedBrowserCacheBytes;
         }
-        File webViewData = getContext().getDir("webview", Context.MODE_PRIVATE);
-        File cacheRoot = getContext().getCacheDir();
-        cachedBrowserCacheBytes = measureFiles(webViewData, false)
-                + measureFiles(new File(cacheRoot, "webview"), true)
-                + measureFiles(new File(cacheRoot, "WebView"), true)
-                + measureFiles(new File(cacheRoot, "webviewCacheChromium"), true);
+        cachedBrowserCacheBytes = BrowserCacheClear.measure(getContext());
         browserCacheMeasuredAt = now;
         return cachedBrowserCacheBytes;
     }
+
+    synchronized void invalidateBrowserCacheSize(){browserCacheMeasuredAt=0L;}
 
     boolean cancelRemoteMouseButton(MotionEvent release) {
         if (legacy != null) { android.os.Bundle data = new android.os.Bundle(); data.putParcelable("motion", release); legacy.send("mouseCancel", data); return legacy.visible; }
@@ -3072,6 +3182,7 @@ public final class WebSourceView extends FrameLayout {
             Log.w(TAG, "Web source failed code=" + errorCode + " url=" + failingUrl
                     + " description=" + description);
             pageLoadTerminalGeneration = pageLoadGeneration;
+            pageCoverError = description == null ? "网页加载失败" : description;
             setLoadingVisible(false);
             if (listener != null) {
                 listener.onPageUnavailable(requestId,
@@ -3084,6 +3195,7 @@ public final class WebSourceView extends FrameLayout {
             if (Build.VERSION.SDK_INT < 23 || this != sourceClient || view != webView
                     || !pageActive || !request.isForMainFrame()) return;
             pageLoadTerminalGeneration = pageLoadGeneration;
+            pageCoverError = "HTTP " + response.getStatusCode();
             setLoadingVisible(false);
             if (listener != null) listener.onPageUnavailable(requestId,
                     "HTTP " + response.getStatusCode());

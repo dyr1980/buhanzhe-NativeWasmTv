@@ -18,14 +18,29 @@ import java.util.Set;
 final class ProxyHttpConnections implements Closeable {
     private final Set<Tracked> active = new HashSet<Tracked>();
     private boolean closed;
+    private boolean suspended;
+    private static final java.util.concurrent.ExecutorService CANCELLER =
+            java.util.concurrent.Executors.newSingleThreadExecutor();
+
+    void setSuspended(boolean value) {
+        final List<Tracked> snapshot;
+        synchronized (this) {
+            suspended = value;
+            if (!value) return;
+            snapshot = new ArrayList<Tracked>(active);
+            active.clear();
+        }
+        // Socket cancellation may wake vendor HTTP code; keep it off the UI thread.
+        CANCELLER.execute(() -> { for (Tracked connection : snapshot) connection.disconnect(); });
+    }
 
     HttpURLConnection track(HttpURLConnection connection) throws IOException {
         Tracked tracked = new Tracked(connection);
         synchronized (this) {
-            if (!closed) { active.add(tracked); return tracked; }
+            if (!closed && !suspended) { active.add(tracked); return tracked; }
         }
         connection.disconnect();
-        throw new IOException("HLS proxy closed");
+        throw new IOException(closed ? "HLS proxy closed" : "HLS downloads suspended");
     }
 
     private synchronized void completed(Tracked connection) { active.remove(connection); }

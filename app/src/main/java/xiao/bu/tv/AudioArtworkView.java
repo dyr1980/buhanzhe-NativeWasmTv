@@ -34,9 +34,10 @@ public final class AudioArtworkView extends FrameLayout {
     }
     void replacePlugin(RadioUiPlugin.Factory next) {
         String style = RadioUiPlugin.style(getContext());
-        if(factory!=null&&factory.sha.equals(next.sha)&&uiStyle.equals(style))return;
+        if(factory!=null&&factory.sha.equals(next.sha)&&uiStyle.equals(style)){pendingFactory=null;return;}
         if(ui!=null&&ui.isTransitionRunning()){pendingFactory=next;return;}
         try {
+            pendingFactory=null;
             RadioUi incoming=next.create(getContext());
             boolean visible=getVisibility()==VISIBLE;
             Bitmap art=cover();

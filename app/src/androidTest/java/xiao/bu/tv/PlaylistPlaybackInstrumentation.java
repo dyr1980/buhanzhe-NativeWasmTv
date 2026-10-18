@@ -221,7 +221,7 @@ public final class PlaylistPlaybackInstrumentation extends Instrumentation {
     }
     private void captureVideo(JSONObject row,File report,int index)throws Exception {
         DirectVideoView view=(DirectVideoView)field("videoView").get(activity);
-        boolean pixelCopy=android.os.Build.VERSION.SDK_INT>=26;
+        boolean pixelCopy=android.os.Build.VERSION.SDK_INT>=26&&!Boolean.parseBoolean(args.getString("captureComposited","false"));
         java.util.ArrayList<android.view.View> hidden=new java.util.ArrayList<>();
         if(!pixelCopy)runOnMainSync(() -> {
             android.view.ViewGroup root=(android.view.ViewGroup)view.getParent();
@@ -252,6 +252,19 @@ public final class PlaylistPlaybackInstrumentation extends Instrumentation {
             });
         }
         if(image==null)throw new AssertionError("No screenshot");
+        String patches=args.getString("colorPatches");int colorPatchError=0;
+        if(patches!=null){
+            org.json.JSONArray expected=new org.json.JSONArray(patches),actual=new org.json.JSONArray();int maximum=0;
+            if(expected.length()!=16)throw new AssertionError("Expected sixteen color patches");
+            for(int i=0;i<16;i++){
+                int pixel=image.getPixel((2*(i%8)+1)*image.getWidth()/16,(2*(i/8)+1)*image.getHeight()/4);
+                org.json.JSONArray rgb=new org.json.JSONArray();
+                for(int c=0;c<3;c++){int value=(pixel>>(16-c*8))&255;rgb.put(value);maximum=Math.max(maximum,Math.abs(value-expected.getJSONArray(i).getInt(c)));}
+                actual.put(rgb);
+            }
+            row.put("colorPatchPixels",actual).put("colorPatchMaxError",maximum);
+            colorPatchError=maximum;
+        }
         int visible=0;
         // Scan the whole video: real intros may be black except for a caption
         // near the bottom. UI text has been excluded from the old-API capture.
@@ -263,6 +276,7 @@ public final class PlaylistPlaybackInstrumentation extends Instrumentation {
         File capture=new File(report.getParentFile(),String.format(java.util.Locale.US,"playlist-%04d.png",index));
         try(FileOutputStream output=new FileOutputStream(capture)){image.compress(Bitmap.CompressFormat.PNG,100,output);}
         image.recycle();
+        if(colorPatchError>Integer.parseInt(args.getString("maxColorError","5")))throw new AssertionError("Surface color error: "+colorPatchError+"/255");
         if(visible<=5)throw new AssertionError("Video-only capture is black");
     }
     private static int processPssKb() {
@@ -334,6 +348,9 @@ public final class PlaylistPlaybackInstrumentation extends Instrumentation {
         File report=new File(getTargetContext().getExternalFilesDir(null),args.getString("reportName","playlist-playback.json"));
         UsbLoopbackBridge usbBridge=null;
         try {
+            if(args.containsKey("tvUiStorage")){
+                result.putString("stream",TvUiChecks.storage(this,args.getString("tvUiStorage")));finish(-1,result);return;
+            }
             if("true".equals(args.getString("usbBridge"))) usbBridge=new UsbLoopbackBridge();
             if("true".equals(args.getString("verifyDecodeHintsCache"))) {
                 result.putString("stream",ChannelDecodeHintsInstrumentation.verify(getTargetContext()));
@@ -671,6 +688,22 @@ public final class PlaylistPlaybackInstrumentation extends Instrumentation {
                     }
                     row.put("playerReused",previousPlayer!=null && previousPlayer==field("player").get(activity));
                     if(item.optBoolean("seekRegression"))SeekRegressionChecks.run(this,activity,row);
+                    if(item.optBoolean("tvUiRegression")){if(item.optBoolean("tvUiVisualBaseline"))TvUiChecks.visualBaseline(this,activity,row);else TvUiChecks.run(this,activity,row);}
+                    if(item.optBoolean("checkDecoderSelection"))TvUiChecks.decoderSelection(this,activity,row);
+                    if(item.optBoolean("checkRapidChannelKeys"))TvUiChecks.rapidChannelKeys(this,activity,row);
+                    if(item.optBoolean("checkPlayingIconCycle"))TvUiChecks.playingIconCycle(this,activity,row);
+                    if(item.optBoolean("checkChannelRemote"))TvUiChecks.channelRemote(this,activity,row);
+                    if(item.optBoolean("checkUiLayoutAudit"))TvUiChecks.layoutAudit(this,activity,row);
+                    if(item.optBoolean("checkThemeSizing"))TvUiChecks.sizing(this,activity,row);
+                    if(item.optBoolean("checkExitCentering"))TvUiChecks.exitCentering(this,activity,row);
+                    if(item.optBoolean("checkFpsTicker"))TvUiChecks.frameRateTicker(this,activity,row);
+                    if(item.optBoolean("checkUiPerformance"))TvUiChecks.performance(this,activity,row);
+                    if(item.optBoolean("checkWebManagement"))TvUiChecks.webManagement(this,activity,row);
+                    if(item.optBoolean("checkGroupVisibility"))TvUiChecks.groupVisibility(this,activity,row);
+                    if(item.optBoolean("checkEpgThemes"))TvUiChecks.epgThemes(this,activity,row,item.getString("epgBase"));
+                    if(item.optBoolean("backgroundRegression"))TvUiChecks.backgroundSmoke(this,activity,row,item.optBoolean("systemBackground"),item.optBoolean("backgroundPaused"));
+                    if(item.optBoolean("tvUiMenuRegression"))TvUiChecks.menuSmoke(this,activity,row);
+                    if(!item.optString("seekLoadRegression").isEmpty())TvUiChecks.seekFeedback(this,activity,row,item.getString("seekLoadRegression"));
                     if(item.has("expectedSourceIndex")) {
                         int selectedSource=field("currentSourceIndex").getInt(activity);
                         row.put("selectedSourceIndex",selectedSource);
@@ -882,6 +915,42 @@ public final class PlaylistPlaybackInstrumentation extends Instrumentation {
                     }
                     Method format=MainActivity.class.getDeclaredMethod("formatDebugFrameRate",debugStats.getClass());
                     format.setAccessible(true);String fpsLabel=(String)format.invoke(null,debugStats);
+                    if(item.optBoolean("checkDisplayHdrStatus")) {
+                        runOnMainSync(() -> {try {
+                            Method mediaState=MainActivity.class.getDeclaredMethod("buildLocalMediaState",boolean.class);
+                            mediaState.setAccessible(true);
+                            JSONObject telemetry=((JSONObject)mediaState.invoke(activity,false)).getJSONObject("currentSourceStats");
+                            String label=telemetry.getString("displayHdrStatus");
+                            if(android.os.Build.VERSION.SDK_INT<34 && (!telemetry.isNull("displayHdrSdrRatio")
+                                    || !"屏幕HDR状态未知".equals(label)))throw new AssertionError("Legacy HDR state was fabricated: "+telemetry);
+                            Method visibility=MainActivity.class.getDeclaredMethod("applyDebugInfoVisibility");visibility.setAccessible(true);
+                            Method refresh=MainActivity.class.getDeclaredMethod("refreshVideoInfo");refresh.setAccessible(true);
+                            boolean originalDebug=field("showDebugInfo").getBoolean(activity);
+                            boolean originalColor=field("showColorDebugInfo").getBoolean(activity);
+                            JSONArray labels=new JSONArray();
+                            try {
+                                field("showDebugInfo").setBoolean(activity,true);
+                                for(boolean color:new boolean[]{false,true}) {
+                                    field("showColorDebugInfo").setBoolean(activity,color);visibility.invoke(activity);refresh.invoke(activity);
+                                    String hud=((android.widget.TextView)field("debugInfoOverlay").get(activity)).getText().toString();
+                                    if(!hud.contains(label))throw new AssertionError("Display HDR status missing from HUD: "+hud);
+                                    labels.put(hud);
+                                }
+                            } finally {
+                                field("showDebugInfo").setBoolean(activity,originalDebug);
+                                field("showColorDebugInfo").setBoolean(activity,originalColor);visibility.invoke(activity);
+                            }
+                            row.put("displayHdrStatus",label).put("displayHdrSdrRatio",telemetry.get("displayHdrSdrRatio"))
+                                    .put("displayHdrHud",labels);
+                        } catch(Exception error) {throw new RuntimeException(error);}});
+                    }
+                    if(item.optBoolean("checkFpsCard")) {
+                        Method card=MainActivity.class.getDeclaredMethod("formatChannelVideoInfo",debugStats.getClass());card.setAccessible(true);
+                        String cardText=(String)card.invoke(null,debugStats);row.put("fpsCard",cardText).put("fpsLabel",fpsLabel);
+                        if(!cardText.contains(fpsLabel))throw new AssertionError("Card FPS differs from debug FPS: "+cardText+" vs "+fpsLabel);
+                        if(item.optBoolean("checkFpsThemes"))TvUiChecks.frameRateCards(this,activity,row);
+                    }
+
                     if(item.optBoolean("checkDebugInfo")) {
                         final Object[] snapshot=new Object[1];final String[] overlay=new String[1];
                         runOnMainSync(()->{try {

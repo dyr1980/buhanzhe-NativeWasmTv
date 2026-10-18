@@ -65,35 +65,25 @@ public final class UpdateManifestInstrumentation extends Instrumentation {
             fixture.start();
             String base = "http://127.0.0.1:" + server.getLocalPort();
             AutoUpdater updater = new AutoUpdater(null);
-            check(updater.readManifest(base + "/version-lite.json", base + "/version.json").equals(primaryBody), "Lite result");
+            check(updater.readManifest(base + "/version-lite.json").equals(primaryBody), "Lite result");
             check(legacyReads == 0, "Lite must not request legacy");
             check(lastRequest.contains("/version-lite.json?_="),"Local request lost path or timestamp");
             GithubProxy.setBaseUrl(base+"/proxy/");
             GithubProxy.setEnabled(true);
-            check(updater.readManifest("https://github.com/a/releases/latest/download/version-lite.json",null)
+            check(updater.readManifest("https://github.com/a/releases/latest/download/version-lite.json")
                     .equals(primaryBody),"Accelerated metadata failed");
             check(lastRequest.contains("/proxy/https://github.com/a/releases/latest/download/version-lite.json?_="),
                     "Accelerator lost or duplicated canonical URL");
             GithubProxy.setBaseUrl(originalBase);
             GithubProxy.setEnabled(originalEnabled);
             pass("real HTTP requests preserve canonical URL through shared accelerator routing");
-            primaryStatus = 404;
-            check(updater.readManifest(base + "/version-lite.json", base + "/version.json").equals(LEGACY), "Legacy fallback");
-            check(legacyReads == 1, "Single fallback");
-            pass("missing lightweight metadata falls back once; present metadata needs one request");
-            for (int code : new int[]{403, 500}) {
+            for (int code : new int[]{404, 403, 500}) {
                 primaryStatus = code;
-                try { updater.readManifest(base + "/version-lite.json", base + "/version.json"); throw new AssertionError("Expected HTTP error"); }
+                try { updater.readManifest(base + "/version-lite.json"); throw new AssertionError("Expected HTTP error"); }
                 catch (IOException expected) { check(expected.getMessage().contains(String.valueOf(code)), "Preserve HTTP error"); }
             }
-            check(legacyReads == 1, "No fallback on network/server errors");
-            primaryStatus = 404;
-            try { updater.readManifest(base + "/important.json", null); throw new AssertionError("Expected missing important metadata"); }
-            catch (IOException expected) { }
-            legacyStatus = 404;
-            try { updater.readManifest(base + "/version-lite.json", base + "/version.json"); throw new AssertionError("Expected both missing"); }
-            catch (IOException expected) { }
-            pass("403/500 and both-missing remain errors; important checks have no fallback");
+            check(legacyReads == 0, "Lightweight checks must never fetch full metadata");
+            pass("404/403/500 remain readable errors; no request falls back to version.json");
             if (live) {
             Method load = AutoUpdater.class.getDeclaredMethod("loadUpdateInfo", String.class, boolean.class);
             load.setAccessible(true);

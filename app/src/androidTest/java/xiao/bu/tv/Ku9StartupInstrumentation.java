@@ -52,6 +52,12 @@ public final class Ku9StartupInstrumentation extends Instrumentation {
     private void start(int index)throws Exception {
         main(()->{Method m=MainActivity.class.getDeclaredMethod("startChannel",int.class);m.setAccessible(true);m.invoke(activity,index);});
     }
+    private static long renderedFrames(IMediaPlayer player)throws Exception {
+        if(!(player instanceof tv.danmaku.ijk.media.player.IjkMediaPlayer))return -1L;
+        // The small host wrapper can be inlined out of a minified release APK.
+        Method property=tv.danmaku.ijk.media.player.IjkMediaPlayer.class.getDeclaredMethod("_getPropertyLong",int.class,long.class);
+        property.setAccessible(true);return ((Number)property.invoke(player,22001,-1L)).longValue();
+    }
     private long loadMs() throws Exception {
         ChannelStartupTiming timing = (ChannelStartupTiming) get("channelStartupTiming");
         synchronized (timing) {
@@ -64,7 +70,7 @@ public final class Ku9StartupInstrumentation extends Instrumentation {
     }
     private void play(int index,String name)throws Exception {
         long begin=SystemClock.elapsedRealtime();start(index);
-        JSONObject row=new JSONObject().put("channel",name).put("requestId",get("playRequestId"));rows.put(row);
+        JSONObject row=new JSONObject().put("index",index).put("channel",name).put("requestId",get("playRequestId"));rows.put(row);
         IMediaPlayer seen=null;long position=0;
         long limit=Long.parseLong(args.getString("caseTimeoutMs","45000"));
         while(SystemClock.elapsedRealtime()-begin<limit) {
@@ -73,6 +79,8 @@ public final class Ku9StartupInstrumentation extends Instrumentation {
             boolean radio=args.getString("radioPlaylist")!=null;
             if(current!=null&&(Boolean)get("prepared")&&(radio?(Boolean)get("audioOnlyPlayback"):(Boolean)get("videoRenderingStarted"))
                     &&(Integer)get("currentChannelIndex")==index
+                    &&get("activePlayerChannel")==ChannelCatalog.GROUPS[0].channels[index]
+                    &&((Integer)get("playbackReadyRequestId")).intValue()==((Integer)get("playRequestId")).intValue()
                     &&loadMs()>=0) {
                 if(seen!=current){seen=current;position=current.getCurrentPosition();}
                 if(current.isPlaying()&&(radio||current.getVideoWidth()>0)&&current.getCurrentPosition()-position>=600) {
@@ -82,6 +90,7 @@ public final class Ku9StartupInstrumentation extends Instrumentation {
                     if(radio)row.put("audioConfirmedMs",SystemClock.elapsedRealtime()-begin);
                     long watch=Long.parseLong(args.getString("watchMs","0"));
                     if(watch>0) {
+                        long framesBefore=renderedFrames(current);
                         long from=current.getCurrentPosition(), lastPosition=from;
                         long watchStarted=SystemClock.elapsedRealtime(), lastAdvance=watchStarted, maxStall=0, maxRollback=0, advances=0;
                         long lastTrace=0;
@@ -115,6 +124,14 @@ public final class Ku9StartupInstrumentation extends Instrumentation {
                         }
                         maxStall=Math.max(maxStall,SystemClock.elapsedRealtime()-lastAdvance);
                         row.put("watchMs",watch).put("watchClockAdvanceMs",current.getCurrentPosition()-from).put("maxClockStallMs",maxStall).put("maxClockRollbackMs",maxRollback).put("clockAdvancesMs",advances);
+                        if(current instanceof tv.danmaku.ijk.media.player.IjkMediaPlayer){
+                            long framesAfter=renderedFrames(current);
+                            row.put("nativeOutputFps",IjkStreamMetrics.outputFrameRate((tv.danmaku.ijk.media.player.IjkMediaPlayer)current));
+                            if(framesBefore>=0&&framesAfter>=0){
+                                row.put("outputFramesAdvanced",framesAfter-framesBefore);
+                                if(framesAfter<=framesBefore){row.put("status","unavailable");throw new AssertionError("Video frames stopped during stability watch: "+name);}
+                            }
+                        }
                         if(get("player")!=current||!current.isPlaying()||advances<watch/2) {
                             row.put("status","unavailable");
                             throw new AssertionError("Playback stopped during stability watch: "+name);
@@ -153,6 +170,7 @@ public final class Ku9StartupInstrumentation extends Instrumentation {
         Bundle result=new Bundle();int code=-1;
         SharedPreferences prefs=getTargetContext().getSharedPreferences(MainActivity.PREFERENCES,0);
         Map<String,?> saved=prefs.getAll();ChannelCatalog.Group[] savedGroups=ChannelCatalog.GROUPS;
+        SharedPreferences coldPrefs=null;Map<String,?> savedColdPrefs=null;
         try {
             if (args.getString("networkDns") != null) prefs.edit()
                     .putString("network_dns", args.getString("networkDns")).commit();
@@ -181,6 +199,20 @@ public final class Ku9StartupInstrumentation extends Instrumentation {
                 set("remoteCatalogUrl","");
             });
             catalogHold.countDown();catalogBootstrap.close();
+            if(args.getString("coldSite")!=null){
+                if(!getTargetContext().getPackageName().endsWith(".iptvdiag"))throw new AssertionError("Cold install probe requires diagnostic package");
+                String site=args.getString("coldSite");CjsPluginRuntime.ensureCatalog();
+                Field states=CjsPluginRuntime.class.getDeclaredField("states");states.setAccessible(true);
+                Object state=((Map)states.get(null)).get(site);if(state==null)throw new AssertionError("Unknown cold site");
+                Field loaded=state.getClass().getDeclaredField("loaded");loaded.setAccessible(true);
+                if(loaded.getBoolean(state))throw new AssertionError("Cold site's native library already loaded");
+                coldPrefs=getTargetContext().getSharedPreferences("cjs_sites_v5",0);savedColdPrefs=coldPrefs.getAll();
+                String key=site+":"+CjsPluginRuntime.currentProfile()+":";
+                coldPrefs.edit().remove(key+"active").remove(key+"pending").commit();
+                for(String name:new String[]{"runtime","directory"}){Field f=state.getClass().getDeclaredField(name);f.setAccessible(true);f.set(state,null);}
+                Field used=state.getClass().getDeclaredField("used");used.setAccessible(true);used.setBoolean(state,false);
+                if(CjsPluginRuntime.isInstalled(site))throw new AssertionError("Cold site still installed");
+            }
             if(args.getString("cmgNativeTrial")!=null) {
                 CjsPluginRuntime.ensureCatalog();
                 if(!CjsPluginRuntime.isInstalled("yangshipin.cn"))CjsPluginRuntime.installOrUpdate("yangshipin.cn");
@@ -233,12 +265,21 @@ public final class Ku9StartupInstrumentation extends Instrumentation {
                 ChannelCatalog.GROUPS=new ChannelCatalog.Group[]{new ChannelCatalog.Group("KU9_STARTUP_TEST",ChannelCatalog.SOURCE_CUSTOM,channels)};
                 set("currentGroupIndex",0);set("currentSourceIndex",0);
             });
+            boolean backgroundChecked=false;
             for(int n=0;n<entries.length;n++) {
                 if(activity.isFinishing())throw new InterruptedException("Playback audit cancelled");
-                try{if(args.getString("cmgNativeTrial")!=null)CmgTraceBridge.mark(entries[n]);play(n,entries[n]);}
+                try{
+                    if(args.getString("cmgNativeTrial")!=null)CmgTraceBridge.mark(entries[n]);play(n,entries[n]);
+                    if(!backgroundChecked&&Boolean.parseBoolean(args.getString("checkBackground","false"))){
+                        JSONObject row=rows.getJSONObject(rows.length()-1);
+                        TvUiChecks.backgroundSmoke(this,activity,row,false,false);backgroundChecked=true;
+                        Bundle update=new Bundle();update.putString("stream",row.toString()+"\n");sendStatus(0,update);
+                    }
+                }
                 catch(Exception|AssertionError error) {
                     if(!Boolean.parseBoolean(args.getString("continueFailures","false")))throw error;
                     JSONObject row=rows.getJSONObject(rows.length()-1);row.put("error",error.toString());
+                    if("passed".equals(row.optString("status")))row.put("status","failed");
                     Bundle update=new Bundle();update.putString("stream",row.toString()+"\n");sendStatus(0,update);
                 }
                 saveReport();
@@ -256,6 +297,12 @@ public final class Ku9StartupInstrumentation extends Instrumentation {
                 new File(trial,"yangshipin.so").delete();trial.delete();
             }
             ChannelCatalog.GROUPS=savedGroups;
+            restorePreferences(prefs,saved);
+            if(coldPrefs!=null&&savedColdPrefs!=null)restorePreferences(coldPrefs,savedColdPrefs);
+        }
+        finish(code,result);
+    }
+    private static void restorePreferences(SharedPreferences prefs,Map<String,?> saved){
             SharedPreferences.Editor edit=prefs.edit().clear();
             for(Map.Entry<String,?> item:saved.entrySet()) {
                 String key=item.getKey();Object value=item.getValue();
@@ -267,8 +314,6 @@ public final class Ku9StartupInstrumentation extends Instrumentation {
                 else if(value instanceof Set)edit.putStringSet(key,(Set<String>)value);
             }
             edit.commit();
-        }
-        finish(code,result);
     }
     private void saveReport() {
         try(FileOutputStream output=new FileOutputStream(new File(getTargetContext().getExternalFilesDir(null),

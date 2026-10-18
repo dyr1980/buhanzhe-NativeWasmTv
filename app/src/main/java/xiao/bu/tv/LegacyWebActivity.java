@@ -140,6 +140,7 @@ public final class LegacyWebActivity extends Activity implements WebSourceView.L
         state.putString("title", source.currentPageTitle()); state.putString("pageKey", source.currentResourcePageKey());
         state.putString("channelTitle", source.currentChannelTitle()); state.putString("channelUrl", source.currentChannelUrl());
         state.putString("group", source.currentChannelGroup());
+        state.putBoolean("foreground", foreground);
         state.putBoolean("fullscreen", source.isInBrowserFullscreen());
         String media = source.currentWebMediaState().toString();
         if (media.length() < 100000) state.putString("media", media);
@@ -156,8 +157,10 @@ public final class LegacyWebActivity extends Activity implements WebSourceView.L
             case "configuration": source.applyConfiguration(data.getString("viewport", "720p"), data.getBoolean("images", true),
                     data.getString("ua", "windows"), data.getString("version", "native"), data.getFloat("pageScale", 1f),
                     data.getBoolean("ads", false), data.getBoolean("rtc"), data.getBoolean("scripts"), data.getString("userScripts", "[]"));
-                source.applyMinimalMode(data.getBoolean("minimalMode", false)); break;
+                source.applyMinimalMode(data.getBoolean("minimalMode", false));
+                source.applyPageCover(data.getBoolean("pageCover", false)); break;
             case "scale": source.setInterfaceScale(data.getFloat("scale", 1f)); cursor.setCastVisualScale(data.getFloat("scale", 1f)); break;
+            case "brightness": source.setPlaybackBrightness(data.getInt("brightness", 50)); break;
             case "open": request = data.getInt("request"); monitoring = true;
                 rendererBeat = SystemClock.elapsedRealtime(); source.open(request, data.getString("url"),
                         data.getString("script", ""), data.getBoolean("htmlMimeOverride", false),
@@ -167,11 +170,12 @@ public final class LegacyWebActivity extends Activity implements WebSourceView.L
             case "back": onBackPressed(); break;
             case "forward": source.goForwardIfPossible(); break;
             case "minimalMode": source.applyMinimalMode(data.getBoolean("enabled", false)); break;
+            case "pageCover": source.applyPageCover(data.getBoolean("enabled", false)); break;
             case "fullscreenExit": source.exitBrowserFullscreen(); break;
             case "pause": source.setMultimediaPaused(true); break;
             case "play": source.setMultimediaPaused(false); break;
             case "trim": source.trimMemory(); break;
-            case "cache": source.clearBrowserCache(); break;
+            case "cache": source.clearBrowserCache(error -> result(data.getInt("id"),error,null)); break;
             case "shutdown":
                 if (android.os.Build.VERSION.SDK_INT >= 21) android.webkit.CookieManager.getInstance().flush();
                 else { android.webkit.CookieSyncManager.createInstance(this); android.webkit.CookieSyncManager.getInstance().sync(); }
@@ -206,13 +210,16 @@ public final class LegacyWebActivity extends Activity implements WebSourceView.L
     private void showPlayer() {
         startActivity(new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
     }
+    private boolean foreground;
     @Override protected void onResume() {
         super.onResume();
+        foreground = true;
+        if (source != null && request >= 0) event("visibility", new Bundle());
         rendererBeat = uiBeat = SystemClock.elapsedRealtime();
         monitoring = request >= 0 && source != null && source.isPageVisible();
         if (source != null) source.resumePage();
     }
-    @Override protected void onPause() { monitoring = false; if (source != null) source.pausePage(); super.onPause(); }
+    @Override protected void onPause() { foreground = false; if (source != null && request >= 0) event("visibility", new Bundle()); monitoring = false; if (source != null) source.pausePage(); super.onPause(); }
     @Override protected void onDestroy() {
         running = false; ui.removeCallbacks(tick); if (bound) unbindService(connection);
         // Destroying a wedged in-process WebKit may block forever. Dispose of our process instead.

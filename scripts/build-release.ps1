@@ -187,17 +187,20 @@ try {
 
 $artifacts = @(
     [pscustomobject]@{
-        Name = '网页电视32位.apk'
+        Name = 'nTv.apk'
+        CopyAs = '网页电视32位.apk'
         Source = Join-Path $repoRoot 'app\build\outputs\apk\arm32\release\app-arm32-release.apk'
         ExpectedAbi = 'armeabi-v7a'
     },
     [pscustomobject]@{
-        Name = '网页电视64位.apk'
+        Name = 'nTv64.apk'
+        CopyAs = '网页电视64位.apk'
         Source = Join-Path $repoRoot 'app\build\outputs\apk\arm64\release\app-arm64-release.apk'
         ExpectedAbi = 'arm64-v8a'
     },
     [pscustomobject]@{
-        Name = '网页电视x86.apk'
+        Name = 'nTvX86.apk'
+        CopyAs = '网页电视x86.apk'
         Source = Join-Path $repoRoot 'app\build\outputs\apk\x86\release\app-x86-release.apk'
         ExpectedAbi = 'x86'
     }
@@ -222,6 +225,9 @@ $results = foreach ($artifact in $artifacts) {
     } finally { $archive.Dispose() }
     $destination = Join-Path $OutputDirectory $artifact.Name
     Copy-Item -LiteralPath $artifact.Source -Destination $destination -Force
+    # NTFS overwrites preserve an older filename's casing. GitHub asset URLs are
+    # case-sensitive, so also normalize the actual directory entry after copying.
+    Rename-Item -LiteralPath $destination -NewName $artifact.Name -ErrorAction Stop
 
     & $apksigner verify --verbose --print-certs $destination | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "Signature verification failed: $destination" }
@@ -240,6 +246,8 @@ $results = foreach ($artifact in $artifacts) {
     }
     $hash = Get-Sha256 $destination
     $file = Get-Item -LiteralPath $destination
+    $aliasPath = Join-Path $OutputDirectory $artifact.CopyAs
+    Copy-Item -LiteralPath $destination -Destination $aliasPath -Force
     [pscustomobject]@{
         APK = $artifact.Name
         ABI = $architectures[0]
@@ -248,6 +256,7 @@ $results = foreach ($artifact in $artifacts) {
         Obfuscation = 'disabled'
         Metadata = $badging
         Path = $file.FullName
+        AliasPath = $aliasPath
     }
 }
 
@@ -302,6 +311,6 @@ if ($ImportantUpdate) {
 
 Write-Host ''
 Write-Host 'Release artifacts:'
-$results | Format-List APK, ABI, SizeMB, SHA256, Obfuscation, Metadata, Path
+$results | Format-List APK, ABI, SizeMB, SHA256, Obfuscation, Metadata, Path, AliasPath
 Write-Host "Lightweight metadata: $liteVersionPath"
 Write-Host ($(if ($ImportantUpdate) { "Important metadata updated: $versionPath" } else { 'Important metadata not included (use -ImportantUpdate when required).' }))

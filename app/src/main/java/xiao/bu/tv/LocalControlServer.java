@@ -53,6 +53,7 @@ final class LocalControlServer implements Closeable {
         String uploadPlaylist(String sourceId, String fileName, byte[] body) throws Exception;
         String uploadKu9Script(String fileName, byte[] body) throws Exception;
         String radioUi(byte[] body) throws Exception;
+        default String tvUi(byte[] body) throws Exception { throw new java.io.IOException("不支持电视界面插件"); }
         String pushApk(String receiverUrl, String fileName, byte[] body) throws Exception;
         String installApk(String sessionId, String fileName, byte[] body) throws Exception;
         Resource playlistSource(String location) throws Exception;
@@ -298,7 +299,7 @@ final class LocalControlServer implements Closeable {
                 sendMediaDownload(socket, download);
                 return;
             }
-            int bodyLimit = path.startsWith("/api/ku9/script/upload") || path.equals("/api/radio-ui")
+            int bodyLimit = path.startsWith("/api/ku9/script/upload") || path.equals("/api/radio-ui") || path.equals("/api/tv-ui")
                     ? MAX_KU9_SCRIPT_BYTES : requestBodyLimit();
             if (contentLength > bodyLimit) {
                 send(socket, 413, "application/json; charset=utf-8",
@@ -494,6 +495,9 @@ final class LocalControlServer implements Closeable {
             send(socket, 200, "application/json; charset=utf-8",
                     listener.wifiDirect(new JSONObject(new String(body, "UTF-8")))
                             .getBytes("UTF-8"));
+        } else if (("POST".equals(method) || "GET".equals(method)) && "/api/tv-ui".equals(path)) {
+            send(socket, 200, "application/json; charset=utf-8", listener.tvUi(
+                    "POST".equals(method) ? body : null).getBytes("UTF-8"));
         } else if (("POST".equals(method) || "GET".equals(method)) && "/api/radio-ui".equals(path)) {
             send(socket, 200, "application/json; charset=utf-8", listener.radioUi(
                     "POST".equals(method) ? body : null).getBytes("UTF-8"));

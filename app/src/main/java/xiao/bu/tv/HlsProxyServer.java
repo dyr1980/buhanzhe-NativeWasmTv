@@ -129,7 +129,7 @@ final class HlsProxyServer implements Closeable {
     private FutureTask<TimedManifest> manifestAhead;
     private void startManifestAhead(String url) {
         synchronized (resolvedPlaylists) {
-            if (!running || !url.equals(manifestAheadUrl) || manifestAhead != null) return;
+            if (!running || playbackSuspended || !url.equals(manifestAheadUrl) || manifestAhead != null) return;
             FutureTask<TimedManifest> next = new FutureTask<>(() -> new TimedManifest(fetchNetwork(url)));
             manifestAhead = next;
             try { manifestAheadWorker.execute(next); }
@@ -316,6 +316,7 @@ final class HlsProxyServer implements Closeable {
     private final java.util.Set<String> dolbyInitUrls = java.util.Collections.synchronizedSet(
             new java.util.HashSet<String>());
     private volatile boolean selectedAtmos;
+    private final PlaybackReplayCache replayCache;
     private volatile boolean finiteMedia;
     private volatile String sourceAudioCodec = "--";
 
@@ -335,7 +336,14 @@ final class HlsProxyServer implements Closeable {
     }
     boolean wasPlaybackForbidden() { return playbackHttpError.isForbidden(); }
     Throwable lastPlaybackFailure() { return lastPlaybackFailure; }
-    void enableSourceVideoProbe() { sourceVideoProbeEnabled = true; }
+    void enableSourceVideoProbe() {
+        if (sourceVideoProbeEnabled) return;
+        sourceVideoProbeEnabled = true;
+        // Start from an existing decrypted body when possible; do not request it again.
+        byte[] saved = screenshotSegment;
+        if (saved == null) synchronized(cctvSegmentCache) { saved=cctvSegmentCache.get(lastCctvRequestedUrl); }
+        if (saved != null) sourceMetadataProbe.submit(saved);
+    }
     void disableSourceVideoProbe() { sourceVideoProbeEnabled = false; }
     float sourceVideoFrameRate() { return sourceVideoFrameRate; }
     int sourceVideoWidth() { return sourceVideoWidth; }
@@ -406,6 +414,35 @@ final class HlsProxyServer implements Closeable {
     private ServerSocket serverSocket;
     private Thread acceptThread;
     private volatile boolean running;
+    private volatile boolean playbackSuspended;
+
+    void setPlaybackSuspended(boolean suspended) {
+        playbackSuspended = suspended;
+        upstreamConnections.setSuspended(suspended);
+        if (!suspended) return;
+        disconnectPlayerRequests();
+        synchronized (resolvedPlaylists) {
+            if (manifestAhead != null) manifestAhead.cancel(true);
+            manifestAhead = null;
+        }
+        cancelPrefetch(cctvSegmentTasks);
+        cancelPrefetch(cmgSegmentTasks);
+        cancelPrefetch(genericSegmentTasks);
+        // Keep resolved playlists, keys, parsed stream metadata and completed cache entries.
+    }
+
+    private static void cancelPrefetch(Map<String, FutureTask<byte[]>> tasks) {
+        List<FutureTask<byte[]>> pending;
+        synchronized (tasks) {
+            pending = new ArrayList<>();
+            Iterator<Map.Entry<String,FutureTask<byte[]>>> entries=tasks.entrySet().iterator();
+            while(entries.hasNext()) {
+                FutureTask<byte[]> task=entries.next().getValue();
+                if(!task.isDone() || task.isCancelled()) { pending.add(task); entries.remove(); }
+            }
+        }
+        for (FutureTask<byte[]> task : pending) task.cancel(true);
+    }
     private final AtomicInteger cmgTsRequestIndex = new AtomicInteger();
     private final Map<String, byte[]> cmgSegmentCache =
             new LinkedHashMap<String, byte[]>(16, 0.75f, true) {
@@ -525,6 +562,7 @@ final class HlsProxyServer implements Closeable {
             int startupDownloadSegments, int startupDecryptSegments,
             int genericStartupPrefetchSegments) {
         metadataCacheDirectory=context==null?null:context.getCacheDir();
+        replayCache = new PlaybackReplayCache(metadataCacheDirectory);
         carrierNetworkRoute = new CarrierNetworkRoute(context);
         sourceMetadataProbe = new CachedVideoMetadataProbe(metadataCacheDirectory);
         cctvLiveEdgeHoldBackSegments = Math.max(0, Math.min(3, liveEdgeHoldBackSegments));
@@ -834,10 +872,25 @@ final class HlsProxyServer implements Closeable {
                 token = token.substring(0, token.length() - ".mp3".length());
             }
             String originUrl = new String(Base64.decode(token, Base64.URL_SAFE), UTF_8);
+            if (!running || playbackSuspended) throw new java.io.InterruptedIOException("Playback suspended");
+            PlaybackReplayCache.Hit cached = replayCache.open(originUrl, rangeHeader);
+            if (cached != null) {
+                try {
+                    writeStreamingHeaders(output, cached.partial ? 206 : 200, cached.type,
+                            cached.end - cached.start + 1, cached.partial
+                            ? "bytes " + cached.start + "-" + cached.end + "/" + cached.total : null);
+                    cached.copy(output, streamCopyBuffer.get());
+                    lastMediaSegmentServedAt = SystemClock.elapsedRealtime();
+                } catch (IOException error) {
+                    if (error instanceof PlaybackReplayCache.ReadFailure) replayCache.readFailed(originUrl);
+                    throw new StreamingResponseException(error);
+                } finally { try { cached.close(); } catch (IOException ignored) {} }
+                return;
+            }
             if (!needsCjsTransform(originUrl) && (directMedia || canStreamWithoutRewrite(originUrl))
                     && !hasAesSegmentKey(originUrl)
                     && !hasGenericSegmentTask(originUrl)) {
-                streamUpstream(originUrl, rangeHeader, output);
+                streamUpstream(originUrl, rangeHeader, output, directMedia);
                 return;
             }
             ProxyResponse response = fetch(originUrl);
@@ -850,6 +903,12 @@ final class HlsProxyServer implements Closeable {
                 sampleSourceVideo(response.body);
             }
             writeOk(output, response.contentType, response.body);
+            // Cache the delivered, rewritten/decrypted representation, never ciphertext.
+            // fetch() returns the complete transformed body with a 200 response,
+            // including when IJK sent Range: bytes=0- for the manifest.
+            if (finiteMedia)
+                replayCache.offer(originUrl, response.contentType, null, response.body.length,
+                        0L, response.body, 0, response.body.length);
             if (transportStream && httpAttempt == playbackHttpError.token()) {
                 if (Build.VERSION.SDK_INT < 24 && response.body.length <= 16 * 1024 * 1024)
                     screenshotSegment = response.body;
@@ -897,6 +956,7 @@ final class HlsProxyServer implements Closeable {
 
     private ProxyResponse fetch(String originUrl) throws IOException {
         if (!running) throw new SocketException("Proxy closed");
+        if (playbackSuspended) throw new java.io.InterruptedIOException("HLS downloads suspended");
         byte[] startup = startupPlaylists.take(originUrl, SystemClock.elapsedRealtime());
         if (startup != null) return new ProxyResponse("application/vnd.apple.mpegurl", startup);
         byte[] resolved = resolvedPlaylists.take(originUrl, SystemClock.elapsedRealtime());
@@ -914,6 +974,7 @@ final class HlsProxyServer implements Closeable {
     }
 
     private ProxyResponse fetchNetwork(String originUrl) throws IOException {
+        if (playbackSuspended) throw new java.io.InterruptedIOException("HLS downloads suspended");
         if (metadataProbeMode) synchronized (probeManifests) {
             ProbeManifestSnapshot saved = probeManifests.get(originUrl);
             if (saved != null && SystemClock.elapsedRealtime() - saved.created < 10000L) return saved.response;
@@ -924,6 +985,8 @@ final class HlsProxyServer implements Closeable {
                 && isTransportStream(originUrl, null);
         int attemptLimit = cctvSegment ? 1 : CCTV_EDGE_MAX_ATTEMPTS;
         for (int attempt = 1; attempt <= attemptLimit; attempt++) {
+            if (playbackSuspended || Thread.currentThread().isInterrupted())
+                throw new java.io.InterruptedIOException("HLS download cancelled");
             try {
                 ProxyResponse response = fetchOnce(originUrl);
                 if (metadataProbeMode && response.body.length <= 256 * 1024 && isPlaylistBody(response.body))
@@ -1106,7 +1169,8 @@ final class HlsProxyServer implements Closeable {
          * CCTV programme pages start on a grey frame or expose a broken duration. Keep a
          * finite playlist intact and only rewrite its resource URLs through this proxy.
          */
-        if (!isFiniteMediaPlaylist(body)) {
+        finiteMedia = isFiniteMediaPlaylist(body);
+        if (!finiteMedia) {
             String buffered = rewriteBufferedMediaPlaylist(policyUrl, base, lines);
             if (buffered != null) {
                 return buffered;
@@ -1148,7 +1212,7 @@ final class HlsProxyServer implements Closeable {
         }
     }
 
-    private void streamUpstream(String originUrl, String rangeHeader, OutputStream output)
+    private void streamUpstream(String originUrl, String rangeHeader, OutputStream output, boolean directMedia)
             throws IOException {
         IOException lastError = null;
         long requestStarted = SystemClock.elapsedRealtime();
@@ -1192,7 +1256,7 @@ final class HlsProxyServer implements Closeable {
                 InputStream upstream = connection.getInputStream();
                 StreamRange originalRange = status == HttpURLConnection.HTTP_PARTIAL
                         ? StreamRange.parse(contentRange, contentLength)
-                        : contentLength > 0 && canStreamWithoutRewrite(originUrl)
+                        : contentLength > 0 && (directMedia || canStreamWithoutRewrite(originUrl))
                         ? new StreamRange(0L, contentLength - 1L, contentLength) : null;
                 String entityTag = connection.getHeaderField("ETag");
                 int bodyRetries = 0;
@@ -1259,6 +1323,10 @@ final class HlsProxyServer implements Closeable {
                         // Even Content-Length segments may be paced by the CDN.
                         // Publish every read before the next network read can block.
                         output.flush();
+                        if (originalRange != null && (finiteMedia || directMedia
+                                && !contentType.toLowerCase(java.util.Locale.US).contains("mpegurl")))
+                            replayCache.offer(originUrl, contentType, entityTag, originalRange.total,
+                                    originalRange.start + received, buffer, 0, count);
                         received += count;
                         if (bitrateSample != null) bitrateSample.add(buffer, 0, count);
                         recordUpstreamBytes(count,true);
@@ -1640,7 +1708,7 @@ final class HlsProxyServer implements Closeable {
 
     private List<String> prefetchGenericSegments(List<String> segments, int count) {
         List<String> selected = new ArrayList<String>();
-        if (!running || segments == null || segments.isEmpty()) {
+        if (!running || playbackSuspended || segments == null || segments.isEmpty()) {
             return selected;
         }
         synchronized (genericSegmentTasks) {
@@ -2258,7 +2326,7 @@ final class HlsProxyServer implements Closeable {
 
     private void pollCctvPlaylistForPrefetch() {
         String playlistUrl = monitoredCctvPlaylistUrl;
-        if (!running || playlistUrl == null) {
+        if (!running || playbackSuspended || playlistUrl == null) {
             return;
         }
         HttpURLConnection connection = null;
@@ -2316,7 +2384,7 @@ final class HlsProxyServer implements Closeable {
 
     private void prefetchCctvSegment(final String originUrl) {
         ownsH5eWork=true;
-        if (!running) {
+        if (!running || playbackSuspended) {
             return;
         }
         FutureTask<byte[]> task;
@@ -2346,7 +2414,7 @@ final class HlsProxyServer implements Closeable {
     }
 
     private void prefetchCmgSegment(final String originUrl) {
-        if (!running) {
+        if (!running || playbackSuspended) {
             return;
         }
         FutureTask<byte[]> task;
@@ -3656,6 +3724,7 @@ final class HlsProxyServer implements Closeable {
                 + " upstreamBytes=" + upstreamDownloadedBytes.get());
         stopServing();
         upstreamConnections.close();
+        replayCache.close();
         synchronized (probeManifests) { probeManifests.clear(); }
         sourceMetadataProbe.close();
         screenshotSegment = null;
@@ -3745,7 +3814,7 @@ final class HlsProxyServer implements Closeable {
             float frameRate = parseTransportStreamFrameRate(sample);
             if (frameRate <= 0f) return;
             sourceVideoFrameRate = frameRate;
-            Resolution resolution = parseTransportStreamResolution(sample);
+            Resolution resolution = Build.VERSION.SDK_INT <= 15 ? parseTransportStreamResolution(sample) : null;
             if (resolution != null) {
                 sourceVideoWidth = resolution.width;
                 sourceVideoHeight = resolution.height;

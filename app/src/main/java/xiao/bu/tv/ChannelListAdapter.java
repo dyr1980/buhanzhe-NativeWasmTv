@@ -112,6 +112,7 @@ final class ChannelListAdapter extends BaseAdapter {
     }
 
     void setSelectedIndex(int selectedIndex) {
+        if (this.selectedIndex == selectedIndex) return;
         this.selectedIndex = selectedIndex;
         notifyDataSetChanged();
     }
@@ -155,17 +156,21 @@ final class ChannelListAdapter extends BaseAdapter {
 
     @Override
     public View getView(int position, View convertView, ViewGroup parent) {
+        if(TvUiPlugin.current()!=null){try{return pluginRow(position,convertView);}catch(RuntimeException|LinkageError failure){TvUiPlugin.rejectRenderer(inflater.getContext(),failure);convertView=null;}}
         ViewHolder holder;
         boolean favoriteFocused = !showingGroups && position == favoriteFocusIndex;
         // A recycled row can survive an adapter or group/channel mode change.
         // Never bind a group holder (without program/favorite views) as a channel.
         ViewHolder recycled = convertView != null && convertView.getTag() instanceof ViewHolder
                 ? (ViewHolder) convertView.getTag() : null;
-        if (recycled == null || recycled.groupRow != showingGroups) {
-            convertView = inflater.inflate(showingGroups
-                    ? R.layout.item_channel_group : R.layout.item_channel, parent, false);
+        if (recycled == null || recycled.groupRow != showingGroups
+                || recycled.themeRevision != TvUiPlugin.revision()) {
+            xiao.bu.tv.skin.TvUi renderer=TvUiPlugin.provider();
+            convertView = renderer==null?inflater.inflate(showingGroups?R.layout.item_channel_group:R.layout.item_channel,parent,false)
+                    :renderer.create(parent.getContext(),showingGroups?"group-row":"channel-row",new android.os.Bundle(),new View[]{parent},null);
             holder = new ViewHolder();
             holder.groupRow = showingGroups;
+            holder.themeRevision = TvUiPlugin.revision();
             holder.number = (TextView) convertView.findViewById(R.id.channel_number);
             holder.name = (TextView) convertView.findViewById(R.id.channel_item_name);
             holder.count = (TextView) convertView.findViewById(R.id.channel_group_count);
@@ -178,7 +183,10 @@ final class ChannelListAdapter extends BaseAdapter {
         } else {
             holder = (ViewHolder) convertView.getTag();
         }
-        uiScaleHelper.apply(convertView, uiScale);
+        if (holder.themeScale != uiScale) {
+            uiScaleHelper.apply(convertView, uiScale);
+            holder.themeScale = uiScale;
+        }
 
         if (showingGroups) {
             ChannelCatalog.Group group = groups[position];
@@ -196,14 +204,7 @@ final class ChannelListAdapter extends BaseAdapter {
             holder.number.setText(ChannelCatalog.displayNumber(
                     channelGroupIndex, position));
             holder.name.setText(channel.name);
-            String title = "";
-            if (epgManager != null) {
-                long now = System.currentTimeMillis();
-                for (EpgManager.Program program : epgManager.programsFor(channel)) {
-                    if (program.startMillis > now) break;
-                    if (program.isPlaying(now)) { title = program.title; break; }
-                }
-            }
+            String title = holder.currentProgram.titleFor(epgManager, channel, System.currentTimeMillis());
             holder.program.setText(title);
             holder.program.setVisibility(title.length() == 0 ? View.GONE : View.VISIBLE);
             int sourceCount = Math.max(1, channel.sourceCount());
@@ -232,7 +233,26 @@ final class ChannelListAdapter extends BaseAdapter {
         return convertView;
     }
 
+    private View pluginRow(int position,View old){
+        float rowScale=inflater.getContext() instanceof xiao.bu.tv.skin.SharedTvUi.Viewport
+                ?((xiao.bu.tv.skin.SharedTvUi.Viewport)inflater.getContext()).themeScale():uiScale;
+        UiRow holder=old!=null&&old.getTag() instanceof UiRow?(UiRow)old.getTag():null;
+        if(holder==null||holder.revision!=TvUiPlugin.revision()||holder.group!=showingGroups||Math.abs(holder.scale-rowScale)>.001f){holder=new UiRow();holder.scale=rowScale;holder.revision=TvUiPlugin.revision();holder.group=showingGroups;holder.state.putBoolean("group",showingGroups);old=TvUiPlugin.provider().create(inflater.getContext(),showingGroups?"group-row":"channel-row",holder.state,null,null);old.setTag(holder);}
+        android.os.Bundle b=holder.state;
+        b.putBoolean("selected",position==selectedIndex);b.putBoolean("favoriteFocused",position==favoriteFocusIndex);b.putBoolean("playing",!showingGroups&&position==playingIndex);
+        if(showingGroups){b.putString("title",groups[position].title);}
+        else{Channel channel=channels[position];b.putString("title",channel.name);b.putString("number",ChannelCatalog.displayNumber(channelGroupIndex,position));
+            String title=holder.currentProgram.titleFor(epgManager,channel,System.currentTimeMillis());
+            b.putString("program",title);b.putBoolean("favorite",favoriteListener!=null&&favoriteListener.isFavorite(position));
+        }
+        TvUiPlugin.provider().update(old,b);return old;
+    }
+    private static final class UiRow{int revision;float scale;boolean group;final android.os.Bundle state=new android.os.Bundle();final EpgManager.CurrentProgram currentProgram=new EpgManager.CurrentProgram();}
+
     private static final class ViewHolder {
+        final EpgManager.CurrentProgram currentProgram = new EpgManager.CurrentProgram();
+        int themeRevision;
+        float themeScale = -1;
         boolean groupRow;
         TextView number;
         TextView name;

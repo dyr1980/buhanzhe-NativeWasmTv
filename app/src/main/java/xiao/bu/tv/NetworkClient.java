@@ -95,15 +95,27 @@ final class NetworkClient {
 
     /** Bound the whole component request, including redirects and internal connection retries. */
     static HttpURLConnection openComponent(URL url, boolean nativeBinary) throws IOException {
-        final OkUrlFactory componentFactory = new OkUrlFactory(sharedClient().newBuilder()
-                .callTimeout(nativeBinary ? 30 : 8, TimeUnit.SECONDS)
-                .retryOnConnectionFailure(false).build());
-        String github = GithubProxy.githubSource(url.toString());
-        if (github != null) {
-            if (!GithubProxy.isEnabled()) return componentFactory.open(new URL(github));
-            return new GithubConnection(url, target -> componentFactory.open(target));
+        return openComponent(url, false, nativeBinary ? 30000 : 8000);
+    }
+
+    static HttpURLConnection openComponent(URL url, boolean http1, int timeoutMs) throws IOException {
+        if (timeoutMs <= 0) throw new java.net.SocketTimeoutException("Plugin download timeout");
+        OkHttpClient.Builder builder=sharedClient().newBuilder().retryOnConnectionFailure(false);
+        if(http1) builder.protocols(java.util.Collections.singletonList(okhttp3.Protocol.HTTP_1_1));
+        final OkHttpClient transport=builder.build();
+        final long deadline=System.nanoTime()+TimeUnit.MILLISECONDS.toNanos(timeoutMs);
+        GithubConnection.Opener opener=target -> {
+            long remaining=deadline-System.nanoTime();
+            if(remaining<=0) throw new java.net.SocketTimeoutException("Plugin download timeout");
+            return new OkUrlFactory(transport.newBuilder().callTimeout(remaining,TimeUnit.NANOSECONDS)
+                    .build()).open(target);
+        };
+        String github=GithubProxy.githubSource(url.toString());
+        if(github!=null) {
+            if(!GithubProxy.isEnabled()) return opener.open(new URL(github));
+            return new GithubConnection(url,opener);
         }
-        return componentFactory.open(url);
+        return opener.open(url);
     }
 
     /** Shared OkHttp client for callers that need response headers or streaming bodies. */

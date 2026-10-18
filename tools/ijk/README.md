@@ -57,7 +57,32 @@ MediaCodec feeding paths. Previously the JNI writer's `-1` failure passed an
 `if (!copy_size)` check and was converted to an unsigned buffer length before
 being submitted to Android. The JNI writer now also checks direct buffer address
 and capacity before copying; queue arguments must fit Android's signed JNI ints.
-Positive partial writes retain the existing packet continuation behaviour.
+Positive short writes now trigger a bounded decoder input-buffer enlargement,
+instead of submitting arbitrary fragments as independent pictures. Both feeding
+paths retain the complete key packet and its original timestamps for retry.
+If reopening occurs on a dependent picture, input resumes at the next keyframe.
+A vendor that ignores the requested size reports an error through the existing
+player recovery path; it cannot repeatedly submit a truncated picture or grow
+buffers without a bound (16 MiB compressed input). Ordinary successful writes
+add no allocations, decoding, GPU readback or extra threads.
+
+Packets explicitly marked corrupt by the demuxer (including TS continuity loss)
+are discarded before codec input. The old reference pictures are flushed and
+dependent packets are skipped until a clean keyframe. Unmarked source damage
+and vendor-specific HDR output faults cannot be inferred from these flags.
+
+`apply-parser-damage-patches.cjs` preserves demuxer corruption flags through
+FFmpeg 3.4's picture parser, including the picture buffered until the next PES.
+Without this patch, a TS continuity error can reach MediaCodec as a clean packet.
+Parser close/seek clears the pending flag. This uses one private integer per
+stream and no per-packet allocation. Rebuild **libijkffmpeg.so** as well as the
+player. `test-parser-damage.c` reads the actual library's demuxed/parsed packets
+to distinguish a clean TS from a TS with a deliberately missing video packet.
+
+`apply-complete-input-patches.cjs` installs this policy in both codec feeders.
+`test-codec-input.c` checks capacity failures, larger later pictures, keyframe
+resynchronization, ignored requests and integer/size limits. Rebuild the player
+for each ABI after applying the overlay; Gradle alone is insufficient.
 
 The supplied CodecLooper stack ends at ACodec's input-buffer assertions, but
 does not include the assertion message or exact system build. Older AOSP checks
@@ -344,9 +369,30 @@ hardware/software setting. `currentSourceStats` in `/api/media` exposes the same
 
 Advanced settings expose four persisted `hdrMode` values (`hardware`, `mapping`, `hardware_sdr`, `bt709`) through `/api/settings` and `/api/state?view=advanced`. The former `passthrough` selection is accepted as a legacy alias and normalized to `hardware`, preserving its identical native mode 1 output policy. Changing modes restarts the current channel. Each player receives `ntv-hdr-mode` (0/1/2/3); policy is carried in that player's MediaFormat rather than a process-global colour switch.
 
-* **转为 SDR / mapping** (native mode 0) explicitly converts HDR10/HLG to SDR even if the display advertises HDR. API 17–30 use a hardware decoder -> SurfaceTexture -> one GLES tone-mapping pass -> SurfaceView. The shared shader uses BT.2446 method-B reference viewing conditions (291-nit HLG, system gamma 1.03), a Mobius highlight shoulder and one common RGB multiplier to retain colour ratios. This is an adaptation inspired by method B, not its full ICTCP colour-volume implementation. PQ is matched at the 1000-nit HLG/PQ bridge. SDR BT.2020 gamut conversion preserves neutral code values using matching BT.1886 display decoding/encoding. Decoder output explicitly tagged BT.709 SDR bypasses the extra conversion. Codec static metadata supplies the PQ peak (1000-nit fallback); it does not rescale scene-relative HLG. API 31+ requests codec HDR -> SDR conversion and verifies acknowledgement before playback, otherwise retaining the existing FFmpeg fallback.
+* **转为 SDR / mapping** (native mode 0) explicitly converts HDR10/HLG to SDR even if the display advertises HDR. API 17–30 use a hardware decoder -> SurfaceTexture -> one GLES tone-mapping pass -> SurfaceView. The shared shader uses BT.2446 method-B reference viewing conditions (291-nit HLG, system gamma 1.03), a Mobius highlight shoulder and one common RGB multiplier to retain colour ratios. This is an adaptation inspired by method B, not its full ICTCP colour-volume implementation. PQ is matched at the 1000-nit HLG/PQ bridge. SDR BT.2020 gamut conversion preserves neutral code values using matching BT.1886 display decoding/encoding. Decoder output explicitly tagged BT.709 SDR bypasses the extra conversion. Codec static metadata supplies the PQ peak (1000-nit fallback); it does not rescale scene-relative HLG. API 31+ requests codec HDR -> SDR conversion and verifies acknowledgement before playback. If configure throws or the codec reports that the request is unsupported, the same hardware codec resets once and retries with GPU mapping. A bounded process cache remembers rejected codec/format profiles, avoiding repeated failed requests; it does not force software decoding.
 * **GPU 转为 SDR / hardware_sdr** sends native mode 3: hardware decoder -> SurfaceTexture -> GPU HDR-to-SDR pass -> SurfaceView on API 17+, including API 31+. It bypasses decoder tone mapping for devices whose codec conversion produces incorrect colours. Explicit software decoding and hardware-decoder failure retain the software fallback; ordinary SDR keeps direct output without an extra GPU bridge.
 * **自动 / hardware (default)** sends native mode 1. It keeps original HDR SurfaceView output only on API 26+ when the actual output display advertises the corresponding format: HDR10/HDR10+ for PQ, HLG for HLG. Otherwise it selects HDR-to-SDR mapping, requesting decoder mapping on API 31+ and using GPU mapping on older devices. Display capability checks are API-isolated for legacy compatibility; no manufacturer/model checks are used. A physically compatible decoder/display/HDMI chain is still required. Software decoding continues to map to SDR.
+
+On API 29+, the GPU bridge tries GLES 3 and uses raw YUV sampling only when
+`GL_EXT_YUV_target` is advertised and the shader links. The YUV -> RGB matrix
+uses the validated source depth (8/10/12 bit), full/limited range and output
+colour standard before PQ/HLG mapping. The sampler and calculations use high
+precision, avoiding an intermediate driver RGB conversion. BT.709 override
+applies its matrix once; RGB compatibility output retains its existing matrix
+correction. Unsupported contexts/extensions/shaders retain the GLES 2 external
+RGB path. Ordinary SDR remains direct and allocates no bridge. The older RGB
+path cannot recover precision or highlights already lost by a vendor conversion;
+an Android version alone does not guarantee correct HDR support. API 14–16
+retain the existing software renderer rather than loading EGL14 classes.
+
+No Media3 runtime dependency is included. This implementation follows the
+[raw YUV input principle](https://github.com/androidx/media/blob/release/libraries/effect/src/main/java/androidx/media3/effect/DefaultShaderProgram.java)
+without importing its player/effect graph. Android documents
+[codec tone mapping](https://developer.android.com/reference/android/media/MediaFormat#KEY_COLOR_TRANSFER_REQUEST)
+from API 31 and [GPU tone mapping capability requirements](https://developer.android.com/media/media3/transformer/supported-formats#hdr).
+`python tests/hdr-codec-fallback.test.py` fault-injects accepted/rejected/throwing
+codec transactions and checks API 14–37 policy plus 24 matrix/range/depth cases.
+These host checks do not replace physical API 31+ codec validation.
 
 When the GPU bridge receives a partial decoder output format, it retains the configured colour standard. An unknown transfer, or a reported SDR/linear transfer without a known colour standard on an HDR source, retains the validated source transfer. This prevents an incomplete tag from silently disabling HDR mapping. Complete known SDR output tags remain authoritative, avoiding double mapping when the decoder actually returns SDR. `decoderColor` logs the original decoder fields and identifies this fallback; it does not relabel the source bit depth.
 
@@ -355,6 +401,17 @@ HDR, decoder to SDR, or software to SDR), separately from the source HDR label.
 `currentSourceStats.colorOutput` and `decoderColor` expose the route and the GPU
 bridge's reported decoder standard/transfer/range. A source HLG label alone does
 not establish that the output display received HDR or that mapping ran.
+
+The debug HUD also shows `displayHdrStatus`. On API 34+, the actual video View's
+Display may expose a live HDR/SDR brightness ratio; `displayHdrSdrRatio` contains
+that value, or JSON null when unavailable. Public API reflection preserves the
+current SDK/toolchain, with at most one read per second and no legacy-version,
+audio-only or pre-first-frame query. Debug-off playback adds no polling.
+The label is "屏幕HDR余量 2.00×", never "HDR activated": a brightness ratio or
+`Display.isHdr()` does not prove that this application's video activated a
+physical panel/HDMI HDR mode. Unsupported APIs, invalid displays and vendor
+errors show "屏幕HDR状态未知" rather than inventing a false inactive/active state.
+See [Display.getHdrSdrRatio](https://developer.android.com/reference/android/view/Display#getHdrSdrRatio()).
 * **强制 BT.709（色彩修正） / bt709** overrides MediaCodec colour standard/transfer to BT.709/SDR, omits HDR static metadata, and uses the BT.709 YUV matrix with tone mapping disabled for software frames. For hardware streams originally tagged HDR or a different colour standard, a GPU pass produces an SDR RGB Surface even if the vendor continues to attach HDR tags to its decoded buffers. It reinterprets the decoder's reported YUV matrix as BT.709 in the encoded domain, with no HDR luminance mapping. Correctly tagged BT.709 SDR keeps direct output. The mode preserves actual bit depth and range. This is a manual compatibility mode for incorrectly tagged SDR sources, not HDR-to-SDR conversion; true PQ/HLG sources can look washed out in this mode. Vendor behaviour still needs validation on each device. Dolby Vision retains its separate decoder policy.
 
 Mapping/hardware/hardware_sdr leave normal SDR colour metadata unchanged. New installs and absent/invalid preferences default to `hardware`, which the app explicitly supplies as native mode 1. Saved `passthrough` preferences migrate to `hardware`; other saved selections persist. The separate decoder setting controls hardware/software selection. `test-hdr-display-policy.java` verifies automatic output across API levels and advertised HDR capabilities, SDR mapping paths, unknown display fallback, and legacy preference migration.

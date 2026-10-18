@@ -28,7 +28,7 @@ final class LegacyWebSession {
     String channelTitle = "", channelGroup = "";
     int request = -1, pid, retiredPid, sequence;
     float scale = 1f;
-    boolean active, visible;
+    boolean active, visible, foreground;
     boolean htmlMimeOverride;
     Messenger browser;
     IBinder.DeathRecipient death;
@@ -43,7 +43,7 @@ final class LegacyWebSession {
         channelTitle = title; channelGroup = group;
         htmlMimeOverride = forceHtml;
         token = UUID.randomUUID().toString();
-        active = visible = true;
+        active = visible = foreground = true;
         state = new Bundle(); state.putString("url", url);
         started = lastBeat = SystemClock.elapsedRealtime();
         owner.setVisibility(android.view.View.VISIBLE);
@@ -84,6 +84,10 @@ final class LegacyWebSession {
             catch (android.os.RemoteException error) { fail("网页进程已退出"); return; }
             send("configuration", configuration);
             send("scale", bundle("scale", scale));
+            if (owner.getContext() instanceof android.app.Activity) {
+                send("brightness", bundle("brightness",
+                        PlaybackBrightness.percent((android.app.Activity) owner.getContext())));
+            }
             Bundle open = bundle("url", url); open.putInt("request", request); open.putString("script", script);
             open.putBoolean("htmlMimeOverride", htmlMimeOverride);
             open.putString("channelTitle", channelTitle); open.putString("channelGroup", channelGroup);
@@ -94,7 +98,15 @@ final class LegacyWebSession {
             if (failure.length() > 0) { fail(failure); return; }
         } else if (message.what == EVENT) {
             Bundle snapshot = data.getBundle("state");
-            if (snapshot != null) state = snapshot;
+            if (snapshot != null) {
+                state = snapshot;
+                boolean next = state.getBoolean("foreground", false);
+                if (foreground != next) {
+                    foreground = next;
+                    MainActivity activity = LocalPlayerRegistry.localInputOwner();
+                    if (activity != null) activity.reconcilePlaybackVisibility();
+                }
+            }
             owner.deliverLegacyEvent(data.getString("event", ""), data, request);
         } else if (message.what == RESULT) {
             int id = data.getInt("id");
@@ -143,7 +155,7 @@ final class LegacyWebSession {
         if (active && pid == 0) pid = startingBrowserPid();
         Messenger retiringBrowser = browser;
         String retiringToken = token;
-        active = visible = false;
+        active = visible = foreground = false;
         handler.removeCallbacks(watch);
         if (browser != null && death != null) {
             try { browser.getBinder().unlinkToDeath(death, 0); }
@@ -167,6 +179,8 @@ final class LegacyWebSession {
         java.util.ArrayList<WebSourceView.SmartContextCallback> inspecting = new java.util.ArrayList<>(inspections.values());
         inspections.clear();
         if (current == this) current = null;
+        MainActivity activity = LocalPlayerRegistry.localInputOwner();
+        if (activity != null) activity.reconcilePlaybackVisibility();
         for (WebSourceView.MediaControlResult callback : pending) callback.complete("网页已关闭");
         for (WebSourceView.SmartContextCallback callback : inspecting) callback.onResult(new JSONObject());
     }
@@ -178,6 +192,10 @@ final class LegacyWebSession {
         catch (android.os.RemoteException error) { fail("网页进程通信中断"); }
     }
     void command(String action) { send(action, new Bundle()); }
+    void clearCache(WebSourceView.MediaControlResult callback) {
+        int id=++sequence;results.put(id,callback);Bundle data=new Bundle();data.putInt("id",id);send("cache",data);
+        handler.postDelayed(()->{WebSourceView.MediaControlResult pending=results.remove(id);if(pending!=null)pending.complete("网页缓存清理超时");},5000L);
+    }
     void configure(Bundle value) { configuration = value; send("configuration", value); }
     void hide() { visible = false; command("hide"); owner.setVisibility(android.view.View.GONE); }
     private Intent browserIntent() {
@@ -216,4 +234,5 @@ final class LegacyWebSession {
     static JSONObject json(String value) { try { return new JSONObject(value); } catch (Exception ignored) { return new JSONObject(); } }
     static Bundle bundle(String key, String value) { Bundle b = new Bundle(); b.putString(key, value); return b; }
     static Bundle bundle(String key, float value) { Bundle b = new Bundle(); b.putFloat(key, value); return b; }
+    static Bundle bundle(String key, int value) { Bundle b = new Bundle(); b.putInt(key, value); return b; }
 }
