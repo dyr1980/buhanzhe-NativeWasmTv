@@ -1,0 +1,2 @@
+# Generated frontend hashes must survive checkout on Windows unchanged.
+assets/web/** -text

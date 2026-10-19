@@ -37,10 +37,9 @@ final class TvUiMenu {
         int verticalInset=menu&&"ui2".equals(style.id)?Math.round(8*d):inset;
         int horizontalInset=menu&&"ui3".equals(style.id)?Math.round(24*d):inset;
         int height=menu?Math.max(1,anchor.getHeight()-2*verticalInset):ViewGroup.LayoutParams.MATCH_PARENT;
-        final int baseWidth=width;
         final int maxWidth=Math.max(1,anchor.getWidth()-2*horizontalInset);
         if(menu&&content instanceof xiao.bu.tv.skin.SharedTvUi.MenuWidth)
-            width=Math.min(maxWidth,Math.max(baseWidth,((xiao.bu.tv.skin.SharedTvUi.MenuWidth)content).preferredWidth(height)));
+            width=Math.min(maxWidth,((xiao.bu.tv.skin.SharedTvUi.MenuWidth)content).preferredWidth(height));
         // Android's focusable PopupWindow consumes BACK itself and only dismisses.
         // Keep exit keys in the Activity, forwarding DPAD/ENTER to the same renderer.
         popup=new PopupWindow(content,width,height,false);exitEvents=exit?events:null;

@@ -66,8 +66,6 @@ final class FoliaServer {
                 byte[] data=read(asset,24*1024*1024);
                 if(path.endsWith("index.html")) {
                     String html=new String(data,"UTF-8");
-                    html=html.replaceAll("<script[^>]*src=\"https://music\\.aikun-bili\\.top/\\.webmcp/[^>]*></script>","")
-                            .replaceAll("<script[^>]*src=\"https://static\\.cloudflareinsights\\.com/[^>]*></script>","");
                     html=html.replace("<head>","<head><script src=\"/ntv-bridge.js\"></script>");
                     data=html.getBytes("UTF-8");
                 }

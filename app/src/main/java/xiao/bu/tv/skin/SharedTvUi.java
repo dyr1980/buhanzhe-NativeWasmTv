@@ -90,7 +90,11 @@ public abstract class SharedTvUi implements TvUi {
         void selected(Canvas c,float l,float t,float r,float b){
             if(theme()==5){box(c,l,t,r,b,0xffe9f3ff,Math.min(20,(b-t)/2));return;}
             if(theme()==6){box(c,l,t,r,b,0xff343434,4);box(c,l,t+7,l+3,b-7,accent(),1);return;}
-            if(theme()==4)return;
+            if(theme()==4){
+                box(c,l,t,r,b,0xff245b78,4);
+                box(c,l,t+6,l+3,b-6,accent(),1);
+                return;
+            }
             if(theme()==2&&(gradient==null||l!=gradientLeft||r!=gradientRight)){gradient=new LinearGradient(l,0,r,0,0xff29a6de,0xff1bbdbd,Shader.TileMode.CLAMP);gradientLeft=l;gradientRight=r;}p.setShader(theme()==2?gradient:null);
             boolean listRow=this instanceof Row||this instanceof EpgRow;
             rect.set(l,t,r,b);p.setColor(theme()==3&&listRow?0xff209cf0:accent());float rr=theme()==2?(b-t)/2:theme()==3&&listRow?6:4;c.drawRoundRect(rect,rr,rr,p);p.setShader(null);
@@ -102,7 +106,7 @@ public abstract class SharedTvUi implements TvUi {
         Hud(Context c,Bundle state){super(c);float d=scale(c);setText(state.getString("text",""));setTextColor(0xffeeeeef);setTextSize(TypedValue.COMPLEX_UNIT_PX,20*d);setSingleLine(true);setIncludeFontPadding(false);setGravity(Gravity.CENTER);setPadding(Math.round(9*d),Math.round(4*d),Math.round(9*d),Math.round(4*d));setShadowLayer(1*d,0,1*d,0x88000000);background(this,theme()==6?0xc0141414:theme()==5?0xb31a2636:theme()==3?0x60000000:0x500d1720,(theme()==6?5:28)*d);setClickable(false);setFocusable(false);}
     }
     private final class Panel extends ViewGroup {
-        final View[] slots;final float d;final Paint shade=new Paint();final RectF shadeBounds=new RectF();int channelPitch;
+        final View[] slots;final float d;final Paint shade=new Paint();final RectF shadeBounds=new RectF();int channelPitch,groupPitch;
         Panel(Context c,View[] views){super(c);d=scale(c);slots=views;setWillNotDraw(false);background(this,panel(),radius()*d);
             for(View v:views){if(v.getParent()!=null)((ViewGroup)v.getParent()).removeView(v);addView(v);}
             for(int i=0;i<2;i++){ListView list=(ListView)slots[i];list.setPadding(0,0,0,0);list.setDivider(null);list.setSelector(new ColorDrawable(Color.TRANSPARENT));list.setCacheColorHint(Color.TRANSPARENT);}
@@ -130,6 +134,15 @@ public abstract class SharedTvUi implements TvUi {
             int g=Math.min(groupDesired,Math.round(base*.42f));
             int channel=Math.max(1,base-g-handle),vertical=theme()==4?0:Math.round((theme()==3?20:theme()==2?12:6)*d);
             channelPitch=fittedRowHeight(Math.max(1,h-vertical*2),Math.round(rowHeight()*d));
+            groupPitch=Math.round(rowHeight()*d);
+            if(theme()==3){
+                int available=Math.max(1,h-vertical*2);
+                int count=((ListView)slots[0]).getCount();
+                // A fractional final row must not hide the last category at 90%.
+                // Fit one almost-complete page; longer catalogues still paginate.
+                int capacity=Math.max(1,(available+groupPitch-1)/groupPitch);
+                if(count>0&&count<=capacity)groupPitch=Math.max(1,available/count);
+            }
             for(int i=0;i<slots.length;i++){
                 int width=i==0?g:i==1?channel:i==2?handle:epg;
                 int height=i==2?Math.round(110*d):h-vertical*2;
@@ -163,8 +176,9 @@ public abstract class SharedTvUi implements TvUi {
         protected void drawableStateChanged(){super.drawableStateChanged();invalidate();}
         Row(Context c,Bundle b){super(c);d=scale(c);group=b.getBoolean("group");bind(b);setLayoutParams(new AbsListView.LayoutParams(-1,Math.round(rowHeight()*d)));}
         protected void onMeasure(int widthSpec,int heightSpec){
-            if(!group&&getParent() instanceof ListView&&getParent().getParent() instanceof Panel){
-                int pitch=((Panel)getParent().getParent()).channelPitch;
+            if(getParent() instanceof ListView&&getParent().getParent() instanceof Panel){
+                Panel panel=(Panel)getParent().getParent();
+                int pitch=group?panel.groupPitch:panel.channelPitch;
                 if(pitch>0)heightSpec=MeasureSpec.makeMeasureSpec(pitch,MeasureSpec.EXACTLY);
             }
             super.onMeasure(widthSpec,heightSpec);
@@ -266,7 +280,7 @@ public abstract class SharedTvUi implements TvUi {
                 cardLines(canvas,270,w-294,d);
                 canvas.restore();return;
             }
-            box(canvas,0,0,w,h,theme()==2?0xe61b3335:theme()==3?0xd9000000:0x99252c38,theme()==4?0:h/2);
+            box(canvas,0,0,w,h,theme()==2?0xe61b3335:theme()==3?panel():0x99252c38,theme()==4?0:h/2);
             float split=theme()==3?230:theme()==2?294:194;
             String title=data.getString("title",""),number=data.getString("number","").replace(" |","");if(theme()==3&&number.length()>0&&number.length()<4)number=("0000"+number).substring(number.length());
             if(theme()==2){center(canvas,number,31,split-19,54,40,0xffefefef);center(canvas,title,31,split-19,89,22,0xffb8c4c5);}
@@ -357,15 +371,23 @@ public abstract class SharedTvUi implements TvUi {
             for(int i=0;i<titles.length;i++) {
                 Bundle all=events.options(i);
                 String[] items=all==null?null:all.getStringArray("items");
-                if(items!=null)for(String title:items)left=Math.max(left,measure.measureText(title));
+                if(items!=null)for(String title:items){
+                    boolean radio=all.getInt("selected",-1)>=0||title.endsWith(" ●")||title.endsWith(" ○");
+                    if(title.endsWith(" ●")||title.endsWith(" ○"))title=title.substring(0,title.length()-2);
+                    left=Math.max(left,Math.min(font*6,measure.measureText(title)+(radio?20:0)));
+                }
             }
             // Restore any host-side option snapshot for the active category.
             if(category>=0)events.options(category);
-            // Include the pill inset, radio mark and breathing room on both sides.
-            left+=theme()==2?60:40;right+=theme()==2?44:24;
-            float lw=theme()==3?175:theme()==4?142:1;
-            float rw=theme()==2?1.08f:theme()==3?151:theme()==4?133:1;
-            return (int)Math.ceil(Math.max(left/lw,right/rw)*(lw+rw)*d);
+            // Both columns use the same outer inset; reserve radio space only
+            // for rows that actually draw a mark.
+            float padding=theme()==2?28:24;
+            left+=padding;right+=padding+8;
+            // Size each column independently: a long option must not inflate the
+            // category column through equal layout weights.
+            ((LinearLayout.LayoutParams)options.getLayoutParams()).weight=left;
+            ((LinearLayout.LayoutParams)categories.getLayoutParams()).weight=right;
+            return (int)Math.ceil((left+right)*d);
         }
         boolean remoteNavigation,focusOptions;
         int naturalPitch(){return menuPitch(d);}
@@ -447,7 +469,7 @@ public abstract class SharedTvUi implements TvUi {
                 boolean focus=main?active&&!optionFocus:optionFocus&&index>=choices.getInt("firstEnabled",0)&&options.getSelectedItemPosition()==index;
                 if(focus){
                     if(theme()==4){box(canvas,8,3,w-8,h-3,(accent()&0x00ffffff)|0x26000000,0);box(canvas,8,10,11,h-10,accent(),0);}
-                    else selected(canvas,theme()==2?12:0,theme()==2?9:0,w-(theme()==2?12:0),h-(theme()==2?9:0));
+                    else selected(canvas,theme()==2?8:0,theme()==2?9:0,w-(theme()==2?8:0),h-(theme()==2?9:0));
                 }
                 int color=theme()==5&&focus?0xff142438:theme()==4&&focus||(active||!main&&checked)&&!focus?accent():0xffe1e3e6;
                 // Selection, label length and radio decoration never change
@@ -457,7 +479,8 @@ public abstract class SharedTvUi implements TvUi {
                 float baseline=(h-p.ascent()-p.descent())/2;
                 if(radio){
                     String title=label.endsWith(" ●")||label.endsWith(" ○")?label.substring(0,label.length()-2):label;
-                    p.setTextSize(size);float total=Math.min(p.measureText(title),Math.max(0,w-40))+20,x=(w-total)/2;
+                    float inset=(theme()==2?14:8)+(main?4:0);
+                    p.setTextSize(size);float total=Math.min(p.measureText(title),Math.max(0,w-inset*2-20))+20,x=(w-total)/2;
                     text(canvas,title,x,baseline,size,color,total-20);float cx=x+total-7,cy=h/2;
                     // Draw in device pixels to avoid subpixel stroke scaling on old HWUI.
                     int stroke=Math.max(1,Math.round(1.5f*d));float phase=(stroke&1)*.5f;
@@ -472,7 +495,7 @@ public abstract class SharedTvUi implements TvUi {
                     // Keep the common font for long labels. Middle ellipsis
                     // also retains the version number at the end of the row.
                     String fitted=label;
-                    float inset=theme()==2?20:8;
+                    float inset=(theme()==2?14:8)+(main?4:0);
                     if(p.measureText(label)>w-inset*2){
                         ellipsisPaint.set(p);float room=Math.max(0,w-inset*2);
                         if(!main&&label.startsWith("网页电视 ")){

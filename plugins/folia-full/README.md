@@ -1,85 +1,78 @@
-# Folia 完整 Web 前端 JAR
+# Folia 源码构建 JAR 频道
 
-将 https://music.aikun-bili.top/ 的原版 Folia Web 前端及主题模块打包进 JAR，
-通过 nTv 的 M3U HTTPS JAR 频道入口加载。与 `plugins/folia` 的基础歌词原型分开。
-页面从设备上的 Java 本地服务读取 JAR 资源，不打开远程网站首页，不运行 Node 或 QuickJS。
+前端从 [chthollyphile/folia-major](https://github.com/chthollyphile/folia-major)
+官方源码自行编译，不采集第三方网站的 HTML、JS、CSS 或图片。
+固定版本：`0.7.21`，提交 `851af3478bfa98b68dbd21fbc89120cc11b7ea96`。
 
-## 使用
+## 安装和交互
+
+需要本次更新的宿主 APK：新 JAR 约 10.3 MiB，旧宿主的 8 MiB 上限无法加载。
+要求 Android 7.0+ 和较新的系统 WebView；已在 Android 7.1.1 / WebView 119 验证。
+
+将 `dist/folia-full.jar` 上传到 HTTPS 服务，在 M3U 中使用：
 
 ```m3u
 #EXTM3U
-#EXTINF:-1 group-title="音乐",Folia 完整版
+#EXTINF:-1 group-title="音乐",Folia 源码版
 https://你的服务器/folia-full.jar?sha256=当前JAR的SHA256
 ```
 
-上传 `dist/folia-full.jar` 后替换示例域名。`dist/example.m3u` 包含当前产物的真实哈希。
-需要更新后的宿主 APK；旧版没有文件选择扩展接口。要求 Android 7.0+，并使用支持
-现代 JavaScript/CSS 的系统 WebView。已验证 Android 7.1.1 + WebView 119。
+`dist/example.m3u` 已包含当前产物的真实 SHA-256，替换域名即可。
+更新 JAR 后必须同步更新 M3U 中的哈希。
 
-## 功能与依赖
+- 触摸、鼠标和手机飞鼠通过原生事件分发到插件视图，保留浏览器实际命中测试。
+- 分辨率和缩放沿用宿主浏览器设置。
+- 连续按两次返回关闭插件，停止其页面及本地服务，回到频道主页；页面浏览历史不会阻止关闭。
+- 宿主频道列表、设置和返回提示显示时，先由对应界面处理输入。
+- 原版文件选择、Java 保存 Blob 导出、媒体键桥接仍保留。
 
-| 功能 | 接入方式 / 验证范围 |
+## 源码构建
+
+构建前端需要 Node.js 24+、npm 和 Python；Android 设备不需要 Node.js 或 QuickJS。
+
+```powershell
+python plugins/folia-full/build-web.py
+python plugins/folia-full/build.py
+```
+
+`build-web.py` 下载固定提交的官方 GitHub 源码归档，用锁定的 npm 依赖执行 Vite 构建。
+`--source 路径` 可以复用已有源码，但会逐文件校验它与固定归档一致；
+`--skip-install` 仅适用于该目录已经成功运行 npm ci 的情况。
+
+构建适配全部写在脚本中：目标 Chrome 100、为 worker 提供上游虚拟模块插件、
+禁用替换内置页面的 PWA 插件、使用相对 API 地址。酷狗依赖使用同一固定版本的
+GitHub codeload 下载地址，未替换依赖实现。源码文件不另做业务修改。
+
+`assets/upstream-manifest.json` 记录官方提交、源码归档 SHA-256 和每个生成文件的哈希。
+`build.py` 会验证来源和文件哈希后再打包。Java 编译需要 Java 8、Android 30 和
+Build Tools 30.0.3，默认路径可用参数覆盖。旧 vendor.py / sanitize.py 已移除。
+
+版权、完整源码来源和 AGPL-3.0 说明见 `NOTICE`、`LICENSE`。
+
+## 运行架构与服务
+
+JAR 包含 Android DEX 插件和本地编译的原版 Web 前端。
+Java 只在 `127.0.0.1` 提供静态文件和网络桥接，WebView 执行原版界面及播放器。
+页面入口不打开远程网站。切换频道或双返回会释放 WebView、端口和请求连接。
+
+源码构建前端不等于将上游 Node.js 后端移植到 Java。
+当前在线 API 仍默认使用：
+
+| 路由 | 服务 |
 | --- | --- |
-| 原版首页、歌单、电台、专辑、本地库、搜索 | 原版前端；首页和搜索接口已实测 |
-| 网易云 / 酷狗 / QQ 账户和在线功能 | 保留原界面，通过 Java 转发原站 API；未使用用户账户测试登录后的全部操作 |
-| 歌词主题、播放队列、播放设置 | 包含原版静态模块，按需从 JAR 加载 |
-| 本地音频与歌词 | Android 文件选择器；原版本地 MP3/LRC 导入与 IndexedDB 存储已实测 |
-| 歌单 / 歌词文件导出 | Blob 导出由 Java 保存到应用外部 `files/Download` 目录；HTTP 下载交给系统下载管理器 |
-| 播放 / 暂停 / 上一首 / 下一首媒体键 | 转发给原版 MediaSession 处理器；无处理器时播放暂停回退到 HTML audio |
-| 分辨率、缩放、浏览器身份 | 沿用 nTv 浏览器配置和 DesktopWebProfile |
-| 页面状态和本地库持久化 | 使用稳定的应用内回环端口及 WebView IndexedDB/localStorage |
-| AI / 云同步 | 需要自行配置服务、凭据及兼容设备；不包含参考站点的内置服务令牌 |
+| `/ncm-api` 及其他相对服务路径 | `https://music.aikun-bili.top` |
+| `/kugou-api` | `https://kugouapi.aikun-bili.top` |
+| `/qq-api` | `https://qqmusicapi.aikun-bili.top` |
 
-**完整前端不等于把所有后端也移植到 Java。** 当前在线服务仍调用参考部署的
-`/ncm-api`、酷狗和 QQ API；Java 负责 HTTP 请求、POST 请求体、媒体 Range 转发和 Cookie。
-原站服务失效、平台登录限制、付费权限和地区限制仍会影响对应功能。
-可用 `serviceOrigin` 查询参数覆盖网易云等相对路径所用的 HTTPS 服务来源；
-酷狗和 QQ 地址目前来自固定前端构建。没有声称全部登录流程、所有主题或 GPU/AI 功能
-均已在旧设备验证，桌面 Electron / Folium 本机模块也不包含在 Web 版中。
+M3U 的 `serviceOrigin` 参数可覆盖第一项 HTTPS 来源，参数值需要 URL 编码；
+另外两项的默认服务地址在 `assets/ntv-bridge.js` 中。服务接口须与源码版本匹配。
+Java 转发 fetch、XHR、POST、Cookie 和媒体 Range 请求。
+未复制站点的账号、密钥或令牌。AI、同步、登录和在线音乐仍需要相应服务与用户配置。
+桌面 Electron 的专属能力不包含在这个 Web 插件中。
 
-本地库在 Android 使用文件选择回退，可以多选音频和对应歌词。
-系统文件选择器是否提供文件夹选择由设备决定，不能保证具备桌面浏览器的目录句柄能力。
+## 本次验证
 
-## 架构
-
-`FoliaFull` 创建 WebView；`FoliaServer` 只监听 `127.0.0.1`，为 ES 模块与
-IndexedDB 提供稳定的同源环境。静态页面和模块全部来自 JAR。
-网络桥接将 fetch、XHR 和远程媒体源转到带随机令牌的本地 Java 路由，
-Java 再请求相应在线服务。入口拒绝错误 Host 和跨站 Origin。
-响应流随连接结束关闭，频道切换会关闭 WebView、本地端口和请求线程。
-
-播放由原版 Web Audio / HTML audio 管理，不与基础歌词插件的 IJK 时钟混用。
-原版应用负责进度、歌词同步、均衡器和可视化。Android WebView 的后台播放和 GPU
-能力与桌面 Electron 有差异，当前主要验证前台使用。
-
-## 构建与来源
-
-```powershell
-python plugins/folia-full/build.py
-```
-
-需要 Java 8、Android 30 平台和 Build Tools 30.0.3；输出 `dist/folia-full.jar`、
-`.sha256` 和 M3U 示例。正常构建只使用已固定的资源，不访问参考站点。
-
-手动更新前端快照：
-
-```powershell
-python plugins/folia-full/vendor.py --refresh
-python plugins/folia-full/sanitize.py
-python plugins/folia-full/build.py
-```
-
-`vendor.py` 下载同源静态依赖图，排除将 SPA 首页当作缺失模块的响应。
-`sanitize.py` 清空前端内嵌的服务 KEY/TOKEN/SECRET 值。
-`assets/upstream-manifest.json` 记录来源和每个文件的 SHA-256。
-上游源码、版权和 AGPL-3.0 说明见 `NOTICE`、`LICENSE`。
-
-参考部署没有公布构建对应的准确 Git 提交；本目录记录的是可核对文件哈希的部署快照，
-未声称与上游当前 main 分支完全一致。
-
-## 验证
-
-`FoliaFullInstrumentation` 在独立测试包 `xiao.bu.tv.channeltest` 验证：
-HTTPS 校验下载、原版模块挂载、Java 转发真实搜索 API、本地 MP3/LRC 导入、
-浏览器视口、文件选择器扩展 ABI 和 Java 保存 Blob 导出文件。原版播放器已进入
-`PLAYING` 状态播放导入曲目。测试曲目是生成的音频夹具，不读取用户音乐文件。
+独立测试包 `xiao.bu.tv.channeltest`，不会替换正式包：
+HTTPS JAR 校验加载、官方源码前端挂载、100% / 150% 下真实触摸和手机飞鼠点击、
+原版页面导航、带浏览历史时连续两次返回关闭插件并显示频道主页。
+测试代码见 `FoliaFullInstrumentation`。本次没有宣称逐项验证所有账号、主题和在线服务。

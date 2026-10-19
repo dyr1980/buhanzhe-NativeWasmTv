@@ -43,13 +43,13 @@ final class JarChannelRuntime {
                 File jar=new File(dir,spec.sha+".jar");
                 if(jar.exists()) {
                     try(InputStream in=new FileInputStream(jar)) {
-                        if(!spec.sha.equals(sha(RadioUiCatalog.read(in,8*1024*1024)))) {
+                        if(!spec.sha.equals(sha(RadioUiCatalog.read(in,32*1024*1024)))) {
                             if(!jar.delete())throw new IOException("无法清理损坏插件");
                         }
                     }
                 }
                 if(!jar.exists()) {
-                    byte[] bytes=RadioUiCatalog.download(spec.url,8*1024*1024,25000);
+                    byte[] bytes=RadioUiCatalog.download(spec.url,32*1024*1024,25000);
                     if(!spec.sha.equals(sha(bytes)))throw new IOException("JAR 插件校验失败");
                     File temp=File.createTempFile("install-",".tmp",dir);
                     try {
@@ -155,6 +155,28 @@ final class JarChannelRuntime {
         if(event.getAction()==android.view.KeyEvent.ACTION_DOWN&&event.getRepeatCount()==0)
             browser.evaluateJavascript("window.__NTV_FOLIA_FULL__&&window.__NTV_FOLIA_FULL__.media('"+action+"')",null);
         return true;
+    }
+    // Dispatch real pointer sequences to the plugin, preserving native WebView hit testing.
+    boolean dispatchPointer(android.view.MotionEvent source, boolean rootCoordinates) {
+        if (!visible()) return false;
+        android.view.MotionEvent event = android.view.MotionEvent.obtain(source);
+        try {
+            if (!rootCoordinates) {
+                int[] location = new int[2]; root.getLocationOnScreen(location);
+                event.offsetLocation(source.getRawX()-source.getX()-location[0],
+                        source.getRawY()-source.getY()-location[1]);
+            }
+            event.offsetLocation(root.getScrollX()-view.getLeft(), root.getScrollY()-view.getTop());
+            android.graphics.Matrix inverse = new android.graphics.Matrix();
+            if (view.getMatrix().invert(inverse)) event.transform(inverse);
+            int action = event.getActionMasked();
+            if (action == android.view.MotionEvent.ACTION_DOWN) view.requestFocus();
+            if (action == android.view.MotionEvent.ACTION_DOWN || action == android.view.MotionEvent.ACTION_UP
+                    || action == android.view.MotionEvent.ACTION_MOVE || action == android.view.MotionEvent.ACTION_CANCEL)
+                view.dispatchTouchEvent(event);
+            else view.dispatchGenericMotionEvent(event);
+            return true;
+        } finally { event.recycle(); }
     }
     boolean dispatchKey(android.view.KeyEvent event){if(browser==null)return false;browser.requestFocus();return browser.dispatchKeyEvent(event);}
     void setActive(boolean active){if(browser!=null){if(active)browser.onResume();else{update(0,false);browser.onPause();}}}

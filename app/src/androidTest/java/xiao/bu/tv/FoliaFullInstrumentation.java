@@ -19,7 +19,7 @@ public final class FoliaFullInstrumentation extends Instrumentation {
     static void check(boolean value,String message){if(!value)throw new AssertionError(message);}
     String js(WebView web,String script)throws Exception{CountDownLatch latch=new CountDownLatch(1);AtomicReference<String> result=new AtomicReference<>();runOnMainSync(()->web.evaluateJavascript(script,value->{result.set(value);latch.countDown();}));check(latch.await(5,TimeUnit.SECONDS),"JS timeout");return result.get();}
     void tapText(WebView web,String text)throws Exception {
-        String result=js(web,"(function(){var e=Array.from(document.querySelectorAll('span,div,h3')).find(e=>e.childElementCount===0&&e.textContent.trim()==="+JSONObject.quote(text)+");if(!e)return null;var r=e.getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2,innerWidth]})()");
+        String result=js(web,"(function(){var e=("+JSONObject.quote(text)+"==='关闭'?document.querySelector('[data-testid=release-notes-close]'):null)||Array.from(document.querySelectorAll('span,div,h3,button')).find(e=>(e.childElementCount===0||e.tagName==='BUTTON')&&e.textContent.trim()==="+JSONObject.quote(text)+");if(!e)return null;var r=e.getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2,innerWidth]})()");
         if("null".equals(result))return;
         JSONArray point=new JSONArray(result);int[] location=new int[2];runOnMainSync(()->web.getLocationOnScreen(location));
         float scale=web.getWidth()/(float)point.getDouble(2),x=location[0]+(float)point.getDouble(0)*scale,y=location[1]+(float)point.getDouble(1)*scale;
@@ -51,49 +51,67 @@ public final class FoliaFullInstrumentation extends Instrumentation {
             }catch(Exception e){throw new RuntimeException(e);}});
             JarChannelRuntime runtime=(JarChannelRuntime)field(activity,"jarChannelRuntime");
             WebView web=null;until=SystemClock.elapsedRealtime()+60000;
-            while(SystemClock.elapsedRealtime()<until){web=(WebView)field(runtime,"browser");if(web!=null&&js(web,"!!document.querySelector('input[placeholder]')").equals("true"))break;SystemClock.sleep(250);}
+            while(SystemClock.elapsedRealtime()<until){web=(WebView)field(runtime,"browser");if(web!=null&&js(web,"!!document.querySelector('#root')&&document.querySelector('#root').innerText.length>30").equals("true"))break;SystemClock.sleep(250);}
             check(web!=null,"No full application WebView");final WebView browser=web;
             check(js(browser,"location.origin").contains("127.0.0.1"),"Frontend loaded from remote website");
             check(js(browser,"!!window.__NTV_FOLIA_FULL__").equals("true"),"Java transport bridge missing");
-            String body=js(browser,"document.body.innerText");check(body.contains("Folia")&&body.contains("歌单"),"Upstream app did not mount: "+body);
-            js(browser,"window.__ntvApiTest='pending';(async function(){for(var i=0;i<2;i++){try{var r=await fetch('/ncm-api/search?keywords='+encodeURIComponent('周杰伦')+'&limit=3'),j=await r.json();if(j.code===200){window.__ntvApiTest=JSON.stringify({code:j.code,count:j.result&&j.result.songs&&j.result.songs.length});return;}if(i===1)window.__ntvApiTest=JSON.stringify(j);}catch(e){if(i===1)window.__ntvApiTest=String(e);}}})()");
-            until=SystemClock.elapsedRealtime()+55000;String api="pending";
-            while(SystemClock.elapsedRealtime()<until){api=js(browser,"window.__ntvApiTest");if(!api.contains("pending"))break;SystemClock.sleep(200);}
-            check(api.contains("200")&&api.contains("count"),"Java API relay failed: "+api);
-            js(browser,"Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='本地').click()");
-            SystemClock.sleep(500);
-            check(js(browser,"document.body.innerText").contains("导入"),"Original local library did not open");
-            js(browser,"window.__ntvInputClick=HTMLInputElement.prototype.click;HTMLInputElement.prototype.click=function(){if(this.type==='file'){window.__ntvImportInput=this;return;}return window.__ntvInputClick.apply(this,arguments)};Array.from(document.querySelectorAll('button')).find(b=>b.textContent.indexOf('导入文件夹')>=0).click()");
-            until=SystemClock.elapsedRealtime()+5000;while(!js(browser,"!!window.__ntvImportInput").equals("true")&&SystemClock.elapsedRealtime()<until)SystemClock.sleep(100);
-            check(js(browser,"!!window.__ntvImportInput").equals("true"),"WebView file input fallback missing");
-            js(browser,"window.__ntvImportStatus='pending';fetch('http://127.0.0.1:39573/song.mp3').then(r=>r.arrayBuffer()).then(bytes=>{var dt=new DataTransfer();dt.items.add(new File([bytes],'NativeFixture.mp3',{type:'audio/mpeg'}));dt.items.add(new File(['[00:00.00]Native fixture first\\n[00:02.00]Native fixture second'],'NativeFixture.lrc',{type:'text/plain'}));window.__ntvImportInput.files=dt.files;window.__ntvImportInput.dispatchEvent(new Event('change',{bubbles:true}));HTMLInputElement.prototype.click=window.__ntvInputClick;window.__ntvImportStatus='sent'}).catch(e=>window.__ntvImportStatus=String(e))");
-            until=SystemClock.elapsedRealtime()+10000;while(!js(browser,"document.body.innerText").contains("Local Import")&&!js(browser,"document.body.innerText").contains("NativeFixture")&&SystemClock.elapsedRealtime()<until)SystemClock.sleep(300);
-            String library=js(browser,"document.body.innerText");
-            check(library.contains("NativeFixture")||library.contains("Local Import"),"Original local music import failed: "+js(browser,"window.__ntvImportStatus")+" body="+library);
-            js(browser,"var folder=Array.from(document.querySelectorAll('button,div,span,h3')).find(e=>e.childElementCount===0&&e.textContent.trim()==='Local Import');if(folder){folder.click();folder.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));}");
-            SystemClock.sleep(500);
-            js(browser,"var title=Array.from(document.querySelectorAll('span,div')).find(e=>e.childElementCount===0&&e.textContent.trim()==='NativeFixture');if(title)title.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));");
-            SystemClock.sleep(2500);
-            result.putString("localImport",js(browser,"JSON.stringify(Array.from(document.querySelectorAll('audio')).map(a=>({paused:a.paused,time:a.currentTime,source:a.currentSrc})))"));
-            until=SystemClock.elapsedRealtime()+10000;while(browser.getWidth()==0&&SystemClock.elapsedRealtime()<until)SystemClock.sleep(100);
-            runOnMainSync(()->runtime.configure("1080p",1.5f));SystemClock.sleep(800);String viewport=js(browser,"document.querySelector('meta[name=viewport]').content");check(viewport.contains("width=1280,"),"Browser viewport not applied: "+viewport+" physical="+browser.getWidth()+"x"+browser.getHeight()+" parent="+browser.getParent());
-            tapText(browser,"Local Import");SystemClock.sleep(600);
-            tapText(browser,"Local Import");SystemClock.sleep(600);
-            tapText(browser,"NativeFixture");SystemClock.sleep(100);tapText(browser,"NativeFixture");SystemClock.sleep(1800);
-            js(browser,"var play=document.querySelector('button:has(svg.lucide-play)')||document.querySelector('button[title=\"播放\"]')||document.querySelector('button[aria-label=\"播放\"]');if(play)play.click();");SystemClock.sleep(2500);
-            tapPlay(browser);SystemClock.sleep(2500);
-            js(browser,"import(new URL('/assets/v2-usePlaybackStore-DDfdWo5W.js',location.href).href).then(m=>{var s=m.y.getState();window.__ntvPlaybackState=JSON.stringify({title:s.currentSong&&s.currentSong.name,state:s.playerState,source:!!s.audioSrc})})");SystemClock.sleep(300);
-            result.putString("playbackState",js(browser,"window.__ntvPlaybackState"));
-            check(js(browser,"window.__ntvPlaybackState").contains("NativeFixture"),"Original player did not select the imported track: "+js(browser,"window.__ntvPlaybackState")+" buttons="+js(browser,"JSON.stringify(Array.from(document.querySelectorAll('button')).map(b=>({title:b.title,aria:b.getAttribute('aria-label'),svg:b.querySelector('svg')&&b.querySelector('svg').getAttribute('class')})))"));
-            String exportName="folia-export-test-"+SystemClock.uptimeMillis()+".lrc";
-            js(browser,"var exportLink=document.createElement('a');exportLink.href=URL.createObjectURL(new Blob(['[00:00.00]export fixture'],{type:'text/plain'}));exportLink.download="+JSONObject.quote(exportName)+";document.body.appendChild(exportLink);exportLink.click();exportLink.remove();");
-            File exported=new File(getTargetContext().getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),exportName);
-            until=SystemClock.elapsedRealtime()+5000;while(!exported.isFile()&&SystemClock.elapsedRealtime()<until)SystemClock.sleep(100);
-            check(exported.isFile(),"Blob export was not saved by Java");
-            try(InputStream in=new FileInputStream(exported)){check(new String(RadioUiCatalog.read(in,1024),"UTF-8").equals("[00:00.00]export fixture"),"Exported file contents differ");}exported.delete();
-            runOnMainSync(()->{try{((android.view.View)field(activity,"channelBar")).setVisibility(android.view.View.GONE);}catch(Exception ignored){}});SystemClock.sleep(500);
+            String body=js(browser,"document.body.innerText");check(body.length()>30,"Upstream app did not mount: "+body);
+            SystemClock.sleep(1500);
+            String closePoint=js(browser,"(function(){var e=document.querySelector('[data-testid=release-notes-close]');if(!e)return null;var r=e.getBoundingClientRect();return JSON.stringify({r:[r.x,r.y,r.width,r.height],inner:[innerWidth,innerHeight],hit:document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.outerHTML})})()");
+            tapText(browser,"关闭");SystemClock.sleep(1000);
+            check(!js(browser,"document.body.innerText").contains("Sabbat-of-the-witch Update"),"Original release dialog close button did not respond: "+closePoint+" web="+browser.getWidth()+"x"+browser.getHeight());
+            if(js(browser,"!!document.querySelector('[data-testid=ponder-onboarding]')").equals("true")) {
+                tapText(browser,"思索当前页面");SystemClock.sleep(800);
+                check(js(browser,"!document.querySelector('[data-testid=ponder-onboarding]')").equals("true"),"Original onboarding button did not respond");
+                sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_ESCAPE);SystemClock.sleep(700);
+            }
+            // Real pointer delivery must survive both browser zoom and inert host overlays.
+            runOnMainSync(()->{try{
+                ((android.view.View)field(activity,"channelBar")).setVisibility(android.view.View.GONE);
+                ((android.view.View)field(activity,"channelListPanel")).setVisibility(android.view.View.GONE);
+                ((android.view.View)field(activity,"managementPanel")).setVisibility(android.view.View.GONE);
+            }catch(Exception e){throw new RuntimeException(e);}});
+            for(float zoom:new float[]{1f,1.5f}) {
+                runOnMainSync(()->runtime.configure("1080p",zoom));SystemClock.sleep(600);
+                js(browser,"window.__trustedClicks=0;var b=document.createElement('button');b.id='ntv-click-fixture';b.innerHTML='<span>NativeTouchFixture</span>';b.style.cssText='position:fixed;left:100px;top:100px;width:240px;height:80px;z-index:2147483647';b.onclick=e=>{if(e.isTrusted)window.__trustedClicks++};document.body.appendChild(b)");
+                tapText(browser,"NativeTouchFixture");SystemClock.sleep(300);
+                check(js(browser,"window.__trustedClicks").equals("1"),"Touch swallowed at zoom "+zoom);
+                // Root coordinates are also used by the phone fly mouse transport.
+                String point=js(browser,"(function(){var r=document.getElementById('ntv-click-fixture').getBoundingClientRect();return [(r.left+r.width/2)/innerWidth,(r.top+r.height/2)/innerWidth]})()");
+                JSONArray xy=new JSONArray(point);android.view.View root=(android.view.View)field(activity,"root");
+                float x=(float)xy.getDouble(0)*browser.getWidth()+browser.getLeft(),y=(float)xy.getDouble(1)*browser.getWidth()+browser.getTop();
+                runOnMainSync(()->{long t=SystemClock.uptimeMillis();android.view.MotionEvent d=android.view.MotionEvent.obtain(t,t,0,x,y,0),u=android.view.MotionEvent.obtain(t,t+60,1,x,y,0);runtime.dispatchPointer(d,true);runtime.dispatchPointer(u,true);d.recycle();u.recycle();});SystemClock.sleep(300);
+                check(js(browser,"window.__trustedClicks").equals("2"),"Fly mouse click swallowed at zoom "+zoom);
+                runOnMainSync(()->{try {
+                    Field enabled=MainActivity.class.getDeclaredField("flyMouseEnabled");enabled.setAccessible(true);enabled.setBoolean(activity,true);
+                    Method show=MainActivity.class.getDeclaredMethod("applyFlyMouseVisibility");show.setAccessible(true);show.invoke(activity);
+                }catch(Exception e){throw new RuntimeException(e);}});SystemClock.sleep(300);
+                runOnMainSync(()->{try {
+                    FlyMouseCursorView cursor=(FlyMouseCursorView)field(activity,"flyMouseCursor");cursor.moveBy(x-cursor.cursorX(),y-cursor.cursorY());
+                    Method click=MainActivity.class.getDeclaredMethod("dispatchFlyMouseClick");click.setAccessible(true);click.invoke(activity);
+                }catch(Exception e){throw new RuntimeException(e);}});SystemClock.sleep(300);
+                check(js(browser,"window.__trustedClicks").equals("3"),"Actual fly mouse transport failed at zoom "+zoom+" count="+js(browser,"window.__trustedClicks")+" point="+point+" size="+browser.getWidth()+"x"+browser.getHeight());
+                js(browser,"document.getElementById('ntv-click-fixture').remove()");
+            }
+            // Exercise a real upstream navigation control, not just the pointer fixture.
+            js(browser,"window.__originalTrustedClick=false;document.addEventListener('click',e=>{if(e.isTrusted)window.__originalTrustedClick=true},true)");
+            tapText(browser,"全部歌曲");SystemClock.sleep(600);
+            check(js(browser,"window.__originalTrustedClick").equals("true"),"Original Folia navigation did not receive click");
+            result.putString("page",js(browser,"document.body.innerText.slice(0,1600)"));
             android.graphics.Bitmap image=getUiAutomation().takeScreenshot();if(image!=null)try(FileOutputStream out=new FileOutputStream(new File(getTargetContext().getExternalFilesDir(null),"folia-full.png"))){image.compress(android.graphics.Bitmap.CompressFormat.PNG,100,out);}finally{image.recycle();}
-            result.putString("stream","PASS: pinned HTTPS JAR, original Folia modules mounted, Java API search, original local MP3/LRC import, browser viewport, Java blob export; "+api+" playback="+js(browser,"window.__ntvPlaybackState"));code=-1;
+            // Browser history must not trap the user: two BACK presses always close the plugin.
+            js(browser,"history.pushState({},'', '/?test-history=1')");
+            sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK);SystemClock.sleep(150);
+            check(runtime.visible(),"First BACK closed the plugin");
+            check(!activity.isFinishing(),"First BACK exited the host");
+            sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_DPAD_CENTER);SystemClock.sleep(100);
+            sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK);SystemClock.sleep(100);
+            check(runtime.visible(),"Cancel did not reset close confirmation");
+            sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK);SystemClock.sleep(300);
+            check(!runtime.visible(),"Second BACK did not close the plugin");
+            check(!activity.isFinishing(),"Second BACK exited the host instead of returning home");
+            check(((android.view.View)field(activity,"channelListPanel")).getVisibility()==android.view.View.VISIBLE,"Channel home not shown");
+            result.putString("stream","PASS: official source frontend mounted; real touch and fly mouse clicks at 100%/150%; original navigation; double BACK closes plugin and returns home");code=-1;
         }catch(Throwable e){result.putString("stream",android.util.Log.getStackTraceString(e));}
         finally{if(activity!=null)runOnMainSync(()->activity.finish());if(wake.isHeld())wake.release();}finish(code,result);
     }

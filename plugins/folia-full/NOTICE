@@ -1,17 +1,19 @@
-Folia full web application packaged for nTv.
+Folia source-built web application packaged for nTv.
 
-Upstream application: https://github.com/chthollyphile/folia-major
-Android-oriented upstream: https://github.com/chthollyphile/folia-sonnet
-Reference deployment: https://music.aikun-bili.top/
+Upstream: https://github.com/chthollyphile/folia-major
+Revision: 851af3478bfa98b68dbd21fbc89120cc11b7ea96 (0.7.21)
 License: GNU Affero General Public License version 3; see LICENSE.
-Copyright: Folia contributors and the respective bundled dependency authors.
+Copyright: Folia contributors and the respective dependency authors.
 
-The original deployed frontend module graph is recorded, with SHA-256 hashes,
-in assets/upstream-manifest.json. The deployed source revision is not published
-by that deployment; this package does not claim a verified matching Git commit.
-Java loopback serving, HTTP transport bridge and Android file selection are nTv
-adaptations supplied in this directory and app/src/main/java/xiao/bu/tv.
-No remote platform accounts, cookies, user data, API keys or music files are
-included. Online provider services remain independently hosted upstream.
+The frontend is compiled locally from the pinned official source and locked npm
+packages, not copied from a third-party website. assets/upstream-manifest.json
+records the source archive and generated asset SHA-256 hashes. build-web.py
+contains the complete build adaptation: Chrome 100 target, worker virtual-module
+plugins, disabled PWA replacement, relative provider API bases, and direct GitHub
+codeload URL for the same locked KuGouMusicApi dependency version.
 
-The adapter source is distributed under AGPL-3.0 together with this package.
+Java loopback serving, pointer input, HTTP transport bridge and Android file
+selection are nTv adaptations in this directory and app/src/main/java/xiao/bu/tv.
+Online music APIs remain external services; no Node.js backend is embedded.
+No account credentials or music files are included. The adapter source is
+provided under AGPL-3.0 together with this package.

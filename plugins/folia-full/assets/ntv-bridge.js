@@ -3,7 +3,7 @@
   'use strict';
   var upstream='__NTV_UPSTREAM__', route='/__ntv_proxy/__NTV_TOKEN__?url=';
   function resolve(value){var url=new URL(String(value),location.href);if(url.protocol!=='http:'&&url.protocol!=='https:')return null;
-    if(url.origin===location.origin){if(url.pathname.indexOf('/__ntv_proxy/')===0||url.pathname.indexOf('/assets/')===0||url.pathname==='/runtime-config.js'||url.pathname==='/ntv-bridge.js')return null;return upstream+url.pathname+url.search;}
+    if(url.origin===location.origin){if(url.pathname.indexOf('/__ntv_proxy/')===0||url.pathname.indexOf('/assets/')===0||url.pathname==='/runtime-config.js'||url.pathname==='/ntv-bridge.js')return null;var path=url.pathname; if(path.indexOf('/kugou-api')===0)return 'https://kugouapi.aikun-bili.top'+path.slice(10)+url.search; if(path.indexOf('/qq-api')===0)return 'https://qqmusicapi.aikun-bili.top'+path.slice(7)+url.search;return upstream+path+url.search;}
     return url.href;
   }
   function proxy(url){var target=resolve(url);return target?route+encodeURIComponent(target):url;}

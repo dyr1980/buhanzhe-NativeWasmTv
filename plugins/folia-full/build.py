@@ -13,6 +13,13 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--sdk', default=os.environ.get('ANDROID_SDK_ROOT', 'D:/android/sdk'))
 parser.add_argument('--java-home', default='C:/Users/Administrator/.jdks/corretto-1.8.0_492')
 args = parser.parse_args()
+# Refuse stale website snapshots or modified generated assets.
+manifest = json.loads((here/'assets/upstream-manifest.json').read_text(encoding='utf-8'))
+if manifest.get('revision') != '851af3478bfa98b68dbd21fbc89120cc11b7ea96':
+    raise SystemExit('Run build-web.py to compile the pinned official source first')
+for name, expected in manifest['files'].items():
+    if hashlib.sha256((here/'assets/web'/name).read_bytes()).hexdigest() != expected:
+        raise SystemExit('Generated frontend changed: '+name)
 sdk = pathlib.Path(args.sdk)
 java = pathlib.Path(args.java_home) / 'bin'
 out = root / '.codex-tmp/folia-full/build'
@@ -36,7 +43,7 @@ target.mkdir(exist_ok=True)
 jar = target / 'folia-full.jar'
 with zipfile.ZipFile(jar, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
     archive.write(dex/'classes.dex', 'classes.dex')
-    archive.writestr('channel-plugin.json', json.dumps(dict(api=1, version=1, minSdk=24,
+    archive.writestr('channel-plugin.json', json.dumps(dict(api=1, version=2, minSdk=24,
                      entry='xiao.bu.channel.FoliaFull', page='web/index.html')))
     for file in (here/'assets').rglob('*'):
         if file.is_file():
@@ -45,7 +52,7 @@ with zipfile.ZipFile(jar, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
         archive.write(here/name, name)
 digest = hashlib.sha256(jar.read_bytes()).hexdigest()
 jar.with_suffix('.sha256').write_text(digest+'\n', encoding='ascii')
-example = ('#EXTM3U\n#EXTINF:-1 group-title="音乐",Folia 完整版\n'
+example = ('#EXTM3U\n#EXTINF:-1 group-title="音乐",Folia 源码版\n'
            'https://example.com/folia-full.jar?sha256='+digest+'\n')
 (target/'example.m3u').write_text(example, encoding='utf-8')
 print(f'Built {jar}, {jar.stat().st_size} bytes, SHA-256 {digest}')

@@ -246,6 +246,30 @@ final class EpgManager {
         return channelId;
     }
 
+    private boolean restoringCache;
+    void restoreCached(final String[] sourceUrls,final Listener listener){
+        final List<String> sources=sanitizeSources(sourceUrls);
+        final int generation;
+        synchronized(this){if(restoringCache||!guide.programsByChannel.isEmpty())return;restoringCache=true;generation=refreshGeneration;}
+        new Thread(()->{
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
+            boolean restored=false;
+            try{
+                Guide cached=new Guide();List<String> urls=new ArrayList<String>();
+                for(String source:sources){
+                    StoredGuide stored=readDatabase(source);
+                    if(stored!=null){mergeGuide(cached,stored.guide);urls.add(stored.resolved);}
+                }
+                synchronized(EpgManager.this){
+                    if(generation==refreshGeneration&&guide.programsByChannel.isEmpty()&&!cached.programsByChannel.isEmpty()){
+                        publish(cached,urls);restored=true;
+                    }
+                }
+            }finally{synchronized(EpgManager.this){restoringCache=false;}}
+            if(restored)notifyListener(listener);
+        },"epg-cache-restore").start();
+    }
+
     void refresh(final String sourceUrl, final Listener listener) {
         refresh(new String[] { sourceUrl }, listener);
     }

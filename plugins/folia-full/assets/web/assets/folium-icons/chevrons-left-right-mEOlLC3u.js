@@ -1,0 +1,1 @@
+import{Ns as e}from"../lucide-icons-gKrx8P3p.js";var t={name:`chevrons-left-right`,size:24,node:[[`path`,{d:`m9 7-5 5 5 5`,key:`j5w590`}],[`path`,{d:`m15 7 5 5-5 5`,key:`1bl6da`}]]};t.node;var n=e(t);export{t as __iconData,n as default};
