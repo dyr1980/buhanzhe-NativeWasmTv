@@ -46,7 +46,7 @@ final class RadioUiMenu implements xiao.bu.tv.skin.TvUi.Events {
         if(loading||applying)return;
         if(ids.length==0){load();return;}
         if(option<0||option>=ids.length)return;
-        applying=true;pending=option;refresh();toast("正在应用唱片界面，首次使用需下载");
+        applying=true;pending=option;refresh();toast("正在切换唱片界面…");
         String id=ids[option],name=names[option];
         RadioUiPlugin.execute(()->{
             try{JSONObject state=new JSONObject(RadioUiPlugin.configure(activity,new JSONObject().put("id",id)));

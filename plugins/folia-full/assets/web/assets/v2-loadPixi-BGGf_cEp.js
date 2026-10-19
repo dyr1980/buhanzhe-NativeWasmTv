@@ -1,0 +1,2 @@
+const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/v2-rolldown-runtime-hePW80VL.js"])))=>i.map(i=>d[i]);
+import{n as e}from"./v2-pixi-Dw4MjDv0.js";var t=async()=>{let t=await e(()=>import(`./v2-pixi-Dw4MjDv0.js`).then(e=>e.t),__vite__mapDeps([0]));return t.GlProgram.defaultOptions.preferredFragmentPrecision=`highp`,t};export{t};

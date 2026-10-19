@@ -77,13 +77,21 @@ public final class UpdateManifestInstrumentation extends Instrumentation {
             GithubProxy.setBaseUrl(originalBase);
             GithubProxy.setEnabled(originalEnabled);
             pass("real HTTP requests preserve canonical URL through shared accelerator routing");
-            for (int code : new int[]{404, 403, 500}) {
+            primaryStatus = 404;
+            check(updater.readManifest(base + "/release/v6/version-lite.json?key=value").equals(LEGACY),"Missing lite manifest did not use legacy");
+            check(legacyReads == 1 && lastRequest.contains("/release/v6/version.json?key=value&_="),"Fallback lost release path or query");
+            legacyStatus = 404;
+            try { updater.readManifest(base + "/version-lite.json"); throw new AssertionError("Missing both manifests accepted"); }
+            catch (IOException expected) { check(expected.getMessage().contains("404"),"Fallback error hidden"); }
+            legacyStatus = 200;
+            int readsBeforeErrors = legacyReads;
+            for (int code : new int[]{403, 500}) {
                 primaryStatus = code;
                 try { updater.readManifest(base + "/version-lite.json"); throw new AssertionError("Expected HTTP error"); }
                 catch (IOException expected) { check(expected.getMessage().contains(String.valueOf(code)), "Preserve HTTP error"); }
             }
-            check(legacyReads == 0, "Lightweight checks must never fetch full metadata");
-            pass("404/403/500 remain readable errors; no request falls back to version.json");
+            check(legacyReads == readsBeforeErrors, "Non-404 failures must not fetch legacy metadata");
+            pass("missing lite falls back once to same-release version.json; query preserved; missing both/403/500 remain readable errors");
             if (live) {
             Method load = AutoUpdater.class.getDeclaredMethod("loadUpdateInfo", String.class, boolean.class);
             load.setAccessible(true);

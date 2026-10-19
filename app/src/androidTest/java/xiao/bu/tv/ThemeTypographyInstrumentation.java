@@ -33,8 +33,8 @@ public final class ThemeTypographyInstrumentation extends Instrumentation {
     }
     private void select(String id)throws Exception{TvUiPlugin.select(activity,id);until(()->(Integer)get("appliedTvUiRevision")==TvUiPlugin.revision(),5000,"Theme callback missing");waitForIdleSync();}
     private static final class TextDraw {
-        final String text;final float size,center;final boolean bold,normalFace;
-        TextDraw(String t,float x,float y,Paint p,Matrix m){text=t;float[] values=new float[9];m.getValues(values);size=p.getTextSize()*Math.abs(values[Matrix.MSCALE_Y]);float[] point={x,y+(p.ascent()+p.descent())/2};m.mapPoints(point);center=point[1];bold=p.isFakeBoldText()||p.getTypeface()!=null&&p.getTypeface().isBold();normalFace=p.getTypeface()==Typeface.DEFAULT;}
+        final String text;final float size,center,left,right;final boolean bold,normalFace;
+        TextDraw(String t,float x,float y,Paint p,Matrix m){text=t;float[] values=new float[9];m.getValues(values);size=p.getTextSize()*Math.abs(values[Matrix.MSCALE_Y]);float[] point={x,y+(p.ascent()+p.descent())/2,x+p.measureText(t),y};m.mapPoints(point);left=point[0];right=point[2];center=point[1];bold=p.isFakeBoldText()||p.getTypeface()!=null&&p.getTypeface().isBold();normalFace=p.getTypeface()==Typeface.DEFAULT;}
     }
     private static final class TextCanvas extends Canvas {
         final java.util.List<TextDraw> texts=new java.util.ArrayList<>();
@@ -46,19 +46,54 @@ public final class ThemeTypographyInstrumentation extends Instrumentation {
         try{TextCanvas c=new TextCanvas(b);v.draw(c);return c.texts;}finally{b.recycle();}
     }
     private TextDraw menuRow(View v)throws Exception{java.util.List<TextDraw> text=draw(v);check(text.size()==1,"Unexpected row text draws "+text.size());return text.get(0);}
+    private static boolean hasSelectionFill(View v){
+        Bitmap b=Bitmap.createBitmap(v.getWidth(),v.getHeight(),Bitmap.Config.ARGB_8888);final boolean[] fill={false};
+        try{v.draw(new Canvas(b){@Override public void drawRoundRect(RectF r,float rx,float ry,Paint p){
+            // Ignore the tiny animated playback bars; count row backgrounds only.
+            RectF pixels=new RectF(r);getMatrix().mapRect(pixels);
+            if(p.getStyle()==Paint.Style.FILL&&p.getAlpha()>0&&pixels.width()>v.getWidth()*.5f)fill[0]=true;
+            super.drawRoundRect(r,rx,ry,p);
+        }});return fill[0];}finally{b.recycle();}
+    }
     private void auditMenu(String id,String preset,int category)throws Exception{
         main(()->{
-            ListView cats=list(true),options=list(false);float common=-1;JSONArray samples=new JSONArray();boolean equal=true,centered=true;
+            ListView cats=list(true),options=list(false);float common=-1;JSONArray samples=new JSONArray();boolean equal=true,centered=true;int highlights=0;
             for(ListView l:new ListView[]{cats,options})for(int i=0;i<l.getChildCount();i++){
                 View v=l.getChildAt(i);TextDraw t=menuRow(v);if(common<0)common=t.size;
                 equal&=Math.abs(t.size-common)<.08f&&!t.bold&&t.normalFace;centered&=Math.abs(t.center-v.getHeight()/2f)<.75f;
+                check(t.left>=-0.5f&&t.right<=v.getWidth()+.5f,"Menu label exceeded row bounds "+t.text);
+                if(hasSelectionFill(v))highlights++;
                 if(!baseline&&l==options&&category==7&&v.getContentDescription()!=null&&v.getContentDescription().toString().startsWith("网页电视"))
                     check(t.text.endsWith(activity.getPackageManager().getPackageInfo(activity.getPackageName(),0).versionName),"Version number clipped "+t.text);
                 samples.put(new JSONObject().put("text",t.text).put("px",t.size).put("bold",t.bold).put("centerError",t.center-v.getHeight()/2f));
             }
             results.put(new JSONObject().put("kind","menu").put("theme",id).put("preset",preset).put("category",category).put("sameFont",equal).put("sameBaseline",centered).put("rows",samples));
-            if(!baseline){check(equal,"Menu font mismatch "+id+"/"+preset+"/"+category+" "+samples);check(centered,"Menu baseline mismatch "+id+"/"+preset+"/"+category+" "+samples);}
+            if(!baseline){
+                check(highlights<=2,"Duplicate menu highlights "+id+"/"+category);
+                for(ListView l:new ListView[]{cats,options}){int fills=0;for(int i=0;i<l.getChildCount();i++)if(hasSelectionFill(l.getChildAt(i)))fills++;
+                    check(fills<=1,"Multiple highlights in one menu column "+id+"/"+category);
+                    if(l==cats)check(fills==1,"Selected category lost highlight "+id+"/"+category);
+                    if(l==options&&l.hasFocus()&&l.getSelectedView()!=null)check(hasSelectionFill(l.getSelectedView()),"Focused option lost highlight "+id+"/"+category);
+                }
+                check(equal,"Menu font mismatch "+id+"/"+preset+"/"+category+" "+samples);check(centered,"Menu baseline mismatch "+id+"/"+preset+"/"+category+" "+samples);
+            }
         });
+    }
+    private void auditChannelFocus(String id)throws Exception{
+        main(()->{menu().dismiss();call("openChannelList",new Class[]{});});waitForIdleSync();
+        for(boolean group:new boolean[]{true,false}){
+            if(group)sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_LEFT);else sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT);
+            waitForIdleSync();SystemClock.sleep(80);
+            main(()->{
+                ListView groups=(ListView)get("groupList"),channels=(ListView)get("channelList");
+                View g=groups.getChildAt(Math.max(0,groups.getCheckedItemPosition()-groups.getFirstVisiblePosition())),c=channels.getChildAt(Math.max(0,channels.getCheckedItemPosition()-channels.getFirstVisiblePosition()));check(g!=null&&c!=null,"Channel focus fixture missing");
+                boolean gf=hasSelectionFill(g),cf=hasSelectionFill(c);
+                check(!(gf&&cf),"Group and channel both highlighted "+id);
+                if(!id.equals("ui4"))check(group?gf&&!cf:cf&&!gf,"Highlight did not follow column focus "+id+" requestedGroup="+group+" focus="+groups.hasFocus()+"/"+channels.hasFocus()+" fill="+gf+"/"+cf+" active="+g.isActivated()+"/"+c.isActivated());
+                results.put(new JSONObject().put("kind","channel-focus").put("theme",id).put("groupsFocused",group).put("singleHighlight",true));
+            });shot(id+(group?"-group-focus":"-channel-focus"));
+        }
+        main(()->call("closeChannelList",new Class[]{}));
     }
     private void shot(String name)throws Exception{Bitmap b=getUiAutomation().takeScreenshot();check(b!=null,"No screenshot");try(FileOutputStream f=new FileOutputStream(new File(out,name+".png"))){b.compress(Bitmap.CompressFormat.PNG,100,f);}finally{b.recycle();}}
     private View measure(String part,Bundle state,int width,int height){
@@ -68,6 +103,11 @@ public final class ThemeTypographyInstrumentation extends Instrumentation {
     private void auditOther(String id,String preset,float menuSize)throws Exception{
         main(()->{
             float d=activity.themeScale();int row=Math.round((id.equals("ui2")?70:id.equals("ui3")?65:id.equals("ui4")?60:id.equals("ui5")?46:48)*d);
+            for(boolean focus:new boolean[]{false,true}){
+                Bundle longGroup=new Bundle();longGroup.putBoolean("group",true);longGroup.putBoolean("selected",true);longGroup.putBoolean("focused",focus);longGroup.putString("title","很长的频道分组名称不能超出高亮背景");
+                int width=Math.round((id.equals("ui2")?134:id.equals("ui3")?150:108)*d);
+                for(TextDraw t:draw(measure("group-row",longGroup,width,row)))check(t.left>=12*d-.5f&&t.right<=width-12*d+.5f,"Long group label exceeded highlight bounds "+id+"/"+preset);
+            }
             for(String part:new String[]{"channel-row","group-row","epg-row"}){
                 float size=-1;boolean equal=true;
                 for(boolean selected:new boolean[]{false,true}){
@@ -111,7 +151,7 @@ public final class ThemeTypographyInstrumentation extends Instrumentation {
             for(String preset:new String[]{"auto","small","large"}){
                 setting(preset);
                 for(String id:new String[]{"ui2","ui3","ui4","ui5","ui6"}){
-                    select(id);main(()->call("openTvUiMenu",new Class[]{}));waitForIdleSync();SystemClock.sleep(60);
+                    select(id);if(preset.equals("auto"))auditChannelFocus(id);main(()->call("openTvUiMenu",new Class[]{}));waitForIdleSync();SystemClock.sleep(60);
                     for(int category=0;category<8;category++){
                         final int cat=category;main(()->{ListView l=list(true);l.requestFocus();l.setSelection(cat);});waitForIdleSync();SystemClock.sleep(30);auditMenu(id,preset,category);
                         main(()->{ListView l=list(false);l.requestFocus();l.setSelection(l.getCount()-1);});waitForIdleSync();auditMenu(id,preset,category);

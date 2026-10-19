@@ -22,6 +22,11 @@ public final class RadioUiInstrumentation extends Instrumentation {
     private static void check(boolean ok,String message){if(!ok)throw new AssertionError(message);}
     private Object delegate(AudioArtworkView v)throws Exception{return field(v,"ui");}
     private void choose(String id)throws Exception {RadioUiPlugin.configure(getTargetContext(),new JSONObject().put("id",id));waitForIdleSync();}
+    private int downloads()throws Exception {
+        java.net.HttpURLConnection connection=(java.net.HttpURLConnection)new java.net.URL(new java.net.URL(args.getString("audio")),"/cache-stats").openConnection();
+        connection.setConnectTimeout(3000);connection.setReadTimeout(3000);
+        try(InputStream in=connection.getInputStream()){return new JSONObject(new String(RadioUiCatalog.read(in,4096),"UTF-8")).getInt("downloads");}finally{connection.disconnect();}
+    }
     private void waitStyle(AudioArtworkView v,boolean optical)throws Exception {
         long until=SystemClock.elapsedRealtime()+30000;
         while(SystemClock.elapsedRealtime()<until){waitForIdleSync();Object ui=delegate(v);if(ui!=null&&(Boolean)field(ui,"optical")==optical)return;SystemClock.sleep(30);}
@@ -32,6 +37,74 @@ public final class RadioUiInstrumentation extends Instrumentation {
         SystemClock.sleep(150);Bitmap image=getUiAutomation().takeScreenshot();
         if(image!=null)try(FileOutputStream out=new FileOutputStream(new File(getTargetContext().getExternalFilesDir(null),name+".png"))){image.compress(Bitmap.CompressFormat.PNG,100,out);}finally{image.recycle();}
     }
+    private void startRadio(String url)throws Exception {
+        startFixture(url,true);
+    }
+    private void startFixture(String url,boolean radio)throws Exception {
+        runOnMainSync(()->{try{
+            Channel channel=new Channel("1","断流画面测试","",url,null,null).withRadio(radio);
+            ChannelCatalog.GROUPS=new ChannelCatalog.Group[]{new ChannelCatalog.Group("电台",ChannelCatalog.SOURCE_CUSTOM,new Channel[]{channel})};
+            Method start=MainActivity.class.getDeclaredMethod("startChannel",int.class);start.setAccessible(true);start.invoke(activity,0);
+        }catch(Exception error){throw new RuntimeException(error);}});
+    }
+    private void stoppedArtwork(String message)throws Exception {
+        waitForIdleSync();SystemClock.sleep(250);
+        check(view.isShown()&&delegate(view)!=null&&((RadioUiPlugin.Factory)field(view,"factory"))!=null,message+": artwork hidden");
+        check(!(Boolean)field(view,"playing")&&!(Boolean)field(delegate(view),"playing"),message+": disc still rotating");
+        check(view.cover()==null,message+": default disc was not restored");
+    }
+    private void radioFailures()throws Exception {
+        String missing=new java.net.URL(new java.net.URL(args.getString("audio")),"/missing.mp3").toString();
+        for(String style:new String[]{"classic","optical"}){
+            choose(style);startRadio(missing);
+            long until=SystemClock.elapsedRealtime()+12000;
+            while((Boolean)field(activity,"loadingActive")&&SystemClock.elapsedRealtime()<until)SystemClock.sleep(40);
+            check(!(Boolean)field(activity,"loadingActive"),"Unavailable radio did not finish loading");
+            stoppedArtwork(style+" unavailable stream");screenshot("radio-missing-"+style);
+            audioAvailable(true);startRadio(args.getString("audio")+"?failure="+style);until=SystemClock.elapsedRealtime()+15000;
+            while((!(Boolean)field(activity,"prepared")||!(Boolean)field(activity,"audioOnlyPlayback"))&&SystemClock.elapsedRealtime()<until)SystemClock.sleep(40);
+            check((Boolean)field(activity,"prepared")&&(Boolean)field(activity,"audioOnlyPlayback"),"Radio did not resume after missing stream");
+            check((Boolean)field(view,"playing"),"Recovered radio did not rotate");
+            audioAvailable(false);
+            runOnMainSync(()->{try{
+                IMediaPlayer current=(IMediaPlayer)field(activity,"player");current.pause();
+                Method error=tv.danmaku.ijk.media.player.AbstractMediaPlayer.class.getDeclaredMethod("notifyOnError",int.class,int.class);error.setAccessible(true);error.invoke(current,1,-1004);
+            }catch(Exception error){throw new RuntimeException(error);}});
+            stoppedArtwork(style+" interrupted stream");screenshot("radio-interrupted-"+style);
+        }
+        audioAvailable(true);
+        startFixture(new java.net.URL(new java.net.URL(args.getString("audio")),"/gateway.mp3").toString(),false);
+        long fallbackUntil=SystemClock.elapsedRealtime()+15000;
+        while((!(Boolean)field(activity,"prepared")||!(Boolean)field(activity,"audioOnlyPlayback"))&&SystemClock.elapsedRealtime()<fallbackUntil)SystemClock.sleep(40);
+        check((Boolean)field(activity,"prepared")&&(Boolean)field(activity,"audioOnlyPlayback"),"Audio-looking URL did not recover through normal classification");
+        check(field(activity,"directAudioFallbackRequestId").equals(field(activity,"playRequestId")),"Audio gateway did not exercise one-shot fallback");
+        startFixture(new java.net.URL(new java.net.URL(args.getString("audio")),"/video.mp4").toString(),false);
+        long until=SystemClock.elapsedRealtime()+15000;
+        while((!(Boolean)field(activity,"prepared")||!(Boolean)field(activity,"videoRenderingStarted"))&&SystemClock.elapsedRealtime()<until)SystemClock.sleep(40);
+        check((Boolean)field(activity,"prepared")&&(Boolean)field(activity,"videoRenderingStarted"),"Video did not start after failed radio");
+        check(view.getVisibility()==View.GONE,"Failed radio artwork covered the next video");
+    }
+    private void audioAvailable(boolean available)throws Exception {
+        java.net.HttpURLConnection connection=(java.net.HttpURLConnection)new java.net.URL(new java.net.URL(args.getString("audio")),available?"/unblock-audio":"/block-audio").openConnection();
+        try(InputStream in=connection.getInputStream()){check(connection.getResponseCode()==200,"Audio fixture toggle failed");}finally{connection.disconnect();}
+    }
+    private void startupTimings()throws Exception {
+        JSONArray samples=new JSONArray();
+        for(boolean radio:new boolean[]{false,true})for(int i=0;i<3;i++){
+            String url=args.getString("audio")+"?startup="+SystemClock.elapsedRealtime();
+            long started=SystemClock.elapsedRealtime();startFixture(url,radio);
+            long until=started+15000;boolean audible=false;
+            while(SystemClock.elapsedRealtime()<until){
+                IMediaPlayer current=(IMediaPlayer)field(activity,"player");
+                if((Boolean)field(activity,"prepared")&&current!=null&&current.isPlaying()&&current.getCurrentPosition()>0){audible=true;break;}
+                SystemClock.sleep(10);
+            }
+            check(audible,"Radio startup timed out");
+            samples.put(new JSONObject().put("radio",radio).put("elapsedMs",SystemClock.elapsedRealtime()-started));
+        }
+        resultTimings=samples.toString();
+    }
+    private String resultTimings;
     private static void restore(SharedPreferences prefs,Map<String,?> saved){
         SharedPreferences.Editor e=prefs.edit().clear();for(Map.Entry<String,?> v:saved.entrySet()){
             Object o=v.getValue();String k=v.getKey();if(o instanceof String)e.putString(k,(String)o);else if(o instanceof Integer)e.putInt(k,(Integer)o);else if(o instanceof Long)e.putLong(k,(Long)o);else if(o instanceof Boolean)e.putBoolean(k,(Boolean)o);else if(o instanceof Float)e.putFloat(k,(Float)o);else if(o instanceof Set)e.putStringSet(k,(Set<String>)o);
@@ -59,6 +132,9 @@ public final class RadioUiInstrumentation extends Instrumentation {
             while(SystemClock.elapsedRealtime()<until&&(!(Boolean)field(activity,"prepared")||!(Boolean)field(activity,"audioOnlyPlayback")))SystemClock.sleep(50);
             check((Boolean)field(activity,"prepared")&&(Boolean)field(activity,"audioOnlyPlayback"),"Audio fixture did not start");
             view=(AudioArtworkView)field(activity,"audioArtwork");IMediaPlayer audio=(IMediaPlayer)field(activity,"player");waitStyle(view,false);
+            if("true".equals(args.getString("startupOnly"))){
+                startupTimings();result.putString("stream","PASS radio startup samples: "+resultTimings+"\n");
+            }else{
             JSONObject nativeMenus=new JSONObject();TvUiChecks.radioPreferences(this,activity,nativeMenus);result.putString("nativeMenus",nativeMenus.toString());
             Bitmap cover=Bitmap.createBitmap(100,100,Bitmap.Config.ARGB_8888);cover.eraseColor(0xff42bb66);runOnMainSync(()->{try{((AlbumArtLoader)field(activity,"albumArtLoader")).clear();}catch(Exception e){throw new RuntimeException(e);}view.setCover(cover);});
             SystemClock.sleep(4000); // Let any startup toast expire before the artwork screenshots.
@@ -90,6 +166,14 @@ public final class RadioUiInstrumentation extends Instrumentation {
             runOnMainSync(()->RadioUiPlugin.request(view));until=SystemClock.elapsedRealtime()+6000;
             while(staticField(RadioUiPlugin.class,"active")==null&&SystemClock.elapsedRealtime()<until)SystemClock.sleep(30);
             check(staticField(RadioUiPlugin.class,"active")!=null&&remote.getString("sha256").equals(prefs.getString("active","")),"Catalog update replaced working cached selection");
+            int cachedDownloads=downloads();
+            choose("classic");waitStyle(view,false);
+            // Forget loaded classes as on a fresh process; the changed catalogue
+            // points at a failing URL, so the per-style disk record is required.
+            setStatic(RadioUiPlugin.class,"active",null);((Map<?,?>)staticField(RadioUiPlugin.class,"factories")).clear();
+            choose("remote-optical");waitStyle(view,true);
+            choose("classic");waitStyle(view,false);choose("remote-optical");waitStyle(view,true);
+            check(downloads()==cachedDownloads,"Cached style switches made plugin download requests");
             setStatic(RadioUiCatalog.class,"entries",valid);
 
             // Missing/invalid init is retryable, rather than leaving requested=true forever.
@@ -105,8 +189,11 @@ public final class RadioUiInstrumentation extends Instrumentation {
             choose("classic");waitStyle(view,false);
             setStatic(RadioUiPlugin.class,"active",null);((Map<?,?>)staticField(RadioUiPlugin.class,"factories")).clear();choose("optical");waitStyle(view,true);waitStyle(cold,true);
             check(audio.isPlaying()&&audio.getCurrentPosition()>before&&field(activity,"player")==audio,"Audio interrupted by switching or recovery");
+            runOnMainSync(()->{cold.setActive(false);cold.clear();((android.view.ViewGroup)cold.getParent()).removeView(cold);});
+            radioFailures();
             for(String json:new String[]{"{\"schema\":2,\"styles\":[]}",new JSONObject().put("schema",1).put("styles",new JSONArray().put(remote).put(remote)).toString()})try{RadioUiCatalog.parse(json);throw new AssertionError("Invalid catalog accepted");}catch(IOException expected){}
-            result.putString("stream","PASS: real audio player retained; downloaded classic/optical; legacy URL ignored; gesture-deferred and latest selection; invalid choice rollback; future catalog ID; HTTP failure and hash mismatch rollback; cached selection survives catalog update; retryable init; corrupt cache repair; offline reload; cover and audio preserved\n");code=-1;
+            result.putString("stream","PASS: real audio player retained; downloaded classic/optical; legacy URL ignored; gesture-deferred and latest selection; invalid choice rollback; future catalog ID; HTTP failure and hash mismatch rollback; cached selection survives catalog update; retryable init; corrupt cache repair; offline reload; cover and audio preserved\n");
+            }code=-1;
         }catch(Throwable e){result.putString("stream",android.util.Log.getStackTraceString(e));}
         finally{
             if(activity!=null)runOnMainSync(()->{if(cold!=null){cold.setActive(false);cold.clear();}if(view!=null)view.setActive(false);activity.finish();});waitForIdleSync();

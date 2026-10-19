@@ -1,0 +1,3 @@
+#EXTM3U
+#EXTINF:-1 group-title="音乐",Folia 歌词
+https://example.com/folia.jar?sha256=4b21c696b6b05d0245013a5272b017bc9397f39a4dbd5ce1016b47773f610ec5&audio=https%3A%2F%2Fexample.com%2Fsong.mp3&title=%E6%AD%8C%E5%90%8D&artist=%E6%AD%8C%E6%89%8B

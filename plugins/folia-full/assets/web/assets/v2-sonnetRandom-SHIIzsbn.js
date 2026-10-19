@@ -1,0 +1,1 @@
+var e=e=>{let t=2166136261;for(let n=0;n<e.length;n+=1)t^=e.charCodeAt(n),t=Math.imul(t,16777619);return t>>>0},t=(e,t)=>Math.imul((Math.trunc(e)^t)>>>0,2654435761)>>>0,n=(e,n,r)=>t(e+Math.imul(n+1,97),r)/4294967296;export{t as n,n as r,e as t};

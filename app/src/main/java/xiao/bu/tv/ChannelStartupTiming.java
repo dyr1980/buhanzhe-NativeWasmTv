@@ -68,8 +68,8 @@ final class ChannelStartupTiming {
     synchronized String display(int id) {
         if (id != request) return "加载耗时:--";
         return "解析:" + interval(resolveStarted, resolved >= 0 ? resolved : webReady)
-                + " 下载Σ:" + sum("下载")
-                + (decrypted ? " 解密Σ:" + sum("解密") : "")
+                + " 下载:" + sum("下载")
+                + (decrypted ? " 解密:" + sum("解密") : "")
                 + playbackTiming();
     }
     synchronized String format(int id) {
@@ -78,7 +78,7 @@ final class ChannelStartupTiming {
                 + "前置:" + (resolveStarted < 0 ? "--" : Math.max(0, resolveStarted - started - pluginMs) + "ms")
                 + " 解析:" + interval(resolveStarted, resolved >= 0 ? resolved : webReady) + " 清单Σ:" + sum("清单")
                 + (costs.containsKey("清单处理") ? " 清单处理Σ:" + sum("清单处理") : "")
-                + " 下载Σ:" + (costs.containsKey("下载") ? sum("下载") : firstData >= 0 ? "进行中" : "--") + (decrypted ? " 解密Σ:" + sum("解密") : "");
+                + " 下载:" + (costs.containsKey("下载") ? sum("下载") : firstData >= 0 ? "进行中" : "--") + (decrypted ? " 解密:" + sum("解密") : "");
         String second = "代理:" + interval(proxyStarted, proxyReady)
                 + (releaseStarted >= 0 ? " 释放:" + interval(releaseStarted, released) : "")
                 + (costs.containsKey("密钥") ? " 密钥Σ:" + sum("密钥") : "")

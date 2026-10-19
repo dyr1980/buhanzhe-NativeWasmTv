@@ -1,0 +1,1 @@
+import{ft as e}from"./v2-bootstrap-B1SmtauN.js";export{e as matchLyrics};

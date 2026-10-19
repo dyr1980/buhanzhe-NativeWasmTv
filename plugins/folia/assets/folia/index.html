@@ -1,0 +1,30 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:">
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#101522;color:#fff;font-family:sans-serif}
+#glow{position:absolute;top:-15%;left:-15%;right:-15%;bottom:-15%;background:radial-gradient(ellipse at 20% 30%,#314b65,transparent 65%),radial-gradient(ellipse at 80% 80%,#674451,transparent 60%);opacity:.7}
+#art{position:absolute;left:7%;top:16%;width:30%;height:55%;object-fit:contain;border-radius:16px;box-shadow:0 18px 80px #0006;display:none}
+#info{position:absolute;left:7%;bottom:12%;width:31%}h1{font-size:28px;margin:8px 0}#artist,#status{font-size:16px;color:#bac7d8;line-height:1.7}#brand{font-size:12px;letter-spacing:5px;color:#8da1bd}
+#rail{position:absolute;left:43%;top:0;right:5%;height:100%;overflow:hidden;-webkit-mask-image:linear-gradient(transparent,#000 20%,#000 80%,transparent)}
+#lines{position:absolute;top:45%;width:100%;transition:transform .65s cubic-bezier(.2,.7,.1,1);-webkit-transition:-webkit-transform .65s}
+#search{position:absolute;top:4%;left:7%;right:7%;z-index:2}input,button{font-size:18px;padding:10px 16px;border-radius:8px;border:1px solid #71839b;background:#182332;color:white}input{width:35%}button,a{cursor:pointer}button:focus,input:focus,a:focus{outline:3px solid #a8d5ff}#results{max-height:65vh;overflow:auto;background:#101a2af5;border-radius:10px;width:65%;margin-top:8px}#results a{display:block;padding:12px 18px;font-size:20px;color:#fff;text-decoration:none;border-bottom:1px solid #ffffff15}
+.line{font-size:30px;line-height:1.45;padding:14px 0;opacity:.26;transition:opacity .5s,transform .5s;transform-origin:left center;word-break:break-word}.line.active{opacity:1;transform:scale(1.08)}
+@media(max-width:700px){h1{font-size:20px}.line{font-size:23px}}
+</style></head><body><div id="glow"></div><img id="art"><div id="info"><div id="brand">FOLIA · nTv</div><h1 id="title"></h1><div id="artist"></div><div id="status"></div></div><div id="rail"><div id="lines"></div></div>
+<form id="search"><input id="query" aria-label="歌名或歌手" placeholder="歌名 / 歌手"><button type="submit">搜索</button><button type="button" id="dismiss">收起</button><div id="results"></div></form>
+<script>
+(function(){'use strict';var rows=[],active=-1,position=0,playing=false,stamp=0,offset=0;
+function parse(text){var result=[],lines=String(text||'').split(/\r?\n/),i,m,re=/\[(\d+):(\d{2})(?:[.:](\d{1,3}))?\]/g;offset=0;
+var off=/\[offset:([+-]?\d+)\]/i.exec(text);if(off)offset=Number(off[1]);
+for(i=0;i<lines.length;i++){re.lastIndex=0;var times=[],line=lines[i];while((m=re.exec(line))){times.push(Number(m[1])*60000+Number(m[2])*1000+Number(((m[3]||'')+'000').slice(0,3)));}var content=line.replace(re,'').replace(/<\d+:\d+(?:\.\d+)?>/g,'').trim();for(var j=0;j<times.length;j++)result.push({time:times[j],text:content});}
+result.sort(function(a,b){return a.time-b.time;});return result;}
+function draw(ms){var index=-1;for(var i=0;i<rows.length;i++){if(rows[i].time<=ms+offset)index=i;else break;}if(index===active)return;active=index;var box=document.getElementById('lines'),nodes=box.children;for(var j=0;j<nodes.length;j++)nodes[j].className='line'+(j===index?' active':'');var y=index<0?0:nodes[index].offsetTop;box.style.transform='translateY(-'+y+'px)';box.style.webkitTransform='translateY(-'+y+'px)';}
+window.folia={set:function(json){var d=JSON.parse(json);document.getElementById('title').textContent=d.title||'';document.getElementById('artist').textContent=d.artist||'';document.getElementById('status').textContent=d.status||'';var img=document.getElementById('art');img.style.display=d.cover?'block':'none';if(d.cover)img.src=d.cover;rows=parse(d.lrc);active=-2;var box=document.getElementById('lines');while(box.firstChild)box.removeChild(box.firstChild);for(var i=0;i<rows.length;i++){var node=document.createElement('div');node.className='line';node.textContent=rows[i].text||'♪';box.appendChild(node);}draw(position);},clock:function(ms,running){position=ms;playing=running;stamp=Date.now();draw(ms);}};
+window.addEventListener('resize',function(){active=-2;draw(position);});
+document.getElementById('search').onsubmit=function(e){e.preventDefault();document.getElementById('results').style.display='block';location.href='ntv-folia://search?q='+encodeURIComponent(document.getElementById('query').value);};
+document.getElementById('dismiss').onclick=function(){document.getElementById('results').style.display='none';};
+window.folia.searchStatus=function(message){document.getElementById('results').textContent=message;};
+window.folia.results=function(json){var songs=JSON.parse(json),box=document.getElementById('results');box.textContent=songs.length?'':'没有搜索结果';for(var i=0;i<songs.length;i++){var song=songs[i],artists=song.artists||[],names=[];for(var n=0;n<artists.length;n++)names.push(artists[n].name);var a=document.createElement('a');a.textContent=song.name+' · '+names.join(' / ');a.href='ntv-folia://song?id='+encodeURIComponent(song.id)+'&title='+encodeURIComponent(song.name)+'&artist='+encodeURIComponent(names.join(' / '));a.onclick=function(){box.style.display='none';};box.appendChild(a);}};
+setInterval(function(){if(playing)draw(position+Math.min(1500,Date.now()-stamp));},100);
+})();
+</script></body></html>

@@ -1,0 +1,14 @@
+Folia standalone nTv channel plugin, version 1.
+
+MatchScore.java is a simplified Java adaptation of the title/artist scoring,
+confidence cap and duration multipliers in chthollyphile/folia-major:
+https://github.com/chthollyphile/folia-major/blob/main/src/utils/lyrics/matchScore.ts
+Copyright the Folia contributors. Licensed under AGPL-3.0.
+The adaptation omits album matching, kana/Chinese normalization and artist token scoring.
+
+This plugin's compact HTML renderer is newly implemented for nTv. It is not the
+complete Folia React application and does not include Folia's original animation
+themes, Folium modules, account system or desktop features.
+
+Plugin source: plugins/folia in https://github.com/buhanzhe/NativeWasmTv
+The plugin is distributed under AGPL-3.0; see LICENSE.

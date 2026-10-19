@@ -234,7 +234,7 @@ function renderPageState() {
   document.getElementById("autoSwitchSourceSeconds").value = String(
     s.autoSwitchSourceSeconds == null ? (s.autoSwitchSource === true ? 5 : 0) : s.autoSwitchSourceSeconds);
   renderSiteQualities();
-  document.getElementById("uiScaleMode").value = s.uiScaleMode || "auto";
+  document.getElementById("uiScaleMode").value = s.uiScaleMode === "auto" ? "standard" : (s.uiScaleMode || "standard");
   var display = state.display || {},
     size = Number(display.diagonalInches) || 0,
     parts = ["44dp 基准，随屏幕适配", "当前行高约 " + Math.round(46 * (Number(s.uiScaleFactor) || 1)) + "dp"];

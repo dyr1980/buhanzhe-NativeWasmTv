@@ -48,9 +48,7 @@ final class RadioUiPlugin {
         if(requested||SystemClock.elapsedRealtime()<retryAfter)return;
         requested=true;final Context c=view.getContext().getApplicationContext();
         worker.execute(()->{try{synchronized(INSTALL_LOCK){if(active==null){
-            RadioUiCatalog.Entry saved=savedEntry(c);
-            // A catalog refresh must not turn a working cached selection into a mandatory update.
-            selectLocked(c,saved!=null&&new File(root(c),saved.sha+".jar").isFile()?saved:entry(c,selected(c)));
+            selectLocked(c,selected(c));
         }}}
             catch(Exception e){failure=message(e);retryAfter=SystemClock.elapsedRealtime()+60000;}
             finally{synchronized(RadioUiPlugin.class){requested=false;}}});
@@ -74,30 +72,38 @@ final class RadioUiPlugin {
     private static RadioUiCatalog.Entry savedEntry(Context c){
         try{RadioUiCatalog.Entry e=new RadioUiCatalog.Entry(new JSONObject(prefs(c).getString("selected_entry","")));return selected(c).equals(e.id)?e:null;}catch(Exception ignored){return null;}
     }
+    private static RadioUiCatalog.Entry cachedEntry(Context c,String id){
+        try{RadioUiCatalog.Entry e=new RadioUiCatalog.Entry(new JSONObject(prefs(c).getString("cached_entry."+id,"")));if(id.equals(e.id))return e;}catch(Exception ignored){}
+        RadioUiCatalog.Entry saved=savedEntry(c);
+        return saved!=null&&id.equals(saved.id)?saved:null;
+    }
     private static RadioUiCatalog.Entry entry(Context c,String id)throws Exception {
         RadioUiCatalog.Entry e=RadioUiCatalog.find(c,id);
         if(e==null&&id.equals(selected(c)))e=savedEntry(c);
         if(e==null)throw new IOException("此界面不在可选列表中，请刷新列表");return e;
     }
     private static void selectLocked(Context c,String id)throws Exception {
+        // Catalogue changes must not make switching an already downloaded style
+        // depend on the network. Keep the last working descriptor for each ID.
+        RadioUiCatalog.Entry saved=cachedEntry(c,id);
+        if(saved!=null){Factory cached=cachedFactory(c,saved);if(cached!=null){selectLocked(c,saved,cached);return;}}
         selectLocked(c,entry(c,id));
     }
     private static void selectLocked(Context c,RadioUiCatalog.Entry e)throws Exception {
-        Factory factory=ensure(c,e);
+        selectLocked(c,e,ensure(c,e));
+    }
+    private static void selectLocked(Context c,RadioUiCatalog.Entry e,Factory factory)throws Exception {
         if(!factory.styles.contains(e.style))throw new IOException("插件不支持所选电台样式");
         if(!factory.validatedStyles.contains(e.style)){validate(c,factory,e.style);factory.validatedStyles.add(e.style);}
         if(!prefs(c).edit().putString("selected",e.id).putString("selected_entry",e.json().toString())
+                .putString("cached_entry."+e.id,e.json().toString())
                 .putString("style",e.style).putString("active",factory.sha).commit())throw new IOException("无法保存电台界面");
         publish(factory);
     }
     private static Factory ensure(Context c,RadioUiCatalog.Entry e)throws Exception {
-        Factory cached=factories.get(e.sha);if(cached!=null)return cached;
+        Factory cached=cachedFactory(c,e);if(cached!=null)return cached;
         File dir=root(c);if(!dir.isDirectory()&&!dir.mkdirs())throw new IOException("无法创建界面目录");
         File jar=new File(dir,e.sha+".jar");
-        if(jar.isFile()){
-            try{Factory f=load(c,jar,e.sha);factories.put(e.sha,f);return f;}
-            catch(Exception invalid){if(!jar.delete())throw new IOException("无法修复损坏的界面缓存",invalid);}
-        }
         byte[] bytes=RadioUiCatalog.download(e.url,MAX_BYTES,25000);
         if(!e.sha.equals(sha(bytes)))throw new IOException("界面文件校验失败，已保留原界面");
         File temp=File.createTempFile("install-",".tmp",dir);
@@ -108,6 +114,12 @@ final class RadioUiPlugin {
         final Factory f;
         try{f=load(c,jar,e.sha);}catch(Exception invalid){jar.delete();throw invalid;}
         if(factories.size()>=6)factories.clear();factories.put(e.sha,f);return f;
+    }
+    private static Factory cachedFactory(Context c,RadioUiCatalog.Entry e)throws Exception {
+        Factory cached=factories.get(e.sha);if(cached!=null)return cached;
+        File jar=new File(root(c),e.sha+".jar");if(!jar.isFile())return null;
+        try{Factory factory=load(c,jar,e.sha);if(factories.size()>=6)factories.clear();factories.put(e.sha,factory);return factory;}
+        catch(Exception invalid){if(!jar.delete())throw new IOException("无法修复损坏的界面缓存",invalid);return null;}
     }
     private static Factory load(Context c,File jar,String sha)throws Exception {
         if(jar.length()==0||jar.length()>MAX_BYTES)throw new IOException("界面文件大小无效");

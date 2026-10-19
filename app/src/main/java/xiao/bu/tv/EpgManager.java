@@ -79,6 +79,79 @@ final class EpgManager {
                 new HashMap<String, List<Program>>();
     }
 
+    private static final class EpgDatabase extends android.database.sqlite.SQLiteOpenHelper {
+        EpgDatabase(Context c){super(c,"epg-guide.db",null,1);}
+        public void onCreate(android.database.sqlite.SQLiteDatabase db){
+            db.execSQL("CREATE TABLE sources(source TEXT PRIMARY KEY,resolved TEXT,validated INTEGER)");
+            db.execSQL("CREATE TABLE aliases(source TEXT,alias TEXT,channel TEXT)");
+            db.execSQL("CREATE TABLE logos(source TEXT,channel TEXT,url TEXT)");
+            db.execSQL("CREATE TABLE programmes(source TEXT,channel TEXT,start INTEGER,stop INTEGER,title TEXT,catchup TEXT)");
+            db.execSQL("CREATE INDEX programme_source ON programmes(source,channel,start)");
+            db.execSQL("CREATE INDEX alias_source ON aliases(source)");
+            db.execSQL("CREATE INDEX logo_source ON logos(source)");
+        }
+        public void onUpgrade(android.database.sqlite.SQLiteDatabase db,int oldVersion,int newVersion){
+            throw new IllegalStateException("Unsupported EPG database upgrade");
+        }
+    }
+    private final EpgDatabase database;
+    private static final class StoredGuide {
+        final Guide guide;final String resolved;final long validated;
+        StoredGuide(Guide g,String r,long v){guide=g;resolved=r;validated=v;}
+    }
+    private final Object databaseLock=new Object();
+    private StoredGuide readDatabase(String source){
+        synchronized(databaseLock){
+            try{
+                android.database.sqlite.SQLiteDatabase db=database.getReadableDatabase();
+                String[] args={source};String resolved;long validated;
+                android.database.Cursor cursor=db.rawQuery("SELECT resolved,validated FROM sources WHERE source=?",args);
+                try{if(!cursor.moveToFirst())return null;resolved=cursor.getString(0);validated=cursor.getLong(1);}finally{cursor.close();}
+                Guide restored=new Guide();
+                cursor=db.rawQuery("SELECT alias,channel FROM aliases WHERE source=?",args);
+                try{while(cursor.moveToNext())restored.channelByAlias.put(cursor.getString(0),cursor.getString(1));}finally{cursor.close();}
+                cursor=db.rawQuery("SELECT channel,url FROM logos WHERE source=?",args);
+                try{while(cursor.moveToNext())restored.logosByChannel.put(cursor.getString(0),cursor.getString(1));}finally{cursor.close();}
+                long now=System.currentTimeMillis();
+                cursor=db.rawQuery("SELECT channel,start,stop,title,catchup FROM programmes WHERE source=? AND stop>? AND start<? ORDER BY channel,start,stop",
+                        new String[]{source,Long.toString(now-KEEP_PAST_MS),Long.toString(now+KEEP_FUTURE_MS)});
+                try{while(cursor.moveToNext()){
+                    String channel=cursor.getString(0);List<Program> programmes=restored.programsByChannel.get(channel);
+                    if(programmes==null){programmes=new ArrayList<Program>();restored.programsByChannel.put(channel,programmes);}
+                    programmes.add(new Program(cursor.getLong(1),cursor.getLong(2),cursor.getString(3),cursor.getString(4)));
+                }}finally{cursor.close();}
+                return new StoredGuide(restored,resolved,validated);
+            }catch(android.database.SQLException error){Log.w(TAG,"Unable to read SQLite EPG",error);return null;}
+        }
+    }
+    private void saveDatabase(String source,String resolved,Guide snapshot,long validated){
+        synchronized(databaseLock){
+            android.database.sqlite.SQLiteDatabase db=database.getWritableDatabase();db.beginTransaction();
+            try{
+                String[] args={source};
+                for(String table:new String[]{"aliases","logos","programmes","sources"})db.delete(table,"source=?",args);
+                android.database.sqlite.SQLiteStatement row=db.compileStatement("INSERT INTO programmes VALUES(?,?,?,?,?,?)");
+                try{for(Map.Entry<String,List<Program>> entry:snapshot.programsByChannel.entrySet())for(Program programme:entry.getValue()){
+                    row.bindString(1,source);row.bindString(2,entry.getKey());row.bindLong(3,programme.startMillis);row.bindLong(4,programme.stopMillis);
+                    row.bindString(5,programme.title);row.bindString(6,programme.catchupId);row.executeInsert();
+                }}finally{row.close();}
+                row=db.compileStatement("INSERT INTO aliases VALUES(?,?,?)");
+                try{for(Map.Entry<String,String> alias:snapshot.channelByAlias.entrySet()){
+                    row.bindString(1,source);row.bindString(2,alias.getKey());row.bindString(3,alias.getValue());row.executeInsert();
+                }}finally{row.close();}
+                row=db.compileStatement("INSERT INTO logos VALUES(?,?,?)");
+                try{for(Map.Entry<String,String> logo:snapshot.logosByChannel.entrySet()){
+                    row.bindString(1,source);row.bindString(2,logo.getKey());row.bindString(3,logo.getValue());row.executeInsert();
+                }}finally{row.close();}
+                android.content.ContentValues meta=new android.content.ContentValues();meta.put("source",source);meta.put("resolved",resolved);meta.put("validated",validated);
+                db.insertOrThrow("sources",null,meta);db.setTransactionSuccessful();
+            }finally{db.endTransaction();}
+        }
+    }
+    private boolean freshDatabase(long validated){
+        long now=System.currentTimeMillis();return validated<=now&&dayStart(validated)==dayStart(now);
+    }
+
     private final Context context;
     private volatile Guide guide = new Guide();
     private volatile boolean loading;
@@ -91,6 +164,7 @@ final class EpgManager {
 
     EpgManager(Context context) {
         this.context = context.getApplicationContext();
+        this.database=new EpgDatabase(this.context);
     }
 
     boolean isLoading() {
@@ -184,7 +258,8 @@ final class EpgManager {
             long day = dayStart(System.currentTimeMillis());
             long now=android.os.SystemClock.elapsedRealtime();
             if (sourceSignature.equals(attemptedSource) && attemptedDay == day
-                    && (loading || lastError.length()==0 || now-attemptedAt<60000L)) return;
+                    && (loading || lastError.length()==0 || !guide.programsByChannel.isEmpty()
+                            || now-attemptedAt<300000L)) return;
             attemptedSource = sourceSignature;
             attemptedDay = day;
             attemptedAt = now;
@@ -197,6 +272,39 @@ final class EpgManager {
             public void run() {
                 android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
                 try {
+                    Map<String,StoredGuide> restoredSources=new HashMap<String,StoredGuide>();
+                    // Restore disk data before waiting for a stale source's network
+                    // validation. Cold starts and theme changes must not blank EPG.
+                    if(guide.programsByChannel.isEmpty()) {
+                        Guide disk=new Guide();
+                        List<String> diskSources=new ArrayList<String>();
+                        SharedPreferences prefs=context.getSharedPreferences(CACHE_PREFS,Context.MODE_PRIVATE);
+                        for(int i=0;i<sources.size();i++) {
+                            if(requestId!=refreshGeneration)return;
+                            StoredGuide stored=readDatabase(sources.get(i));
+                            restoredSources.put(sources.get(i),stored);
+                            if(stored!=null&&!stored.guide.programsByChannel.isEmpty()){
+                                mergeGuide(disk,stored.guide);diskSources.add(stored.resolved);continue;
+                            }
+                            CacheSlot slot=cacheSlot(sources.get(i),i);
+                            if(!sources.get(i).equals(prefs.getString(slot.sourceKey,""))
+                                    || isCacheFresh(slot.file))continue;
+                            try {
+                                byte[] bytes=readCache(slot.file);
+                                if(bytes.length==0)continue;
+                                Guide restored=parse(bytes);
+                                String resolved=prefs.getString(slot.resolvedKey,sources.get(i));
+                                resolveLogos(restored,resolved);mergeGuide(disk,restored);diskSources.add(resolved);
+                            }catch(Exception ignored){Log.w(TAG,"Unable to restore cached EPG");}
+                        }
+                        boolean restored=false;
+                        synchronized(EpgManager.this){
+                            if(requestId==refreshGeneration&&!disk.programsByChannel.isEmpty()){
+                                publish(disk,diskSources);restored=true;
+                            }
+                        }
+                        if(restored)notifyListener(listener);
+                    }
                     Guide merged = new Guide();
                     List<String> loadedSources = new ArrayList<String>();
                     String firstError = "";
@@ -204,7 +312,7 @@ final class EpgManager {
                         if (requestId != refreshGeneration) return;
                         String source = sources.get(index);
                         try {
-                            LoadedGuide loaded = loadGuide(source, cacheSlot(source, index));
+                            LoadedGuide loaded = loadGuide(source, cacheSlot(source, index), restoredSources.containsKey(source)?restoredSources.get(source):readDatabase(source));
                             mergeGuide(merged, loaded.guide);
                             loadedSources.add(loaded.sourceUrl);
                             // Expose the first usable cold-load source before a
@@ -256,17 +364,20 @@ final class EpgManager {
         }, "epg-refresh").start();
     }
 
-    private LoadedGuide loadGuide(String sourceUrl, CacheSlot slot) throws Exception {
+    private LoadedGuide loadGuide(String sourceUrl, CacheSlot slot,StoredGuide stored) throws Exception {
         SharedPreferences preferences = context.getSharedPreferences(CACHE_PREFS,
                 Context.MODE_PRIVATE);
         boolean cacheMatches = sourceUrl.equals(preferences.getString(slot.sourceKey, ""));
-        byte[] cached = cacheMatches ? readCache(slot.file) : new byte[0];
-        Guide cachedGuide = null;
-        String cachedUrl = preferences.getString(slot.resolvedKey, sourceUrl);
+        if(stored!=null&&freshDatabase(stored.validated)&&!stored.guide.programsByChannel.isEmpty())
+            return new LoadedGuide(stored.guide,stored.resolved);
+        byte[] cached = stored==null&&cacheMatches ? readCache(slot.file) : new byte[0];
+        Guide cachedGuide = stored==null?null:stored.guide;
+        String cachedUrl = stored==null?preferences.getString(slot.resolvedKey, sourceUrl):stored.resolved;
         if (cached.length > 0) {
             try {
                 cachedGuide = parse(cached);
                 resolveLogos(cachedGuide, cachedUrl);
+                saveDatabase(sourceUrl,cachedUrl,cachedGuide,slot.file.lastModified());
                 if (isCacheFresh(slot.file)) return new LoadedGuide(cachedGuide, cachedUrl);
             } catch (Exception cacheError) {
                 if (!slot.file.delete()) Log.w(TAG, "Unable to remove invalid EPG cache");
@@ -287,12 +398,17 @@ final class EpgManager {
             if (downloaded.notModified) {
                 refreshCacheValidation(slot, downloaded.metadata, downloaded.url);
                 if (cachedGuide == null) throw new IOException("节目单缓存不可用");
+                android.content.ContentValues validated=new android.content.ContentValues();
+                validated.put("validated",System.currentTimeMillis());validated.put("resolved",downloaded.url);
+                database.getWritableDatabase().update("sources",validated,"source=?",new String[]{sourceUrl});
                 return new LoadedGuide(cachedGuide, downloaded.url);
             }
             Guide parsed = parse(downloaded.bytes);
             resolveLogos(parsed, downloaded.url);
-            writeCache(slot, downloaded.bytes, sourceUrl, downloaded.url,
-                    downloaded.metadata);
+            try{saveDatabase(sourceUrl,downloaded.url,parsed,System.currentTimeMillis());}
+            catch(android.database.SQLException cacheError){Log.w(TAG,"SQLite EPG write failed; using downloaded guide",cacheError);}
+            try{writeCache(slot, downloaded.bytes, sourceUrl, downloaded.url,downloaded.metadata);}
+            catch(IOException cacheError){Log.w(TAG,"XML backup unavailable; SQLite EPG retained",cacheError);}
             return new LoadedGuide(parsed, downloaded.url);
         } catch (Exception downloadError) {
             if (cachedGuide != null) {

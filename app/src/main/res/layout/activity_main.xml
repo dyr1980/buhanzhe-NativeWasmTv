@@ -319,7 +319,7 @@
 
             <TextView
                 android:id="@+id/epg_toggle"
-                android:layout_width="40dp"
+                android:layout_width="28dp"
                 android:layout_height="120dp"
                 android:layout_gravity="center_vertical"
                 android:gravity="center"

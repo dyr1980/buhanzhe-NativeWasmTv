@@ -24,7 +24,7 @@ public final class PlaybackGesturesInstrumentation extends Instrumentation {
     private void until(Condition c,long ms,String s)throws Exception{long end=SystemClock.elapsedRealtime()+ms;while(!c.get()&&SystemClock.elapsedRealtime()<end)SystemClock.sleep(35);check(c.get(),s);}
     private IMediaPlayer player()throws Exception{return (IMediaPlayer)get("player");}
     private void ready()throws Exception{until(()->(Boolean)get("prepared")&&(Boolean)get("videoRenderingStarted"),20000,"No decoded frame");waitForIdleSync();SystemClock.sleep(120);}
-    private void channel(int i)throws Exception{main(()->{set("currentGroupIndex",0);call("startChannel",new Class[]{int.class},i);});ready();}
+    private void channel(int i)throws Exception{main(()->{set("currentGroupIndex",0);set("currentSourceIndex",0);call("startChannel",new Class[]{int.class},i);});ready();}
     private void hide()throws Exception{main(()->{call("closeChannelList",new Class[]{});((TvUiMenu)get("tvUiMenu")).dismiss();VideoControlsOverlay c=(VideoControlsOverlay)get("videoControlsOverlay");if(c!=null)c.hide();});waitForIdleSync();}
     private void touch(int action,long down,float x,float y)throws Exception{View root=(View)get("root");int[] at=new int[2];main(()->root.getLocationOnScreen(at));MotionEvent e=MotionEvent.obtain(down,SystemClock.uptimeMillis(),action,at[0]+x*root.getWidth(),at[1]+y*root.getHeight(),0);e.setSource(InputDevice.SOURCE_TOUCHSCREEN);sendPointerSync(e);e.recycle();}
     private void drag(float x,float y,float dx,float dy,boolean cancel,boolean finish)throws Exception{long down=SystemClock.uptimeMillis();touch(0,down,x,y);for(int i=1;i<=6;i++){touch(2,down,x+dx*i/6,y+dy*i/6);SystemClock.sleep(18);}if(finish)touch(cancel?3:1,down,x+dx,y+dy);}
@@ -37,17 +37,20 @@ public final class PlaybackGesturesInstrumentation extends Instrumentation {
             oldBrightness=activity.getWindow().getAttributes().screenBrightness;audio=(AudioManager)c.getSystemService(Context.AUDIO_SERVICE);oldVolume=audio.getStreamVolume(AudioManager.STREAM_MUSIC);int volume=Math.max(2,audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)/2);
             int systemBrightness=android.provider.Settings.System.getInt(c.getContentResolver(),android.provider.Settings.System.SCREEN_BRIGHTNESS,-1);
             String base=args.getString("base"),m3u="#EXTM3U\n";
-            for(int i=0;i<3;i++)m3u+="#EXTINF:-1 group-title=\"手势\",直播"+i+"\n"+base+"/live.m3u8?channel="+i+"\n";
+            for(int i=0;i<3;i++)for(int s=0;s<(i==0?3:1);s++)m3u+="#EXTINF:-1 group-title=\"手势\",直播"+i+"\n"+base+"/live.m3u8?channel="+i+"&source="+s+"\n";
             m3u+="#EXTINF:-1 group-title=\"手势\",点播\n"+base+"/vod.mp4\n";
             Method parse=PlaylistManager.class.getDeclaredMethod("parse",byte[].class,String.class);parse.setAccessible(true);ChannelCatalog.Group[] groups=(ChannelCatalog.Group[])parse.invoke(null,m3u.getBytes("UTF-8"),base+"/list.m3u");main(()->{ChannelCatalog.GROUPS=groups;set("autoSwitchSource",false);});
             for(String id:new String[]{"builtin","ui2","ui3","ui4","ui5","ui6"}){
                 TvUiPlugin.select(c,id);until(()->(Integer)get("appliedTvUiRevision")==TvUiPlugin.revision(),5000,"Theme not applied");channel(0);hide();check((Long)call("seekableDuration",new Class[]{})==0,"Fixture not live");
                 audio.setStreamVolume(AudioManager.STREAM_MUSIC,volume,0);main(()->PlaybackBrightness.apply(activity,35));IMediaPlayer p=player();drag(.2f,.65f,0,-.25f,false,true);
                 check(PlaybackBrightness.percent(activity)>60,"Live left swipe did not brighten");check(audio.getStreamVolume(AudioManager.STREAM_MUSIC)==volume&&player()==p&&(Integer)get("currentChannelIndex")==0,"Live brightness changed volume/channel");row(id,"live","left brightness");if(id.equals("ui2"))shot("live-brightness");
-                drag(.42f,.55f,-.34f,0,false,true);until(()->!(Boolean)get("channelSwitchAnimating"),4000,"Horizontal switch stuck");ready();check((Integer)get("currentChannelIndex")==1&&(Integer)get("currentSourceIndex")==0,"Left-half swipe did not change channel");row(id,"live","left-half horizontal next");
-                drag(.58f,.55f,.34f,0,false,true);until(()->!(Boolean)get("channelSwitchAnimating"),4000,"Horizontal return stuck");ready();check((Integer)get("currentChannelIndex")==0,"Right-half swipe did not return");row(id,"live","right-half horizontal previous");
-                drag(.42f,.55f,-.34f,0,true,true);SystemClock.sleep(320);check((Integer)get("currentChannelIndex")==0,"Cancelled live swipe changed channel");row(id,"live","cancel horizontal");
+                check(groups[0].channels[0].sourceCount()==3,"Fixture needs three live sources");
+                drag(.42f,.55f,-.34f,0,false,true);until(()->!(Boolean)get("channelSwitchAnimating"),4000,"Horizontal switch stuck");ready();check((Integer)get("currentChannelIndex")==0&&(Integer)get("currentSourceIndex")==1,"Left-half swipe did not change source");row(id,"live","left-half horizontal next source");
+                drag(.58f,.55f,.34f,0,false,true);until(()->!(Boolean)get("channelSwitchAnimating"),4000,"Horizontal return stuck");ready();check((Integer)get("currentChannelIndex")==0&&(Integer)get("currentSourceIndex")==0,"Right-half swipe did not return to source zero");row(id,"live","right-half horizontal previous source");
+                drag(.42f,.55f,-.34f,0,true,true);SystemClock.sleep(320);check((Integer)get("currentChannelIndex")==0&&(Integer)get("currentSourceIndex")==0,"Cancelled live swipe changed channel/source");row(id,"live","cancel horizontal");
+                drag(.58f,.55f,.34f,0,false,true);until(()->!(Boolean)get("channelSwitchAnimating"),4000,"Source wrap stuck");ready();check((Integer)get("currentChannelIndex")==0&&(Integer)get("currentSourceIndex")==2,"Previous source did not wrap");row(id,"live","previous source wraps");
                 drag(.8f,.65f,0,-.28f,false,true);until(()->!(Boolean)get("channelSwitchAnimating"),4000,"Vertical live switch stuck");ready();check((Integer)get("currentChannelIndex")==1,"Live right vertical swipe no longer changes channel");row(id,"live","right vertical next");
+                p=player();drag(.42f,.55f,-.34f,0,false,true);SystemClock.sleep(350);check((Integer)get("currentChannelIndex")==1&&(Integer)get("currentSourceIndex")==0&&player()==p,"Single-source swipe changed channel/player");row(id,"live","single source stays on channel");
                 channel(3);hide();check((Long)call("seekableDuration",new Class[]{})>30000,"Fixture not VOD");p=player();
                 main(()->PlaybackBrightness.apply(activity,35));audio.setStreamVolume(AudioManager.STREAM_MUSIC,volume,0);drag(.2f,.65f,0,-.25f,false,true);
                 check(PlaybackBrightness.percent(activity)>60&&audio.getStreamVolume(AudioManager.STREAM_MUSIC)==volume,"Hidden VOD brightness wrong");check(player()==p&&(Integer)get("currentChannelIndex")==3,"VOD brightness changed player/channel");row(id,"vod","hidden left brightness");if(id.equals("ui2"))shot("vod-brightness");hide();
@@ -64,7 +67,7 @@ public final class PlaybackGesturesInstrumentation extends Instrumentation {
                 hide();
             }
             check(android.provider.Settings.System.getInt(c.getContentResolver(),android.provider.Settings.System.SCREEN_BRIGHTNESS,-1)==systemBrightness,"System brightness changed");
-            result.putString("stream","PASS: six themes; live full-width channel swipes and brightness; hidden/visible VOD brightness, volume, seek preview/commit/cancel; player unchanged; global brightness unchanged\n");code=-1;
+            result.putString("stream","PASS: six themes; live full-width source swipes, wrap/cancel/single-source, vertical channel switch and brightness; hidden/visible VOD brightness, volume, seek preview/commit/cancel; player unchanged; global brightness unchanged\n");code=-1;
         }catch(Throwable e){result.putString("stream",android.util.Log.getStackTraceString(e));}
         finally{
             try{if(out!=null)try(FileOutputStream f=new FileOutputStream(new File(out,"results.json"))){f.write(rows.toString(2).getBytes("UTF-8"));}}catch(Exception ignored){}

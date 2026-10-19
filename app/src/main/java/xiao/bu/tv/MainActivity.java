@@ -92,12 +92,24 @@ import tv.danmaku.ijk.media.player.IjkMediaPlayer;
 import tv.danmaku.ijk.media.player.IjkTimedText;
 import tv.danmaku.ijk.media.player.misc.ITrackInfo;
 
-public final class MainActivity extends Activity implements TvUiPlugin.Listener, xiao.bu.tv.skin.SharedTvUi.Viewport {
+public final class MainActivity extends Activity implements TvUiPlugin.Listener, xiao.bu.tv.skin.SharedTvUi.Viewport, xiao.bu.tv.skin.SharedTvUi.InputMode {
     private TvUiChrome tvUiChrome;
     private int appliedTvUiRevision=-1;
     private boolean tvUiCardPending;
     private float appliedTvUiScale=-1f;
     private final TvUiMenu tvUiMenu = new TvUiMenu();
+    private final RemoteListPager groupPager = new RemoteListPager(), channelPager = new RemoteListPager(), epgPager = new RemoteListPager();
+    private final java.util.LinkedHashMap<String, BrowseCursor> channelCursors = new java.util.LinkedHashMap<>(), epgCursors = new java.util.LinkedHashMap<>();
+    private String navigationGroupKey = "", epgNavigationKey = "";
+    private Channel[] navigationChannels;
+    private int channelNavigationGeneration;
+    private long lastListRepeatAt;
+    private boolean epgNavigationActive;
+    private final SimpleDateFormat epgBrowseDate = new SimpleDateFormat("MM-dd EEEE", Locale.getDefault());
+    private static final class BrowseCursor {
+        int selected, first, top; boolean paged;
+        String selectedKey = "", firstKey = "";
+    }
     @Override public void onTvUiChanged() {
         if(isFinishing()||channelListPanel==null||groupAdapter==null)return;
         if(!TvUiPlugin.failure().isEmpty())Toast.makeText(this,TvUiPlugin.failure(),Toast.LENGTH_LONG).show();
@@ -107,11 +119,13 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         refreshUiScaleForViewport(root.getWidth(),root.getHeight(),true);
     }
     private void rebuildTvUiChrome() {
+        rememberChannelCursor();rememberEpgCursor();
+        groupPager.reset();channelPager.reset();epgPager.reset();channelNavigationGeneration++;
         appliedTvUiScale=themeScale();
         tvUiMenu.dismiss();
         cancelPendingChannelListSelection();channelListPanel.removeCallbacks(hideChannelList);channelBar.removeCallbacks(hideChannelBar);
         boolean opened=channelListPanel.getVisibility()==View.VISIBLE;
-        int selection=channelList.getSelectedItemPosition();boolean groupsFocused=groupList.hasFocus();
+        int selection=channelList.getSelectedItemPosition();boolean groupsFocused=groupList.hasFocus(),guideFocused=epgNavigationActive||epgList.hasFocus();
         if(tvUiChrome==null)tvUiChrome=new TvUiChrome(channelListPanel,channelBar);
         View[] chrome=tvUiChrome.apply(this,new View[]{groupList,channelList,epgToggle,epgColumn});
         channelListPanel=chrome[0];channelBar=chrome[1];
@@ -120,7 +134,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         configureChannelPanelInteraction();groupAdapter.notifyDataSetChanged();applyEpgEnabled();epgAdapter.notifyDataSetChanged();
         refreshEpgViews();
         updateChannelPanelWidth();updateChannelBarWidth();refreshTvUiCard();
-        if(opened){channelList.setSelection(Math.max(0,selection));if(groupsFocused)groupList.requestFocus();else channelList.requestFocus();scheduleChannelListDismiss();}
+        if(opened){channelList.setSelection(Math.max(0,selection));if(groupsFocused)groupList.requestFocus();else if(guideFocused&&epgExpanded)focusEpgList();else channelList.requestFocus();scheduleChannelListDismiss();}
         if(channelBar.getVisibility()==View.VISIBLE&&!loadingActive)channelBar.postDelayed(hideChannelBar,CHANNEL_BAR_TIMEOUT_MS);
     }
     private TextView channelNumberView(){return (TextView)(tvUiChrome==null?findViewById(R.id.channel_card_number):tvUiChrome.originalCard().findViewById(R.id.channel_card_number));}
@@ -333,14 +347,13 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                 return;
             }
             Date nowDate = new Date();
-            if (showDateTime) videoClock.setText(TvUiPlugin.current()!=null?tvUiClockFormat.format(nowDate):formatDateTime(nowDate));
+            if (showDateTime) videoClock.setText(formatDateTime(nowDate));
             refreshPlaybackPosition();
             if(TvUiPlugin.current()!=null&&"ui4".equals(TvUiPlugin.current().id)&&channelBar.getVisibility()==View.VISIBLE)refreshTvUiCard();
             long now = System.currentTimeMillis();
             root.postDelayed(this, 1000L - now % 1000L);
         }
     };
-    private final SimpleDateFormat tvUiClockFormat = new SimpleDateFormat("HH:mm:ss",Locale.getDefault());
     private final SimpleDateFormat tvUiCardTimeFormat = new SimpleDateFormat("HH:mm E",Locale.CHINA);
     private final SimpleDateFormat tvUiCardDateFormat = new SimpleDateFormat("MM月dd日 HH:mm:ss E",Locale.CHINA);
     private final SimpleDateFormat channelEpgTimeFormat =
@@ -414,6 +427,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
     private Runnable pendingCjsInstallRetry;
     private CjsSource activeCjsSource;
     private Ku9ScriptResolver ku9ScriptResolver;
+    private JarChannelRuntime jarChannelRuntime;
     private CjsSiteResolver cjsSiteResolver;
     private DirectVideoView videoView;
 
@@ -724,6 +738,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
 
     private String directHttpMediaUrl;
     private int directHlsFallbackRequestId = -1;
+    private int directAudioFallbackRequestId = -1;
     private boolean activeEmbeddedCctvResolver;
     private boolean activeEmbeddedYangshipinResolver;
     private boolean activeEmbeddedCjsResolver;
@@ -876,7 +891,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
     private volatile String rtspTransport;
     private volatile boolean h264SpsCompatibility;
     private volatile String videoScaleMode;
-    private volatile String uiScaleMode = UI_SCALE_AUTO;
+    private volatile String uiScaleMode = UI_SCALE_STANDARD;
     private volatile String resolutionMode;
     private volatile String webViewResolution;
     private volatile float webViewPageScale = 1f;
@@ -1191,6 +1206,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                 if (!epgEnabled) return;
                 epgExpanded = !epgExpanded;
                 showEpgForBrowsingChannel(browsingChannelPosition());
+                if(epgExpanded)focusEpgList();else{rememberEpgCursor();channelList.requestFocus();}
                 scheduleChannelListDismiss();
             }
         });
@@ -1214,10 +1230,21 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             public void onFavoriteClick(int position) {
                 suppressChannelItemClick = true;
                 channelListPanel.removeCallbacks(hideChannelList);
-                channelList.setSelection(position);
+                View clickedRow = channelList.getChildAt(position - channelList.getFirstVisiblePosition());
+                int clickedTop = clickedRow == null ? channelList.getPaddingTop() : clickedRow.getTop();
+                final int clickedGroup = browsingGroupIndex;
+                channelList.setItemChecked(position, true);
+                channelAdapter.setSelectedIndex(position);
                 favoriteActionFocused = true;
                 updateFavoriteButton();
                 toggleBrowsingChannelFavorite(position);
+                // Apply the anchor after adapter refresh and focus restoration. Plain
+                // setSelection reuses the previous row's sync offset on the next click.
+                if (clickedGroup == browsingGroupIndex
+                        && ChannelCatalog.GROUPS[browsingGroupIndex].source != ChannelCatalog.SOURCE_FAVORITES) {
+                    channelPager.reset();
+                    channelList.setSelectionFromTop(position, clickedTop - channelList.getPaddingTop());
+                }
                 channelListPanel.bringToFront();
                 channelList.post(new Runnable() {
                     @Override
@@ -1260,7 +1287,9 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         videoScaleMode = sanitizeVideoScaleMode(
                 preferences.getString(VIDEO_SCALE_MODE, VIDEO_SCALE_FIT));
         uiScaleMode = sanitizeUiScaleMode(
-                preferences.getString(UI_SCALE_MODE, UI_SCALE_AUTO));
+                preferences.getString(UI_SCALE_MODE, UI_SCALE_STANDARD));
+        if(!uiScaleMode.equals(preferences.getString(UI_SCALE_MODE,"")))
+            preferences.edit().putString(UI_SCALE_MODE,uiScaleMode).apply();
         resolutionMode = sanitizeResolutionMode(
                 preferences.getString(RESOLUTION_MODE, RESOLUTION_MODE_HIGH));
         String storedWebViewResolution = preferences.getString(
@@ -1365,6 +1394,8 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         yangshipinResolver = new YangshipinWebResolver(this, (FrameLayout) root,
                 getIntent().getBooleanExtra("cmg_keep_web_trace", false));
         ku9ScriptResolver = new Ku9ScriptResolver(this, (FrameLayout) root);
+        jarChannelRuntime = new JarChannelRuntime(this, (FrameLayout) root);
+        jarChannelRuntime.configure(webViewResolution, webViewPageScale);
         cjsSiteResolver = new CjsSiteResolver(this);
         deferStartupMaintenance("channel-panel", () -> ensureChannelPanelInitialized());
 
@@ -1681,11 +1712,33 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         groupList.setAdapter(groupAdapter);
         channelList.setAdapter(channelAdapter);
         epgList.setAdapter(epgAdapter);
+        View.OnFocusChangeListener listFocus = (view, focused) -> {
+            for (ListView list : new ListView[]{groupList, channelList, epgList}) {
+                for (int i = 0; i < list.getChildCount(); i++) list.getChildAt(i).invalidate();
+            }
+            groupAdapter.refreshVisibleSelection(groupList);
+            channelAdapter.refreshVisibleSelection(channelList);
+            if(TvUiPlugin.current()==null)epgAdapter.notifyDataSetChanged();
+        };
+        groupList.setOnFocusChangeListener(listFocus);
+        channelList.setOnFocusChangeListener(listFocus);
+        epgList.setOnFocusChangeListener(listFocus);
         epgList.setOnItemClickListener((parent,view,position,id)->playEpgProgram(position));
+        epgList.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){
+            public void onItemSelected(AdapterView<?> parent,View view,int position,long id){
+                if(epgPager.position(position)!=position)return;
+                if(TvUiPlugin.current()==null)epgAdapter.notifyDataSetChanged();
+                updateEpgBrowseHeader();
+            }
+            public void onNothingSelected(AdapterView<?> parent){}
+        });
         groupList.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
                 showChannelMenu(position);
+                // Restore group ownership after refreshing the channel column.
+                groupList.requestFocusFromTouch();groupList.requestFocus();
+                groupAdapter.notifyDataSetChanged();channelAdapter.notifyDataSetChanged();
             }
         });
         // ListView can report its old selection while a hidden panel is opening
@@ -1703,6 +1756,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         channelList.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if(channelPager.position(position)!=position)return;
                 channelList.setItemChecked(position, true);
                 channelAdapter.setSelectedIndex(position);
                 showEpgForBrowsingChannel(position);
@@ -2192,13 +2246,16 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             requestLocalNetworkPermission(true, true);
             return;
         }
-        openWebManagement();
+        // Preserve v1.8.0's classic remote shortcut (BACK, then OK / MENU).
+        // Device-based routing belongs to the explicit web-management entry.
+        if (remoteInputMode) openManagementPanel();
+        else openManagementPage();
     }
 
     private void openWebManagement() {
         // Some tablets (e.g. C900) have "tv" in their product identifier.
         // Explicit TV mode wins; otherwise keep tablet layout ahead of that heuristic.
-        if (hasTelevisionUi() || !ManagementActivity.isTablet(this) && isTelevisionDevice()) openManagementPanel();
+        if (remoteInputMode || hasTelevisionUi() || !ManagementActivity.isTablet(this) && isTelevisionDevice()) openManagementPanel();
         else openManagementPage(); // Reuse phone fullscreen / tablet sidebar in ManagementActivity.
     }
 
@@ -2244,6 +2301,10 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                 switch(destination){
                     case "qr": // Compatibility with older menu destinations.
                     case "manage":openWebManagement();break;
+                    case "system-settings":
+                        try{startActivity(new Intent(android.provider.Settings.ACTION_SETTINGS));}
+                        catch(android.content.ActivityNotFoundException unavailable){Toast.makeText(MainActivity.this,"此设备未提供系统设置入口",Toast.LENGTH_SHORT).show();}
+                        break;
                     case "list":openChannelList();break;
                     case "favorite":showChannelMenu(currentGroupIndex);toggleBrowsingChannelFavorite(currentChannelIndex);break;
                     case "cache":if(!cacheClearRequested){cacheClearRequested=true;showCacheClearToast("正在清理缓存…");applyTvUiSetting("clearWebCache",true);}else showCacheClearToast("正在清理缓存，请稍候…");break;
@@ -2251,6 +2312,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                     case "guide":tvUiMenu.show(root,"guide",new Bundle(),new xiao.bu.tv.skin.TvUi.Events(){public Bundle options(int category){return new Bundle();}public void action(int category,int item){}public void dismiss(){tvUiMenu.dismiss();}});break;
                     case "styles":showTvUiStyles();break;
                     case "hdr":showTvUiHdrModes();break;
+                    case "ui-size":showTvUiSizes();break;
                     case "radio-styles":RadioUiMenu.show(MainActivity.this,root,tvUiMenu);break;
                     case "install-update":if(autoUpdater!=null)autoUpdater.installLiteUpdate();break;
                     case "update":if(autoUpdater==null)Toast.makeText(MainActivity.this,"更新服务尚未就绪",Toast.LENGTH_LONG).show();else autoUpdater.checkLiteForUpdates(true);break;
@@ -2268,9 +2330,22 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             public void dismiss(){tvUiMenu.dismiss();}
         });
     }
+    private void showTvUiSizes(){
+        final String[] modes={UI_SCALE_SMALL,UI_SCALE_SLIGHTLY_SMALL,UI_SCALE_STANDARD,UI_SCALE_LARGE,UI_SCALE_EXTRA_LARGE,UI_SCALE_EXTRA_EXTRA_LARGE};
+        Bundle b=new Bundle();b.putStringArray("categories",new String[]{"界面大小"});b.putBoolean("focusOptions",true);b.putBoolean("remoteInput",remoteInputMode);
+        tvUiMenu.show(root,"menu",b,new xiao.bu.tv.skin.TvUi.Events(){
+            public Bundle options(int category){
+                Bundle choices=new Bundle();choices.putStringArray("items",new String[]{"较小 80%","稍小 90%","标准 100%","较大 125%","特大 150%","特特大 200%"});
+                int index=0;for(int i=0;i<modes.length;i++)if(modes[i].equals(uiScaleMode))index=i;
+                choices.putInt("selected",index);return choices;
+            }
+            public void action(int category,int option){if(option>=0&&option<modes.length&&!modes[option].equals(uiScaleMode))applyTvUiSetting("uiScaleMode",modes[option]);}
+            public void dismiss(){tvUiMenu.dismiss();}
+        });
+    }
     private void showTvUiHdrModes(){
         final String[] modes={HdrMode.HARDWARE,HdrMode.MAPPING,HdrMode.HARDWARE_SDR,HdrMode.BT709};
-        Bundle b=new Bundle();b.putStringArray("categories",new String[]{"HDR 模式"});
+        Bundle b=new Bundle();b.putStringArray("categories",new String[]{"HDR 模式"});b.putBoolean("focusOptions",true);b.putBoolean("remoteInput",remoteInputMode);
         tvUiMenu.show(root,"menu",b,new xiao.bu.tv.skin.TvUi.Events(){
             public Bundle options(int category){
                 Bundle choices=new Bundle();choices.putStringArray("items",new String[]{"自动","转为 SDR","GPU 映射","BT.709"});
@@ -4717,7 +4792,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             });
         }
         if (request.has("uiScaleMode")) {
-            String rawMode = request.optString("uiScaleMode", UI_SCALE_AUTO);
+            String rawMode = request.optString("uiScaleMode", UI_SCALE_STANDARD);
             final String requestedMode = sanitizeUiScaleMode(rawMode);
             if (!requestedMode.equals(rawMode)) {
                 throw new JSONException("不支持的界面大小档位");
@@ -4951,6 +5026,8 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                                 requestedWebViewAdBlock, requestedWebViewWebRtc,
                                 requestedWebViewUserScriptEnabled, requestedWebViewUserScripts);
                     }
+                    if (jarChannelRuntime != null) jarChannelRuntime.configure(
+                            requestedWebViewResolution, requestedWebViewPageScale);
                 }
             });
         }
@@ -5869,6 +5946,11 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         return normalized.length() == 0 ? null : normalized;
     }
 
+    @Override public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if(hasFocus)applySystemUiVisibility();
+    }
+
     private void applySystemUiVisibility() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             WindowManager.LayoutParams attributes = getWindow().getAttributes();
@@ -6127,6 +6209,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         backgroundChannel=null; backgroundStreamUrl=null; backgroundPosition=0L; backgroundWasPaused=false;
         foregroundResumeRequest=-1;
         final int requestId = ++playRequestId;
+        if (jarChannelRuntime != null) jarChannelRuntime.close();
         beginChannelSwitchTiming(requestId, pendingPluginTimingMs > 0 ? pendingPluginTimingStart : switchStartedAt);
         if (videoView.isFrameCovered()) concealedVideoRequestId = requestId;
 
@@ -6864,7 +6947,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         if (returnFromFailedSniffedPlayback(PlaybackHttpError.FORBIDDEN_MESSAGE)) return;
         cancelCustomSourceTimeout();
         clearPendingPlayer();
-        releasePlayer();
+        releasePlayer(showStoppedRadioArtwork(channel));
         abortChannelSwitchAnimation();
         hideLoading();
         showChannelBar(channel.name, PlaybackHttpError.FORBIDDEN_MESSAGE);
@@ -7432,6 +7515,28 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             showChannelBar(channel.name, "没有可用的备用源");
             return;
         }
+        if (JarChannelSource.matches(configuredUrl)) {
+            if (ku9ScriptResolver != null) ku9ScriptResolver.cancel();
+            if (cjsSiteResolver != null) cjsSiteResolver.cancel();
+            updateLoadingStatus("正在加载 JAR 频道");
+            jarChannelRuntime.open(configuredUrl, new JarChannelRuntime.Callback() {
+                public boolean current() { return requestId == playRequestId; }
+                public void configureBrowser(android.webkit.WebView web) { }
+                public void play(String url) {
+                    android.net.Uri media = android.net.Uri.parse(url == null ? "" : url);
+                    if (!("http".equals(media.getScheme()) || "https".equals(media.getScheme()))
+                            || media.getHost() == null || JarChannelSource.matches(url)) {
+                        status("插件返回的音频地址无效"); return;
+                    }
+                    startResolvedPlayer(channel, url, true);
+                }
+                public void status(String message) {
+                    hideLoading(); abortChannelSwitchAnimation(); showChannelBar(channel.name, message);
+                }
+            });
+            hideLoading(); abortChannelSwitchAnimation();
+            return;
+        }
         if (RemoteCatalogClient.isRemoteSource(configuredUrl)) {
             resolveRemoteSource(channel, configuredUrl, requestId);
             return;
@@ -7492,6 +7597,13 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         if (directCustomSource && HttpStreamResolver.isExplicitHlsUrl(configuredUrl)
                 && directHlsFallbackRequestId != requestId) {
             startResolvedPlayer(channel, configuredUrl, false);
+            return;
+        }
+        if (directCustomSource && isExplicitAudioSource(configuredUrl)
+                && directAudioFallbackRequestId != requestId) {
+            // The player follows redirects and opens the audio itself. Avoid a
+            // separate GET/TLS handshake before connecting to the same station.
+            startResolvedPlayer(channel, configuredUrl, true);
             return;
         }
         httpResolveThread = new Thread(new Runnable() {
@@ -8107,6 +8219,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         });
         nextPlayer.setOnErrorListener((mediaPlayer, what, extra) -> {
             if (player != mediaPlayer || sourceRequestId != playRequestId) return true;
+            if (showStoppedRadioArtwork(channel)) prepared = false;
             seekFeedback.failed("播放加载失败（"+what+"/"+extra+"），请重试或切换线路");
             lastSystemPlaybackError = SystemPlaybackError.message(what, extra);
             Log.w(TAG, "Android MediaPlayer " + (hls ? "HLS" : "MP3")
@@ -8264,7 +8377,8 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         final String artworkTitle = channelCardTitle(channel.name);
         final String artworkLogo = sniffedPresentation ? "" : channel.logoUrl;
         final boolean receivingCast=channel==multimediaReceiverChannel && isRtspSource(streamUrl);
-        final boolean radioChannel = !receivingCast && !sniffedPresentation && channel.radio;
+        final boolean radioChannel = !receivingCast && !sniffedPresentation
+                && (isAudioArtworkChannel(channel, currentSourceIndex) || isExplicitAudioSource(streamUrl));
         if (radioChannel || mediaPath != null && mediaPath.toLowerCase(Locale.US).endsWith(".mp3"))
             nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "vn", 1);
         if (initialTracks != null) {
@@ -8841,7 +8955,8 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                         return true;
                     }
                     albumArtLoader.clear();
-                    if (audioArtwork != null) audioArtwork.clear();
+                    if (showStoppedRadioArtwork(channel)) prepared = false;
+                    else if (audioArtwork != null) audioArtwork.clear();
 
                     if (nativeForbidden.get() || PlaybackHttpError.isForbidden(what, extra)
                             || proxy != null && proxy.wasPlaybackForbidden()) {
@@ -8863,6 +8978,16 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                         releasePlayer(true);
                         hideLoading();
                         showChannelBar(channel.name, "设备内存不足以软解此分辨率，请切换较低分辨率线路");
+                        return true;
+                    }
+                    if (proxy != null && directAudioFallbackRequestId != sourceRequestId
+                            && isExplicitAudioSource(streamUrl) && !playbackProgressObserved) {
+                        // Some audio-looking URLs actually serve HTML/API text.
+                        // Re-enter normal classification once, then retain the
+                        // existing failure/alternate-line handling if it fails.
+                        directAudioFallbackRequestId = sourceRequestId;
+                        releasePlayer(true);
+                        afterPlayerRelease(sourceRequestId,()->resolveFallbackUrl(channel,sourceRequestId));
                         return true;
                     }
                     if (proxy != null && directHlsFallbackRequestId != sourceRequestId
@@ -9237,7 +9362,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                 || UI_SCALE_EXTRA_EXTRA_LARGE.equals(mode)) {
             return mode;
         }
-        return UI_SCALE_AUTO;
+        return UI_SCALE_STANDARD;
     }
 
     private static String sanitizeResolutionMode(String mode) {
@@ -10132,17 +10257,17 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             viewportHeight = getResources().getDisplayMetrics().heightPixels;
         }
         int shortSide = Math.min(viewportWidth, viewportHeight);
-        float textSizePx = Math.max(18f, Math.min(52f, shortSide * 0.03f))
-                * effectiveUiScale * 1.12f;
+        float textSizePx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP,
+                11f * effectiveUiScale, getResources().getDisplayMetrics());
         videoClock.setMaxWidth(Integer.MAX_VALUE);
         videoClock.setTextSize(TypedValue.COMPLEX_UNIT_PX, textSizePx);
         if (networkSpeedOverlay != null) {
-            // Apply after theme creation and UI scaling, before reserving debug
-            // space. Independent sp/theme defaults otherwise diverge after a switch.
+            // Match the classic HUD in every theme; background styling stays themed.
             networkSpeedOverlay.setTextSize(TypedValue.COMPLEX_UNIT_PX, textSizePx);
             networkSpeedOverlay.setTypeface(videoClock.getTypeface());
-            networkSpeedOverlay.setTextScaleX(videoClock.getTextScaleX());
+            networkSpeedOverlay.setTextScaleX(1f);
         }
+
         if(TvUiPlugin.current()!=null){
             float d=themeScale();
             FrameLayout.LayoutParams p=(FrameLayout.LayoutParams)videoClock.getLayoutParams();p.width=-2;p.height=-2;
@@ -10246,15 +10371,16 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             return;
         }
         int shortSide = Math.min(viewportWidth, viewportHeight);
-        float textSizePx = Math.max(14f, Math.min(48f, shortSide * 0.022f))
-                * effectiveUiScale;
+        float textSizePx = Math.max(10f, Math.min(48f, shortSide * 0.022f)
+                - 4f * shortSide / 540f) * effectiveUiScale;
         debugInfoTextSizePx = textSizePx;
         float shadowRadiusPx = Math.max(1.5f, textSizePx * 0.09f);
         float shadowOffsetPx = Math.max(1f, textSizePx * 0.045f);
         debugInfoOverlay.setTextSize(TypedValue.COMPLEX_UNIT_PX, textSizePx);
         debugInfoOverlay.setShadowLayer(shadowRadiusPx, shadowOffsetPx, shadowOffsetPx,
                 0xe6000000);
-        debugInfoOverlay.setLineSpacing(0f, 1.03f);
+        debugInfoOverlay.setIncludeFontPadding(false);
+        debugInfoOverlay.setLineSpacing(0f, 1f);
 
         FrameLayout.LayoutParams params =
                 (FrameLayout.LayoutParams) debugInfoOverlay.getLayoutParams();
@@ -10888,6 +11014,8 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         final int selectedIndex = currentChannelIndex;
         final int selectionRequest = ++playRequestId;
         closeChannelList(false);
+        BrowseCursor cursor=channelCursors.get(groupNavigationKey(selectedGroup));
+        if(cursor!=null){cursor.selected=selectedIndex;cursor.selectedKey=channelNavigationKey(selectedGroup.channels[selectedIndex]);}
         pendingChannelListSelection = new Runnable() {
             @Override public void run() {
                 if (pendingChannelListSelection != this) return;
@@ -11089,9 +11217,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             return;
         }
         if(TvUiPlugin.current()!=null)channelList.setSelector(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
-        else channelList.setSelector(favoriteActionFocused
-                ? R.drawable.channel_favorite_focus_list_selector
-                : R.drawable.channel_item_background);
+        else channelList.setSelector(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
         channelList.invalidate();
         ChannelCatalog.Group group = ChannelCatalog.GROUPS[browsingGroupIndex];
         int position = browsingChannelPosition();
@@ -11173,6 +11299,9 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             setFavoriteActionFocused(true);
         } else {
             setFavoriteActionFocused(true);
+            // The focus index may be unchanged on a second click. Favourite
+            // membership still changed, so rebind the star independently of focus.
+            channelAdapter.notifyDataSetChanged();
         }
         showChannelBar(channel.name, added ? "已添加到我的收藏" : "已取消收藏");
     }
@@ -11219,6 +11348,8 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         playbackGestureTracking=false;playbackGestureEdgeBlocked=false;
         cancelPendingChannelListSelection();
         ensureChannelPanelInitialized();
+        final int navigationGeneration=++channelNavigationGeneration;
+        groupPager.reset();channelPager.reset();epgPager.reset();
         epgExpanded = false;
         setEpgColumnVisible(false);
         keepChannelListVisibleOnWebExit = keepVisibleOnBlackScreen;
@@ -11228,6 +11359,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         backPrompt.removeCallbacks(hideBackPrompt);
         backPrompt.setVisibility(View.GONE);
         closeManagementPanel();
+        applySystemUiVisibility();
         channelListPanel.setVisibility(View.VISIBLE);
         channelBar.animate().cancel();
         channelBar.setVisibility(View.GONE);
@@ -11240,30 +11372,41 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         final int menuGroup = displayed[0] >= 0 ? displayed[0] : ChannelCatalog.firstPlayableGroupIndex();
         final int menuChannel = Math.max(0, displayed[1]);
         showChannelMenu(menuGroup);
+        epgNavigationActive=false;
+        channelList.setItemChecked(menuChannel,true);
+        channelAdapter.setSelectedIndex(menuChannel);
+        channelList.requestFocusFromTouch();channelList.requestFocus();
+        groupAdapter.refreshVisibleSelection(groupList);
+        channelAdapter.refreshVisibleSelection(channelList);
         applyClockLocation();
         channelList.post(new Runnable() {
             @Override
             public void run() {
                 if (channelListPanel.getVisibility() != View.VISIBLE || browsingGroupIndex != menuGroup
+                        || navigationGeneration!=channelNavigationGeneration
                         || epgExpanded || epgList.hasFocus() || favoriteActionFocused) return;
                 setFavoriteActionFocused(false);
                 channelList.setItemChecked(menuChannel, true);
                 restoreGroupListPosition(false);
                 channelList.requestFocusFromTouch();
                 channelList.requestFocus();
-                centerCurrentChannel();
+                if(remoteInputMode)channelPager.show(channelList,ChannelCatalog.GROUPS[menuGroup].channels.length,menuChannel,0,navigationRowHeight(channelList));
+                else centerCurrentChannel();
+                applySystemUiVisibility();
             }
         });
         scheduleChannelListDismiss();
     }
 
     private void showChannelMenu(int groupIndex) {
+        rememberChannelCursor();rememberEpgCursor();channelPager.reset();epgPager.reset();
         favoriteActionFocused = false;
         browsingGroupIndex = ChannelCatalog.wrapGroupIndex(groupIndex);
         ChannelCatalog.Group group = ChannelCatalog.GROUPS[browsingGroupIndex];
         int[] displayed = displayedChannelLocation();
         boolean showingPlayingGroup = browsingGroupIndex == displayed[0];
-        final int selectedIndex = showingPlayingGroup ? displayed[1] : 0;
+        BrowseCursor remembered=channelCursors.get(groupNavigationKey(group));
+        final int selectedIndex = remembered==null?showingPlayingGroup?Math.max(0,displayed[1]):0:findChannelCursor(group.channels,remembered.selectedKey,remembered.selected);
         groupAdapter.showGroups(ChannelCatalog.GROUPS, browsingGroupIndex);
         int playingIndex = showingPlayingGroup ? displayed[1] : -1;
         channelAdapter.showChannels(browsingGroupIndex, group.channels, selectedIndex,
@@ -11272,25 +11415,35 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         // scroll the newly selected group to the top, making every group look pinned.
         // The adapter and checked state are sufficient to update its highlight.
         groupList.setItemChecked(browsingGroupIndex, true);
-        if (showingPlayingGroup) {
-            channelList.setSelection(selectedIndex);
-        } else {
-            final int expectedGroupIndex = browsingGroupIndex;
-            channelList.setSelectionFromTop(0, 0);
-            channelList.post(new Runnable() {
-                @Override
-                public void run() {
-                    if (browsingGroupIndex == expectedGroupIndex
-                            && channelListPanel.getVisibility() == View.VISIBLE) {
-                        channelList.setSelectionFromTop(0, 0);
-                    }
-                }
-            });
-        }
+        navigationGroupKey=groupNavigationKey(group);navigationChannels=group.channels;
+        int first=remembered==null?0:findChannelCursor(group.channels,remembered.firstKey,remembered.first);
+        if(remembered!=null&&remembered.paged)channelPager.show(channelList,group.channels.length,selectedIndex,first,navigationRowHeight(channelList));
+        else channelList.setSelectionFromTop(selectedIndex,remembered==null?0:remembered.top+(selectedIndex-first)*(navigationRowHeight(channelList)+channelList.getDividerHeight()));
         channelList.setItemChecked(selectedIndex, true);
         showEpgForBrowsingChannel(selectedIndex);
         updateFavoriteButton();
+        updateChannelPanelWidth();
         scheduleChannelListDismiss();
+    }
+
+    private void enterChannelColumn() {
+        if(browsingGroupIndex<0||browsingGroupIndex>=ChannelCatalog.GROUPS.length)return;
+        Channel[] channels=ChannelCatalog.GROUPS[browsingGroupIndex].channels;
+        if(channels.length==0)return;
+        int[] playing=displayedChannelLocation();
+        int position=channelPager.position(browsingChannelPosition());
+        boolean playingGroup=browsingGroupIndex==playing[0]&&playing[1]>=0&&playing[1]<channels.length;
+        if(playingGroup)position=playing[1];
+        position=Math.max(0,Math.min(channels.length-1,position));
+        favoriteActionFocused=false;epgNavigationActive=false;
+        channelAdapter.setFavoriteFocusIndex(-1);
+        channelList.requestFocusFromTouch();channelList.requestFocus();
+        channelList.setItemChecked(position,true);channelAdapter.setSelectedIndex(position);
+        if(playingGroup)channelPager.show(channelList,channels.length,position,position,navigationRowHeight(channelList));
+        else if(channelPager.position(-1)>=0)channelPager.reapply(channels.length);
+        else channelPager.show(channelList,channels.length,position,channelList.getFirstVisiblePosition(),navigationRowHeight(channelList));
+        showEpgForBrowsingChannel(position);updateFavoriteButton();
+        groupAdapter.refreshVisibleSelection(groupList);channelAdapter.refreshVisibleSelection(channelList);
     }
 
     private void centerCurrentChannel() {
@@ -11298,7 +11451,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         if (channelListPanel.getVisibility() != View.VISIBLE
                 || browsingGroupIndex != displayed[0] || displayed[1] < 0) return;
         TvUiStyle style=TvUiPlugin.current();
-        int rowHeight = style==null?Math.round(46f*effectiveUiDensity())+channelList.getDividerHeight():Math.round(("ui2".equals(style.id)?70:"ui3".equals(style.id)?65:"ui4".equals(style.id)?60:"ui5".equals(style.id)?46:48)*TvUiChrome.scale(root));
+        int rowHeight = navigationRowHeight(channelList)+channelList.getDividerHeight();
         int centerOffset = Math.max(0, (channelList.getHeight() - rowHeight) / 2);
         // Keep context where there are preceding rows, but never manufacture empty
         // space above the first channel. ListView also clamps naturally at the end.
@@ -11308,6 +11461,9 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
 
     private void restoreGroupListPosition(final boolean requestFocus) {
         final int position = ChannelCatalog.wrapGroupIndex(browsingGroupIndex);
+        if(groupPager.position(-1)>=0){groupPager.reapply(ChannelCatalog.GROUPS.length);if(requestFocus)groupList.requestFocus();return;}
+        if(remoteInputMode){groupPager.show(groupList,ChannelCatalog.GROUPS.length,position,0,navigationRowHeight(groupList));if(requestFocus)groupList.requestFocus();return;}
+        final int navigationGeneration=channelNavigationGeneration;
         groupList.setSelection(position);
         groupList.setItemChecked(position, true);
         if (requestFocus) {
@@ -11317,6 +11473,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             @Override
             public void run() {
                 if (channelListPanel.getVisibility() != View.VISIBLE
+                        || navigationGeneration!=channelNavigationGeneration
                         || position != browsingGroupIndex) {
                     return;
                 }
@@ -11333,6 +11490,8 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
     }
 
     private void closeChannelList(boolean refreshOverlay) {
+        rememberChannelCursor();rememberEpgCursor();channelNavigationGeneration++;
+        groupPager.reset();channelPager.reset();epgPager.reset();
         channelListPanel.removeCallbacks(hideChannelList);
         keepChannelListVisibleOnWebExit = false;
         channelPanelTouching = false;
@@ -11352,10 +11511,26 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
     }
 
     private void configureChannelPanelInteraction() {
+        if(TvUiPlugin.current()==null){
+            groupList.setSelector(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            channelList.setSelector(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            epgList.setSelector(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+        }
         View.OnTouchListener touchListener = new View.OnTouchListener() {
             @Override
             public boolean onTouch(View view, MotionEvent event) {
                 int action = event.getActionMasked();
+                if(action==MotionEvent.ACTION_DOWN){
+                    channelNavigationGeneration++;lastListRepeatAt=0;
+                    epgNavigationActive=view==epgList;
+                    if(view==channelList)setFavoriteActionFocused(false);
+                }
+                if(action==MotionEvent.ACTION_MOVE||action==MotionEvent.ACTION_CANCEL){
+                    if(view==groupList)groupPager.reset();else if(view==channelList)channelPager.reset();else if(view==epgList)epgPager.reset();
+                }else if(action==MotionEvent.ACTION_UP){
+                    final int generation=channelNavigationGeneration;
+                    view.post(()->{if(generation!=channelNavigationGeneration)return;if(view==groupList)groupPager.reset();else if(view==channelList)channelPager.reset();else if(view==epgList)epgPager.reset();});
+                }
                 if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_MOVE) {
                     channelPanelTouching = true;
                     channelListPanel.removeCallbacks(hideChannelList);
@@ -11392,15 +11567,9 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             @Override
             public boolean onHover(View view, MotionEvent event) {
                 updatePanelHoverState(event);
-                if (event.getActionMasked() == MotionEvent.ACTION_HOVER_MOVE) {
-                    int position = groupList.pointToPosition(
-                            (int) event.getX(), (int) event.getY());
-                    if (position != AdapterView.INVALID_POSITION
-                            && position != browsingGroupIndex) {
-                        showChannelMenu(position);
-                    }
-                }
-                return false;
+                // Consume hover so ListView cannot select a group under the pointer.
+                // Actual mouse/touch clicks still use the existing item-click handler.
+                return true;
             }
         });
         channelList.setOnHoverListener(new View.OnHoverListener() {
@@ -11457,9 +11626,8 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         float density = effectiveUiDensity();
         int maximumPanelWidth = Math.max(1, screenWidth - Math.round(24f*density));
 
-        // Keep a usable physical touch target without letting a high-density 720p
-        // device expand this handle to the unscaled full-screen dp size.
-        int epgTouchSize = epgEnabled ? Math.max(32, (int) Math.ceil(40f * density)) : 0;
+        // Compact guide rail follows the same UI scaling as the classic columns.
+        int epgTouchSize = epgEnabled ? Math.max(1, (int) Math.ceil(28f * density)) : 0;
         setExactWidth(epgToggle, epgTouchSize);
         ViewGroup.LayoutParams epgToggleParams = epgToggle.getLayoutParams();
         if (epgToggleParams.height < epgTouchSize) {
@@ -11477,7 +11645,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                     groupDesired + channelDesired + fixedWidth);
             int[] widths = fitTwoColumns(Math.max(2, panelWidth - fixedWidth),
                     groupDesired, channelDesired,
-                    Math.round(120f * density), Math.round(210f * density));
+                    Math.round(120f * density), Math.round(180f * density));
             setExactWidth(groupList, widths[0]);
             setExactWidth(channelList, widths[1]);
             setPanelWidth(panelWidth);
@@ -11491,7 +11659,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         int availableColumns = Math.max(3, panelWidth - fixedWidth);
 
         int groupMinimum = Math.round(120f * density);
-        int channelMinimum = Math.round(210f * density);
+        int channelMinimum = Math.round(180f * density);
         int epgMinimum = Math.round(220f * density);
         int[] widths = fitChannelColumns(availableColumns,
                 groupDesired, channelDesired, epgDesired,
@@ -11508,9 +11676,10 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         // the system font is initialized. This method runs synchronously from
         // onCreate, so use the existing maximum width instead of risking an ANR.
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1) {
-            return Math.round(170f * density);
+            return Math.round((14f * effectiveUiScale * 8f + 88f) * density);
         }
         Paint paint = columnPaint(14f);
+        float titleCapacity = paint.measureText("频道分组八字名称");
         float widest = 0f;
         int widestCount = 1;
         for (ChannelCatalog.Group group : ChannelCatalog.GROUPS) {
@@ -11523,13 +11692,23 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                         + Math.round(14f * density));
         int chrome = Math.round(56f * density);
         return clamp((int) Math.ceil(widest) + countWidth + chrome,
-                Math.round(120f * density), Math.round(170f * density));
+                Math.round(120f * density),
+                (int) Math.ceil(titleCapacity) + countWidth + chrome);
     }
 
     private int desiredChannelColumnWidth(float density) {
         // Keep the channel column steady while browsing. The title area is sized for
         // longer channel names; longer names are intentionally ellipsized.
-        return Math.round(260f * density);
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1) {
+            return Math.round((14f * effectiveUiScale * 10f + 130f) * density);
+        }
+        Paint paint=columnPaint(14f);
+        float capacity=paint.measureText("频道名称完整显示十字"),widest=0;
+        if(browsingGroupIndex>=0&&browsingGroupIndex<ChannelCatalog.GROUPS.length)
+            for(Channel channel:ChannelCatalog.GROUPS[browsingGroupIndex].channels)
+                widest=Math.max(widest,paint.measureText(channel.name));
+        return Math.max(Math.round(180f*density),
+                (int)Math.ceil(Math.min(capacity,widest))+Math.round(110f*density));
     }
 
     private int desiredEpgColumnWidth(float density) {
@@ -11755,11 +11934,6 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                     @Override
                     public void run() {
                         if(isFinishing()||startupMaintenanceDestroyed)return;
-                        if(epgEnabled&&epgManager.getLastError().length()>0){
-                            epgRefreshQueuedAt=SystemClock.uptimeMillis();
-                            root.removeCallbacks(deferredEpgRefresh);
-                            root.postDelayed(deferredEpgRefresh,60000L);
-                        }
                         refreshEpgViews();
                     }
                 });
@@ -11773,7 +11947,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
 
     private void refreshEpgViews() {
         int position = channelList == null
-                ? currentChannelIndex : channelList.getSelectedItemPosition();
+                ? currentChannelIndex : channelPager.position(browsingChannelPosition());
         if (position == AdapterView.INVALID_POSITION) {
             position = browsingGroupIndex == currentGroupIndex ? currentChannelIndex : 0;
         }
@@ -11812,6 +11986,9 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         epgFavorite.setEnabled(true);
         epgFavorite.setText(isBrowsingChannelFavorite(safePosition) ? "★ 已收藏" : "☆ 收藏");
         java.util.List<EpgManager.Program> programs = epgManager.programsFor(channel);
+        rememberEpgCursor();epgPager.reset();
+        epgNavigationKey=channelNavigationKey(channel);
+        BrowseCursor cursor=epgCursors.get(epgNavigationKey);
         epgAdapter.showPrograms(programs,channel);
         // User opened the guide: do not wait for the startup/playback idle gate.
         // The manager deduplicates in-flight, cached and recently failed requests.
@@ -11821,13 +11998,19 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             epgStatus.setText(epgManager.isLoading() ? channel.name + " · 正在加载节目单"
                     : error.length() > 0 ? channel.name + " · 加载失败"
                     : channel.name + " · 暂无节目单");
+            epgList.clearChoices();epgList.setSelection(-1);
+            if(epgNavigationActive){epgStatus.setFocusableInTouchMode(true);epgStatus.requestFocus();}
         } else {
             setEpgColumnVisible(true);
             epgStatus.setText(channel.name);
-            int current = epgAdapter.currentProgramIndex();
-            if (current >= 0 && !epgList.hasFocus()) {
-                epgList.setSelection(current);
+            int current=cursor==null?epgAdapter.currentProgramIndex():findEpgCursor(cursor.selectedKey,cursor.selected);
+            int first=cursor==null?Math.max(0,current):findEpgCursor(cursor.firstKey,cursor.first);
+            if(current>=0){
+                if(cursor!=null&&cursor.paged)epgPager.show(epgList,epgAdapter.getCount(),current,first,navigationRowHeight(epgList));
+                else{epgList.setItemChecked(current,true);epgList.setSelectionFromTop(current,cursor==null?0:cursor.top+(current-first)*(navigationRowHeight(epgList)+epgList.getDividerHeight()));}
             }
+            updateEpgBrowseHeader();
+            if(epgNavigationActive&&!epgList.hasFocus())epgList.requestFocus();
         }
         if (channelListPanel != null && channelListPanel.getVisibility() == View.VISIBLE) {
             updateChannelPanelWidth();
@@ -11872,14 +12055,16 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
     }
 
     private void setEpgColumnVisible(boolean visible) {
+        if(!visible)rememberEpgCursor();
         visible = visible && epgEnabled;
+        if(!visible)epgNavigationActive=false;
         int visibility = visible ? View.VISIBLE : View.GONE;
         boolean changed = epgColumn.getVisibility() != visibility;
         epgColumn.setVisibility(visibility);
         if (epgDivider != null) {
             epgDivider.setVisibility(visibility);
         }
-        if (!visible && (epgList.hasFocus() || epgFavorite.hasFocus())) {
+        if (!visible && (epgList.hasFocus() || epgFavorite.hasFocus() || epgStatus.hasFocus())) {
             setFavoriteActionFocused(false);
             channelList.requestFocus();
         }
@@ -12208,6 +12393,13 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
     }
 
     private void releasePlayer(boolean keepPendingArtwork) {
+        Channel artworkChannel = null;
+        if (keepPendingArtwork) {
+            try { artworkChannel = currentChannel(); }
+            catch (IllegalStateException ignored) { }
+        }
+        boolean keepRadio = keepPendingArtwork && artworkChannel != null
+                && isAudioArtworkChannel(artworkChannel, currentSourceIndex);
         playbackCompleted = false;
         completionControlsPending = false;
         if (videoPosition != null) videoPosition.setVisibility(View.GONE);
@@ -12233,6 +12425,10 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         albumArtLoader.clear();
         audioOnlyPlayback = false;
         if (audioArtwork != null) audioArtwork.clear(keepPendingArtwork);
+        if (keepRadio && audioArtwork != null) {
+            if (!audioArtwork.hasPendingPresentation()) showStoppedRadioArtwork(artworkChannel);
+            audioArtwork.setPlaying(false);
+        }
         cancelRemoteResolve();
         receiverStreamSessionId = "";
         receiverNetworkLease.release();
@@ -12532,6 +12728,9 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
 
     @SuppressLint("SetTextI18n")
     private void refreshVideoInfo() {
+        if (jarChannelRuntime != null) jarChannelRuntime.update(
+                prepared && player != null ? player.getCurrentPosition() : 0L,
+                prepared && player != null && player.isPlaying() && !buffering);
         if (playbackCompleted && completionControlsPending) showVideoControls();
         if (audioArtwork != null && audioOnlyPlayback)
             audioArtwork.setPlaying(prepared && player != null && player.isPlaying() && !buffering);
@@ -12635,7 +12834,8 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                     + ("loadavg".equals(systemCpuMetricSource) ? "CPU负载" : "CPU")
                     + formatCpuUsage(stats.cpuUsage) + gap + "IP" + localDebugIpAddress()
                     ;
-            if(showDebugInfo && !audioOnlyPlayback && !colorDebugInfoEnabled())
+            if(showDebugInfo && !audioOnlyPlayback && !colorDebugInfoEnabled()
+                    && (stats.videoDescription.dolbyVision||"HDR".equals(stats.videoDescription.dynamicRange)))
                 details += gap + currentDisplayHdrStatus().label();
             if (isNtVCastSource(activePlayerStreamUrl)) {
                 details += gap + "延迟(ms):RTT" + formatDelayValue(stats.networkDelayMs)
@@ -12650,10 +12850,16 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                     (FrameLayout.LayoutParams) debugInfoOverlay.getLayoutParams();
             int availableWidth = Math.max(1, root.getWidth()
                     - debugParams.leftMargin - debugParams.rightMargin - 4);
-            // Keep critical metrics readable; TextView wraps them within the space left of traffic.
+            // New themes wrap at a fixed size; classic retains v1.8.0's metric-line fitting.
             if (debugInfoOverlay.getTextSize() != debugInfoTextSizePx)
                 debugInfoOverlay.setTextSize(TypedValue.COMPLEX_UNIT_PX, debugInfoTextSizePx);
-            String timingDetails = showLoadTiming ? "加载耗时 · " + channelStartupTiming.display(playRequestId) : "";
+            String timingDetails = showLoadTiming ? "耗时：" + channelStartupTiming.display(playRequestId) : "";
+            if (TvUiPlugin.current() == null) {
+                float detailsWidth = showDebugInfo ? debugInfoOverlay.getPaint().measureText(details) : 0f;
+                detailsWidth = Math.max(detailsWidth, debugInfoOverlay.getPaint().measureText(timingDetails));
+                if (detailsWidth > availableWidth) debugInfoOverlay.setTextSize(TypedValue.COMPLEX_UNIT_PX,
+                        debugInfoTextSizePx * availableWidth / detailsWidth);
+            }
             String source = PlaybackHudText.source(currentDebugSourcePath());
             StringBuilder rows = new StringBuilder();
             if (showDebugInfo) {
@@ -12661,12 +12867,13 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                         availableWidth, TextUtils.TruncateAt.MIDDLE)).append("\n").append(details);
             }
             if (colorDebugInfoEnabled()) {
-                String colorDetails = stats.videoDescription.compactDebugLabel()
-                        + " · " + currentColorOutput().replace("Dolby Vision 硬解直出", "DV直出")
-                        + " · " + currentDisplayHdrStatus().label()
+                boolean hdrVideo=stats.videoDescription.dolbyVision||"HDR".equals(stats.videoDescription.dynamicRange);
+                String colorDetails = stats.videoDescription.compactDebugLabel().replace(" · "," ")
+                        + (hdrVideo?" " + currentColorOutput().replace("Dolby Vision 硬解直出", "DV直出")
+                                + " " + currentDisplayHdrStatus().label():"")
                         + ("interlaced".equals(stats.videoDescription.scanType)
-                                ? " · " + IjkStreamMetrics.deinterlaceLabel(stats.deinterlace) : "")
-                        + (!"未知".equals(stats.videoDecoderName) ? " · " + stats.videoDecoderName : "");
+                                ? " " + IjkStreamMetrics.deinterlaceLabel(stats.deinterlace) : "")
+                        + (!"未知".equals(stats.videoDecoderName) ? " " + stats.videoDecoderName : "");
                 if (rows.length() > 0) rows.append("\n");
                 rows.append(colorDetails);
             }
@@ -12769,7 +12976,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             return String.format(Locale.US, "%.1f MB/s",
                     bytesPerSecond / (1024f * 1024f));
         }
-        return Math.round(bytesPerSecond / 1024f) + " KB/s";
+        return Math.min(1023L, Math.round(bytesPerSecond / 1024f)) + " KB/s";
     }
 
     private static float validFrameRate(float value) {
@@ -13701,61 +13908,99 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         long videoSendDelayMs = -1L;
     }
 
+    private static String groupNavigationKey(ChannelCatalog.Group group) {
+        return group.source+"\n"+group.playlistSourceId+"\n"+group.title;
+    }
+    private static String channelNavigationKey(Channel channel) { return channel==null?"":channel.name+"\n"+channel.sourceUrl(0); }
+    private static int findChannelCursor(Channel[] channels,String key,int fallback) {
+        for(int i=0;i<channels.length;i++)if(channelNavigationKey(channels[i]).equals(key))return i;
+        return Math.max(0,Math.min(channels.length-1,fallback));
+    }
+    private static void putBrowseCursor(java.util.LinkedHashMap<String,BrowseCursor> cache,String key,BrowseCursor cursor){
+        if(key.length()==0)return;
+        if(!cache.containsKey(key)&&cache.size()>=64)cache.remove(cache.keySet().iterator().next());
+        cache.put(key,cursor);
+    }
+    private int navigationRowHeight(ListView list) {
+        if(list==epgList)return epgAdapter.navigationRowHeight(list);
+        if(list==channelList&&TvUiPlugin.current()!=null){
+            String id=TvUiPlugin.current().id;
+            int preferred=Math.max(1,Math.round(xiao.bu.tv.skin.SharedTvUi.preferredRowHeight(id)*themeScale()));
+            return xiao.bu.tv.skin.SharedTvUi.fittedRowHeight(list.getHeight(),preferred);
+        }
+        if(list==channelList&&list.getHeight()>0){
+            int divider=list.getDividerHeight();
+            int preferred=Math.max(1,Math.round(46*effectiveUiDensity()));
+            return Math.max(1,xiao.bu.tv.skin.SharedTvUi.fittedRowHeight(
+                    Math.max(1,list.getHeight()-list.getPaddingTop()*2)+divider,preferred+divider)-divider);
+        }
+        View row=list.getChildAt(0);
+        if(row!=null&&row.getHeight()>0)return row.getHeight();
+        if(TvUiPlugin.current()!=null){String id=TvUiPlugin.current().id;return Math.max(1,Math.round(xiao.bu.tv.skin.SharedTvUi.preferredRowHeight(id)*themeScale()));}
+        return Math.max(1,Math.round((list==groupList?44:46)*effectiveUiDensity()));
+    }
+    private void rememberChannelCursor(){
+        if(channelList==null||navigationChannels==null||navigationChannels.length==0||channelListPanel==null||!channelListPanel.isShown())return;
+        int selected=channelPager.position(channelList.getSelectedItemPosition());
+        if(selected<0)selected=channelList.getCheckedItemPosition();
+        if(selected<0||selected>=navigationChannels.length)return;
+        BrowseCursor c=new BrowseCursor();c.selected=selected;c.selectedKey=channelNavigationKey(navigationChannels[selected]);
+        c.first=Math.max(0,Math.min(navigationChannels.length-1,channelPager.first(channelList.getFirstVisiblePosition())));c.firstKey=channelNavigationKey(navigationChannels[c.first]);
+        View first=channelList.getChildAt(0);c.top=first==null?0:first.getTop()-channelList.getPaddingTop();c.paged=channelPager.position(-1)>=0;
+        putBrowseCursor(channelCursors,navigationGroupKey,c);
+    }
+    private void rememberEpgCursor(){
+        if(epgList==null||epgAdapter==null||epgAdapter.getCount()==0||epgNavigationKey.length()==0||!epgList.isShown())return;
+        int selected=epgPager.position(epgList.getSelectedItemPosition());if(selected<0)selected=epgList.getCheckedItemPosition();
+        EpgManager.Program program=epgAdapter.getItem(selected);if(program==null)return;
+        BrowseCursor c=new BrowseCursor();c.selected=selected;c.selectedKey=Long.toString(program.startMillis);
+        c.first=Math.max(0,Math.min(epgAdapter.getCount()-1,epgPager.first(epgList.getFirstVisiblePosition())));
+        c.firstKey=Long.toString(epgAdapter.getItem(c.first).startMillis);View first=epgList.getChildAt(0);
+        c.top=first==null?0:first.getTop()-epgList.getPaddingTop();c.paged=epgPager.position(-1)>=0;
+        putBrowseCursor(epgCursors,epgNavigationKey,c);
+    }
+    private int findEpgCursor(String key,int fallback){
+        try{
+            long time=Long.parseLong(key);
+            for(int i=0;i<epgAdapter.getCount();i++)if(epgAdapter.getItem(i).startMillis>=time)return i;
+            return Math.max(0,epgAdapter.getCount()-1);
+        }catch(NumberFormatException ignored){}
+        return Math.max(0,Math.min(epgAdapter.getCount()-1,fallback));
+    }
+    private void updateEpgBrowseHeader(){
+        int index=epgPager.position(epgList.getSelectedItemPosition());if(index<0)index=epgList.getCheckedItemPosition();
+        EpgManager.Program p=epgAdapter.getItem(index);
+        if(p!=null&&browsingGroupIndex>=0&&browsingGroupIndex<ChannelCatalog.GROUPS.length){
+            Channel[] channels=ChannelCatalog.GROUPS[browsingGroupIndex].channels;int channel=browsingChannelPosition();
+            if(channel>=0&&channel<channels.length)epgStatus.setText(channels[channel].name+" · "+epgBrowseDate.format(new Date(p.startMillis)));
+        }
+    }
+    private void focusEpgList(){
+        epgNavigationActive=true;
+        setFavoriteActionFocused(false);epgList.requestFocusFromTouch();epgList.requestFocus();
+        if(epgAdapter.getCount()>0){
+            int position=epgPager.position(epgList.getCheckedItemPosition());if(position<0)position=Math.max(0,epgAdapter.currentProgramIndex());
+            int first=epgPager.first(epgList.getFirstVisiblePosition());
+            epgPager.show(epgList,epgAdapter.getCount(),position,first,navigationRowHeight(epgList));updateEpgBrowseHeader();
+        }else{epgStatus.setFocusableInTouchMode(true);epgStatus.requestFocus();}
+    }
     private void moveChannelMenuSelection(int offset) {
-        if (groupList.hasFocus()) {
-            int position = browsingGroupIndex;
-            int nextPosition = Math.max(0, Math.min(
-                    ChannelCatalog.GROUPS.length - 1, position + offset));
-            if (nextPosition != browsingGroupIndex) {
-                showChannelMenu(nextPosition);
-                restoreGroupListPosition(true);
-            }
+        channelNavigationGeneration++;
+        if(groupList.hasFocus()){
+            int next=groupPager.move(groupList,ChannelCatalog.GROUPS.length,browsingGroupIndex,offset,navigationRowHeight(groupList));
+            if(next>=0&&next!=browsingGroupIndex){showChannelMenu(next);groupPager.reapply(ChannelCatalog.GROUPS.length);}
             return;
         }
-
-        if (epgList.hasFocus()) {
-            int count = epgAdapter.getCount();
-            if (count == 0) {
-                return;
-            }
-            int position = epgList.getSelectedItemPosition();
-            if (position == AdapterView.INVALID_POSITION) {
-                position = Math.max(0, epgAdapter.currentProgramIndex());
-            }
-            epgList.setSelection(Math.max(0, Math.min(count - 1, position + offset)));
-            return;
+        if(epgList.hasFocus()||epgNavigationActive&&epgExpanded){
+            epgPager.move(epgList,epgAdapter.getCount(),Math.max(0,epgAdapter.currentProgramIndex()),offset,navigationRowHeight(epgList));
+            rememberEpgCursor();updateEpgBrowseHeader();return;
         }
-
-        int position = channelList.getSelectedItemPosition();
-        Channel[] channels = ChannelCatalog.GROUPS[browsingGroupIndex].channels;
-        if (channels.length == 0) {
-            return;
-        }
-        if (position == AdapterView.INVALID_POSITION) {
-            position = browsingGroupIndex == currentGroupIndex
-                    ? currentChannelIndex : ChannelCatalog.defaultChannelIndex(
-                            ChannelCatalog.GROUPS[browsingGroupIndex]);
-        }
-        int nextPosition = Math.max(0, Math.min(channels.length - 1, position + offset));
-        if (nextPosition == position) return;
-        View nextRow = channelList.getChildAt(
-                nextPosition - channelList.getFirstVisiblePosition());
-        View selectedRow = channelList.getSelectedView();
-        int rowHeight = nextRow != null ? nextRow.getHeight()
-                : selectedRow != null ? selectedRow.getHeight()
-                : Math.round(46f * effectiveUiDensity());
-        int top = channelList.getPaddingTop();
-        int bottom = channelList.getHeight() - channelList.getPaddingBottom();
-        // setSelection() lets ListView reuse the old selection's sync anchor,
-        // pinning focus at the top while the viewport moves underneath it.
-        // Preserve visible row geometry; scroll only enough to reveal a new row.
-        int rowTop = nextRow != null ? nextRow.getTop()
-                : offset > 0 ? bottom - rowHeight : top;
-        rowTop = Math.max(top, Math.min(rowTop, bottom - rowHeight));
-        channelList.setItemChecked(nextPosition, true);
-        channelList.setSelectionFromTop(nextPosition, rowTop - top);
-        showEpgForBrowsingChannel(nextPosition);
-        updateFavoriteButton();
+        Channel[] channels=ChannelCatalog.GROUPS[browsingGroupIndex].channels;
+        setFavoriteActionFocused(false);
+        int selected=channelList.getSelectedItemPosition();if(selected<0)selected=channelList.getCheckedItemPosition();
+        int next=channelPager.move(channelList,channels.length,Math.max(0,selected),offset,navigationRowHeight(channelList));
+        if(next<0)return;
+        channelAdapter.setSelectedIndex(next);showEpgForBrowsingChannel(next);updateFavoriteButton();rememberChannelCursor();
     }
 
     private void requestPlaybackAudioFocus() {
@@ -13908,11 +14153,19 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         return -1;
     }
 
+    @Override public void themeInputMode(boolean remote) { setRemoteInputMode(remote); }
+
     private void setRemoteInputMode(boolean remote) {
         if (remoteInputMode != remote) {
             remoteInputMode = remote;
             Log.i(TAG, "Input mode changed to " + (remote ? "remote" : "touch"));
         }
+    }
+
+    private static boolean isPrimaryPlaybackPointer(MotionEvent event) {
+        if(isTouchInput(event))return true;
+        return (event.getSource() & InputDevice.SOURCE_MOUSE)==InputDevice.SOURCE_MOUSE
+                && (event.getButtonState() & (MotionEvent.BUTTON_SECONDARY|MotionEvent.BUTTON_TERTIARY))==0;
     }
 
     private static boolean isTouchInput(MotionEvent event) {
@@ -13938,6 +14191,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                 && managementPanel.getVisibility() != View.VISIBLE
                 && backPrompt != null
                 && backPrompt.getVisibility() != View.VISIBLE
+                && (jarChannelRuntime == null || !jarChannelRuntime.visible())
                 && (webSourceView == null || !webSourceView.isPageVisible());
     }
 
@@ -14064,9 +14318,9 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                     float sourceThreshold = Math.max(playbackGestureTouchSlop * 7f,
                             root.getWidth() * 0.16f);
                     if (absoluteX >= sourceThreshold) {
-                        // Full-width live swipe changes channel, never the source.
-                        animateRelativeChannelSwitch(deltaX < 0f ? 1 : -1,
-                                deltaX < 0f ? -1f : 1f, 0f);
+                        // Swipe left advances the live source; swipe right goes back.
+                        animateSourceSwitch(deltaX < 0f ? 1 : -1,
+                                deltaX < 0f ? -1f : 1f);
                     } else {
                         animateGestureRebound();
                     }
@@ -14113,12 +14367,27 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         return Math.copySign(Math.min(viewport * 0.82f, damped), distance);
     }
 
+    private boolean showStoppedRadioArtwork(Channel channel) {
+        if (audioArtwork == null || channel == null
+                || !(audioOnlyPlayback || isAudioArtworkChannel(channel, currentSourceIndex))) return false;
+        audioArtwork.setPlaying(false);
+        audioArtwork.setCover(null);
+        audioArtwork.show(channelCardTitle(channel.name), true, null);
+        return true;
+    }
+
     private boolean isAudioArtworkChannel(Channel channel, int sourceIndex) {
+        if (channel == null) return false;
         String url = channel.sourceUrl(sourceIndex);
         if (url == null) return false;
         if (channel.radio) return true;
         Boolean known = audioChannelTypes.get(url);
         if (known != null) return known;
+        return isExplicitAudioSource(url);
+    }
+
+    private static boolean isExplicitAudioSource(String url) {
+        if (url == null || !(url.startsWith("http://") || url.startsWith("https://"))) return false;
         String path = Uri.parse(url).getPath();
         if (path == null) return false;
         path = path.toLowerCase(Locale.US);
@@ -14383,7 +14652,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             setRemoteInputMode(false);
             return super.dispatchTouchEvent(event);
         }
-        if (action == MotionEvent.ACTION_DOWN && isTouchInput(event)) {
+        if (action == MotionEvent.ACTION_DOWN && isPrimaryPlaybackPointer(event)) {
             playbackGestureEdgeBlocked = false;
             setRemoteInputMode(false);
             if (channelListPanel != null
@@ -14451,6 +14720,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             return super.dispatchKeyEvent(event);
         }
         if(tvUiMenu.dispatchKeyEvent(event))return true;
+        if(jarChannelRuntime!=null&&jarChannelRuntime.dispatchMedia(event))return true;
         if (event.getKeyCode() == KeyEvent.KEYCODE_MEDIA_PREVIOUS
                 || event.getKeyCode() == KeyEvent.KEYCODE_MEDIA_NEXT) {
             if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
@@ -14461,6 +14731,15 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
 
         int rawKeyCode = event.getKeyCode();
         int keyCode = normalizeRemoteKeyCode(rawKeyCode);
+        if (jarChannelRuntime != null && jarChannelRuntime.visible()
+                && managementPanel.getVisibility() != View.VISIBLE
+                && channelListPanel.getVisibility() != View.VISIBLE
+                && (keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_DPAD_DOWN
+                    || keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
+                    || keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER)) {
+            jarChannelRuntime.dispatchKey(event);
+            return true;
+        }
         boolean seekKey = keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
                 || keyCode == KeyEvent.KEYCODE_MEDIA_REWIND || keyCode == KeyEvent.KEYCODE_MEDIA_FAST_FORWARD;
         if (seekKey && managementPanel.getVisibility() != View.VISIBLE
@@ -14525,13 +14804,20 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
 
         if (channelListPanel.getVisibility() == View.VISIBLE) {
             scheduleChannelListDismiss();
+            if(keyCode==KeyEvent.KEYCODE_DPAD_UP||keyCode==KeyEvent.KEYCODE_DPAD_DOWN){
+                long now=SystemClock.uptimeMillis();
+                if(event.getRepeatCount()>0&&now-lastListRepeatAt<120L)return true;
+                lastListRepeatAt=now;
+            }
             switch (keyCode) {
                 case KeyEvent.KEYCODE_BACK:
+                    if(epgExpanded){rememberEpgCursor();epgExpanded=false;showEpgForBrowsingChannel(browsingChannelPosition());setFavoriteActionFocused(false);channelList.requestFocus();return true;}
                 case KeyEvent.KEYCODE_MENU:
                     closeChannelList();
                     return true;
                 case KeyEvent.KEYCODE_DPAD_LEFT:
-                    if (epgExpanded && (epgList.hasFocus() || favoriteActionFocused)) {
+                    if (epgExpanded && (epgNavigationActive || epgList.hasFocus() || favoriteActionFocused)) {
+                        rememberEpgCursor();
                         epgExpanded = false;
                         showEpgForBrowsingChannel(channelList.getSelectedItemPosition());
                         setFavoriteActionFocused(true);
@@ -14547,19 +14833,12 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                 case KeyEvent.KEYCODE_DPAD_RIGHT:
                     if (groupList.hasFocus()) {
                         if (ChannelCatalog.GROUPS[browsingGroupIndex].channels.length > 0) {
-                            setFavoriteActionFocused(false);
-                            channelList.requestFocus();
+                            enterChannelColumn();
                         }
                     } else if (favoriteActionFocused && epgEnabled) {
                         epgExpanded = true;
                         showEpgForBrowsingChannel(channelList.getSelectedItemPosition());
-                        if (epgAdapter.getCount() == 0) return true;
-                        setFavoriteActionFocused(false);
-                        epgList.requestFocus();
-                        int currentProgram = epgAdapter.currentProgramIndex();
-                        if (currentProgram >= 0) {
-                            epgList.setSelection(currentProgram);
-                        }
+                        focusEpgList();
                     } else if (channelList.hasFocus()) {
                         setFavoriteActionFocused(true);
                     }
@@ -14572,19 +14851,23 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                     return true;
                 case KeyEvent.KEYCODE_DPAD_CENTER:
                 case KeyEvent.KEYCODE_ENTER:
-                    if(epgList.hasFocus()){
+                    if(epgList.hasFocus()||epgNavigationActive&&epgExpanded){
                         playEpgProgram(epgList.getSelectedItemPosition());
                     } else if (favoriteActionFocused) {
                         toggleSelectedChannelFavorite();
                     } else if (channelList.hasFocus()) {
-                        int position = channelList.getSelectedItemPosition();
-                        if (position != AdapterView.INVALID_POSITION) {
-                            switchBrowsingChannel(position);
-                        }
+                        // Touch-mode restoration and adapter layout can temporarily
+                        // hide native selection; checked/model position stays valid.
+                        int position = channelPager.position(browsingChannelPosition());
+                        if (position != AdapterView.INVALID_POSITION) switchBrowsingChannel(position);
                     } else if (groupList.hasFocus()
                             && ChannelCatalog.GROUPS[browsingGroupIndex].channels.length > 0) {
-                        setFavoriteActionFocused(false);
-                        channelList.requestFocus();
+                        enterChannelColumn();
+                    } else {
+                        // A remote OK must not silently disappear while focus is
+                        // being restored after opening or rebinding the drawer.
+                        int position=channelPager.position(browsingChannelPosition());
+                        if(position>=0) switchBrowsingChannel(position);
                     }
                     return true;
                 default:
@@ -14905,7 +15188,13 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         applySystemUiVisibility();
     }
 
+    @Override protected void onActivityResult(int request,int result,Intent data) {
+        if(jarChannelRuntime!=null&&jarChannelRuntime.fileResult(request,result,data))return;
+        super.onActivityResult(request,result,data);
+    }
+
     private void setWindowContentActive(boolean active) {
+        if (jarChannelRuntime != null) jarChannelRuntime.setActive(active);
         if (audioArtwork != null) audioArtwork.setActive(active);
         if (channelMediaSession != null) channelMediaSession.setActive(active);
         if (webSourceView != null) {
@@ -14983,6 +15272,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
 
     @Override
     protected void onDestroy() {
+        if (jarChannelRuntime != null) jarChannelRuntime.destroy();
         if (pendingCjsInstallRetry != null) {
             root.removeCallbacks(pendingCjsInstallRetry);
             pendingCjsInstallRetry = null;

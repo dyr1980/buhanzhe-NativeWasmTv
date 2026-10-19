@@ -17,11 +17,20 @@ public abstract class SharedTvUi implements TvUi {
         float themeScale();
         int themeHeight();
     }
+    /** Focusable popups receive input directly, outside Activity.dispatchKeyEvent. */
+    public interface InputMode { void themeInputMode(boolean remote); }
+    public interface MenuWidth { int preferredWidth(int height); }
+    public interface TitleWidths { float titleWidth(Paint paint,int first,int count); }
     protected abstract int theme();
     private int accent(){return theme()==5?0xffb8ddff:theme()==6?0xffe50914:theme()==2?0xff29a6de:theme()==3?0xff1c73ee:0xff00d1ff;}
     private int panel(){return theme()==5?0xea17212e:theme()==6?0xf0141414:theme()==2?0xc21a3031:theme()==3?0xcc24252d:0xcc313b4a;}
     private float radius(){return theme()==5?22:theme()==6?6:theme()==2?20:theme()==3?10:0;}
-    private float rowHeight(){return theme()==2?70:theme()==3?65:theme()==4?60:theme()==5?46:48;}
+    public static int preferredRowHeight(String id){return "ui2".equals(id)?70:"ui4".equals(id)?60:65;}
+    private float rowHeight(){return theme()==2?70:theme()==4?60:65;}
+    public static int fittedRowHeight(int available,int preferred){
+        if(available<=0)return Math.max(1,preferred);
+        return Math.max(1,available/Math.max(1,available/Math.max(1,preferred)));
+    }
     private float menuFontSize(){return theme()==3?22:theme()<=4?20:19;}
     private float menuTextSize(float rowHeight){return Math.min(menuFontSize(),Math.max(12,rowHeight-20));}
     private int menuPitch(float d){return Math.round((theme()==2?58:theme()==3?65:60)*d);}
@@ -30,8 +39,15 @@ public abstract class SharedTvUi implements TvUi {
         return Math.max(0,(height-count*pitch)/2);
     }
     private int menuCategoryPitch(float d,int height,int count){return Math.min(menuPitch(d),Math.max(1,height/Math.max(1,count)));}
-    private float panelWidth(){return theme()==2?397:theme()==3?376:theme()==4?406:theme()==5?338:352;}
-    private float groupWidth(){return theme()==2?134:theme()==3?150:theme()==4?121:theme()==5?112:108;}
+    private float titleWidth(View slot,float size,int capacity,float minimum){
+        Paint paint=new Paint();paint.setTextSize(size);
+        android.widget.ListAdapter adapter=((ListView)slot).getAdapter();
+        // Size from the complete group, never from the moving viewport. Focus,
+        // page boundaries and recycled children cannot change the column width.
+        float width=adapter instanceof TitleWidths?((TitleWidths)adapter).titleWidth(paint,
+                0,adapter.getCount()):capacity*size;
+        return Math.max(minimum,Math.min(capacity*size,width));
+    }
     private float scale(Context c){if(c instanceof Viewport)return ((Viewport)c).themeScale();return Math.max(.25f,Math.min(c.getResources().getDisplayMetrics().widthPixels/960f,c.getResources().getDisplayMetrics().heightPixels/540f));}
     private GradientDrawable shape(int color,float r){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(r);return d;}
     @SuppressWarnings("deprecation") private void background(View v,int color,float r){v.setBackgroundDrawable(shape(color,r));}
@@ -67,7 +83,9 @@ public abstract class SharedTvUi implements TvUi {
             c.drawText(text,x,y,p);
         }
         void center(Canvas c,String text,float l,float r,float y,float size,int color){
-            p.setTextSize(size);float width=p.measureText(text);text(c,text,l+Math.max(0,(r-l-width)/2),y,size,color,r-l);
+            p.setTextSize(size);float room=Math.max(0,r-l);
+            if(p.measureText(text)>room){int n=p.breakText(text,true,Math.max(0,room-p.measureText("…")),null);text=text.substring(0,n)+"…";}
+            float width=p.measureText(text);text(c,text,l+Math.max(0,(room-width)/2),y,size,color,room);
         }
         void selected(Canvas c,float l,float t,float r,float b){
             if(theme()==5){box(c,l,t,r,b,0xffe9f3ff,Math.min(20,(b-t)/2));return;}
@@ -84,11 +102,11 @@ public abstract class SharedTvUi implements TvUi {
         Hud(Context c,Bundle state){super(c);float d=scale(c);setText(state.getString("text",""));setTextColor(0xffeeeeef);setTextSize(TypedValue.COMPLEX_UNIT_PX,20*d);setSingleLine(true);setIncludeFontPadding(false);setGravity(Gravity.CENTER);setPadding(Math.round(9*d),Math.round(4*d),Math.round(9*d),Math.round(4*d));setShadowLayer(1*d,0,1*d,0x88000000);background(this,theme()==6?0xc0141414:theme()==5?0xb31a2636:theme()==3?0x60000000:0x500d1720,(theme()==6?5:28)*d);setClickable(false);setFocusable(false);}
     }
     private final class Panel extends ViewGroup {
-        final View[] slots;final float d;final Paint shade=new Paint();final RectF shadeBounds=new RectF();
+        final View[] slots;final float d;final Paint shade=new Paint();final RectF shadeBounds=new RectF();int channelPitch;
         Panel(Context c,View[] views){super(c);d=scale(c);slots=views;setWillNotDraw(false);background(this,panel(),radius()*d);
             for(View v:views){if(v.getParent()!=null)((ViewGroup)v.getParent()).removeView(v);addView(v);}
             for(int i=0;i<2;i++){ListView list=(ListView)slots[i];list.setPadding(0,0,0,0);list.setDivider(null);list.setSelector(new ColorDrawable(Color.TRANSPARENT));list.setCacheColorHint(Color.TRANSPARENT);}
-            TextView epg=(TextView)slots[2];epg.setBackgroundDrawable(new ColorDrawable(0x15000000));epg.setTextSize(TypedValue.COMPLEX_UNIT_PX,13*d);
+            TextView epg=(TextView)slots[2];epg.setBackgroundDrawable(new ColorDrawable(theme()==2||theme()==3?Color.TRANSPARENT:0x15000000));epg.setTextSize(TypedValue.COMPLEX_UNIT_PX,13*d);
             if(slots[3] instanceof ViewGroup){ViewGroup column=(ViewGroup)slots[3];for(int i=0;i<column.getChildCount();i++){
                 View child=column.getChildAt(i);
                 if(child instanceof ListView){ListView list=(ListView)child;list.setSelector(new ColorDrawable(Color.TRANSPARENT));list.setDivider(null);list.setPadding(0,0,0,0);}
@@ -100,12 +118,18 @@ public abstract class SharedTvUi implements TvUi {
             int handle=slots[2].getVisibility()==GONE?0:Math.max(32,Math.round(30*d));
             // Every theme exposes the host's guide. Theme 2 already reserved its
             // handle; add room in the others instead of narrowing channel names.
-            int desiredBase=Math.round(panelWidth()*d)+(theme()==2?0:handle);
+            float groupTitle=titleWidth(slots[0],20,8,72);
+            float channelTitle=titleWidth(slots[1],20,10,80);
+            int groupDesired=Math.round((groupTitle+36)*d);
+            // Width includes trailing breathing room even when the longest title fits exactly.
+            float channelChrome=theme()==2?110:theme()==3?77:theme()==4?97:78;
+            int desiredBase=groupDesired+Math.round((channelTitle+channelChrome)*d)+handle;
             boolean expanded=slots[3].getVisibility()!=GONE;
             int w=Math.min(limit,desiredBase+(expanded?Math.round(246*d):0));setMeasuredDimension(w,h);
             int base=Math.min(w,desiredBase),epg=expanded?Math.max(0,w-base):0;
-            int g=Math.min(Math.round(groupWidth()*d),Math.round(base*.42f));
+            int g=Math.min(groupDesired,Math.round(base*.42f));
             int channel=Math.max(1,base-g-handle),vertical=theme()==4?0:Math.round((theme()==3?20:theme()==2?12:6)*d);
+            channelPitch=fittedRowHeight(Math.max(1,h-vertical*2),Math.round(rowHeight()*d));
             for(int i=0;i<slots.length;i++){
                 int width=i==0?g:i==1?channel:i==2?handle:epg;
                 int height=i==2?Math.round(110*d):h-vertical*2;
@@ -115,7 +139,14 @@ public abstract class SharedTvUi implements TvUi {
         protected void onLayout(boolean changed,int l,int t,int r,int b){int x=0,pad=theme()==4?0:Math.round((theme()==3?20:theme()==2?12:6)*d),h=b-t;
             for(int i=0;i<slots.length;i++){View v=slots[i];int y=i==2?(h-v.getMeasuredHeight())/2:pad;v.layout(x,y,x+v.getMeasuredWidth(),y+v.getMeasuredHeight());x+=v.getMeasuredWidth();}
         }
-        protected void onDraw(Canvas c){super.onDraw(c);Paint p=shade;p.setColor(theme()==2?0x6b001c20:theme()==3?0x30202430:theme()==4?0x80000106:0x74141c26);float width=slots[0].getRight(),radius=radius()*d;c.save();c.clipRect(0,0,width,getHeight());shadeBounds.set(0,0,width+radius,getHeight());c.drawRoundRect(shadeBounds,radius,radius,p);c.restore();}
+        protected void onDraw(Canvas c){super.onDraw(c);Paint p=shade;p.setColor(theme()==2?0x6b001c20:theme()==3?0x30202430:theme()==4?0x80000106:0x74141c26);float width=slots[0].getRight(),radius=radius()*d;c.save();c.clipRect(0,0,width,getHeight());shadeBounds.set(0,0,width+radius,getHeight());c.drawRoundRect(shadeBounds,radius,radius,p);c.restore();
+            if(theme()==2&&slots[2].getVisibility()!=GONE){
+                // The reference uses a full-height guide rail, not a small button backdrop.
+                float left=slots[2].getLeft(),right=slots[2].getRight();p.setColor(0x30000000);
+                c.save();c.clipRect(left,0,right,getHeight());shadeBounds.set(left-radius,0,right,getHeight());
+                c.drawRoundRect(shadeBounds,radius,radius,p);c.restore();
+            }
+        }
     }
     private final class Row extends Drawing {
         Bundle data;final float d;final boolean group;int beat;boolean attached,pulsePosted;
@@ -129,34 +160,45 @@ public abstract class SharedTvUi implements TvUi {
         public void onFinishTemporaryDetach(){super.onFinishTemporaryDetach();attached=true;schedulePulse();}
         protected void onVisibilityChanged(View changed,int visibility){super.onVisibilityChanged(changed,visibility);schedulePulse();}
         protected void onWindowVisibilityChanged(int visibility){super.onWindowVisibilityChanged(visibility);schedulePulse();}
+        protected void drawableStateChanged(){super.drawableStateChanged();invalidate();}
         Row(Context c,Bundle b){super(c);d=scale(c);group=b.getBoolean("group");bind(b);setLayoutParams(new AbsListView.LayoutParams(-1,Math.round(rowHeight()*d)));}
+        protected void onMeasure(int widthSpec,int heightSpec){
+            if(!group&&getParent() instanceof ListView&&getParent().getParent() instanceof Panel){
+                int pitch=((Panel)getParent().getParent()).channelPitch;
+                if(pitch>0)heightSpec=MeasureSpec.makeMeasureSpec(pitch,MeasureSpec.EXACTLY);
+            }
+            super.onMeasure(widthSpec,heightSpec);
+        }
         void bind(Bundle b){data=b;String number=b.getString("number","");if(theme()==3&&number.length()>0&&number.length()<4)b.putString("number",("0000"+number).substring(number.length()));setContentDescription(b.getString("title","")+" "+b.getString("program",""));setActivated(b.getBoolean("selected"));schedulePulse();invalidate();}
         void playbackBars(Canvas c,float x,float bottom,float width,int first,int second,int third){
             for(int i=0;i<3;i++){int phase=(beat+i*3)&7;float height=5+(phase<4?phase:7-phase)*5;box(c,x+i*(width+3),bottom-height,x+i*(width+3)+width,bottom,i==0?first:i==1?second:third,1);}
         }
         protected void onDraw(Canvas canvas){canvas.save();canvas.scale(d,d);float w=getWidth()/d,h=getHeight()/d;
             boolean sel=data.getBoolean("selected"),playing=data.getBoolean("playing");
+            // Only the column owning navigation focus paints a filled selection.
+            boolean focus=sel&&!data.getBoolean("favoriteFocused")&&(getParent() instanceof ListView?((ListView)getParent()).hasFocus():data.getBoolean("focused",!group));
             // ListView may bind/attach while its drawer is still GONE. The first
             // visible draw also arms the pulse, without starting a second timer.
             if(playing)schedulePulse();
             if(group){
-                if(sel){
-                    // Keep the browsed group visible even after focus moves to
-                    // channels. Reuse the channel palette and selection shape.
+                if(focus){
+                    // A browsed group keeps accent text. Only the column owning
+                    // keyboard focus draws a filled selection background.
                     if(theme()==4){box(canvas,8,3,w-8,h-3,(accent()&0x00ffffff)|0x26000000,0);box(canvas,8,10,11,h-10,accent(),0);}
                     else selected(canvas,8,theme()==2?8:3,w-8,h-(theme()==2?8:3));
                 }
-                int color=sel&&theme()==5?0xff142438:sel&&theme()==4?accent():0xffe7e8e9;
-                center(canvas,data.getString("title",""),0,w,h/2+7,theme()<=4?20:18,color);
+                int color=focus&&theme()==5?0xff142438:focus&&theme()!=4?0xffeeeeef:sel&&theme()==3?0xff29a6de:sel?accent():0xffe7e8e9;
+                canvas.save();canvas.clipRect(12,0,w-12,h);
+                center(canvas,data.getString("title",""),16,w-16,h/2+7,20,color);canvas.restore();
             }
             else{
-                if(theme()<=4){referenceRow(canvas,w,h,sel,playing);canvas.restore();return;}
-                if(sel)selected(canvas,theme()==2?8:0,3,w-(theme()==2?8:0),h-3);
-                if(playing){int color=sel&&theme()==5?0xff142438:0xffeeeeef;playbackBars(canvas,18,h/2+9,3,color,color,color);}
-                else{p.setColor(0x6485939b);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(1);rect.set(theme()==2?14:10,h/2-10,theme()==2?48:46,h/2+10);canvas.drawRoundRect(rect,theme()==2?10:2,theme()==2?10:2,p);p.setStyle(Paint.Style.FILL);center(canvas,data.getString("number",""),theme()==2?14:10,theme()==2?48:46,h/2+6,16,sel&&theme()==5?0xff142438:0xffe1e4e7);}
+                if(theme()<=4){referenceRow(canvas,w,h,focus,playing);canvas.restore();return;}
+                if(focus)selected(canvas,0,3,w,h-3);
+                if(playing){int color=focus&&theme()==5?0xff142438:0xffeeeeef;playbackBars(canvas,18,h/2+9,3,color,color,color);}
+                else{p.setColor(0x6485939b);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(1);rect.set(10,h/2-10,46,h/2+10);canvas.drawRoundRect(rect,2,2,p);p.setStyle(Paint.Style.FILL);center(canvas,data.getString("number",""),10,46,h/2+6,16,focus&&theme()==5?0xff142438:0xffe1e4e7);}
                 String program=data.getString("program","");float titleY=program.length()>0?h/2-3:h/2+7;
-                text(canvas,data.getString("title",""),theme()==2?60:56,titleY,18,sel&&theme()==5?0xff142438:sel&&theme()==4?accent():0xffeeeeef,w-(theme()==2?68:64)-(data.getBoolean("favoriteFocused")?26:0));
-                text(canvas,program,theme()==2?60:56,h/2+13,11.5f,sel&&theme()==5?0xff4b6078:0xffaeb8bf,w-(theme()==2?68:64));
+                text(canvas,data.getString("title",""),56,titleY,20,playing?(focus&&theme()==5?0xff1c73ee:focus&&theme()!=6?0xffeeeeef:accent()):focus&&theme()==5?0xff142438:0xffeeeeef,w-76-(data.getBoolean("favoriteFocused")?26:0));
+                text(canvas,program,56,h/2+17,14,focus&&theme()==5?0xff4b6078:0xffaeb8bf,w-64);
                 if(data.getBoolean("favoriteFocused"))text(canvas,data.getBoolean("favorite")?"★":"☆",w-28,h/2+7,22,accent(),25);
             }canvas.restore();
         }
@@ -172,10 +214,10 @@ public abstract class SharedTvUi implements TvUi {
                 c.drawRoundRect(rect,r,r,p);p.setStyle(Paint.Style.FILL);
                 center(c,data.getString("number",""),badgeLeft,badgeLeft+badgeWidth,h/2+6,theme()==3?13:16,0xffe1e4e7);
             }
-            float left=theme()==2?82:theme()==3?45:73,available=w-left-(theme()==2?14:10)-(data.getBoolean("favoriteFocused")?26:0);
+            float left=theme()==2?82:theme()==3?53:73,available=w-left-(theme()==2?26:22)-(data.getBoolean("favoriteFocused")?26:0);
             String program=data.getString("program","");boolean withProgram=program.length()>0;
-            text(c,data.getString("title",""),left,withProgram?h/2-(theme()==2?2:5):h/2+(theme()==4?8:7),20,theme()==4&&sel?accent():0xffeeeeef,available);
-            if(withProgram)text(c,program,left,h/2+(theme()==3?20:17),14,sel?0xffe8ebed:0xffbcbfc3,available);
+            text(c,data.getString("title",""),left,withProgram?h/2-(theme()==2?2:5):h/2+(theme()==4?8:7),20,playing&&(!sel||theme()==4)?accent():0xffeeeeef,available);
+            if(withProgram)text(c,program,left,h/2+(theme()==3?20:17),14,0xffbcbfc3,available);
             if(data.getBoolean("favoriteFocused"))text(c,data.getBoolean("favorite")?"★":"☆",w-28,h/2+7,22,accent(),25);
         }
     }
@@ -183,34 +225,46 @@ public abstract class SharedTvUi implements TvUi {
     private final class EpgRow extends Drawing {
         final float d;Bundle data;
         EpgRow(Context c,Bundle state){super(c);d=scale(c);bind(state);setLayoutParams(new AbsListView.LayoutParams(-1,Math.round(rowHeight()*d)));}
+        protected void onMeasure(int ws,int hs){
+            if(getParent() instanceof ListView){
+                ListView list=(ListView)getParent();
+                int available=list.getHeight()-2*list.getPaddingTop(),divider=list.getDividerHeight();
+                if(available>0)hs=MeasureSpec.makeMeasureSpec(Math.max(1,fittedRowHeight(
+                        available+divider,Math.round(rowHeight()*d)+divider)-divider),MeasureSpec.EXACTLY);
+            }
+            super.onMeasure(ws,hs);
+        }
         void bind(Bundle state){data=state;setContentDescription(state.getString("time","")+" "+state.getString("title",""));invalidate();}
         protected void drawableStateChanged(){super.drawableStateChanged();invalidate();}
         protected void onDraw(Canvas canvas){
             canvas.save();canvas.scale(d,d);float w=getWidth()/d,h=getHeight()/d;
-            boolean focus=isSelected()||isPressed(),current=data.getBoolean("current");
+            boolean focus=isPressed()||isSelected()&&(!(getParent() instanceof ListView)||((ListView)getParent()).hasFocus()),current=data.getBoolean("current");
             float inset=theme()==2?1:theme()>=5?3:0;
             if(focus)selected(canvas,theme()==2?8:0,inset,w-(theme()==2?8:0),h-inset);
             int title=focus&&theme()==5?0xff142438:focus&&theme()==4?accent():0xffeeeeef;
             int secondary=focus&&theme()==5?0xff4b6078:focus?0xffe8ebed:0xffbcbfc3;
             float left=theme()==2?24:theme()==3?12:16,right=theme()==2?24:12;
-            text(canvas,data.getString("time",""),left,h/2-7,theme()>=5?11.5f:14,current&&!focus?accent():secondary,w-left-right);
-            text(canvas,data.getString("title",""),left,h/2+(theme()>=5?12:17),theme()>=5?18:20,title,w-left-right);
+            text(canvas,data.getString("time",""),left,h/2-7,14,current&&!focus?accent():secondary,w-left-right);
+            text(canvas,data.getString("title",""),left,h/2+(theme()>=5?12:17),20,title,w-left-right);
             canvas.restore();
         }
     }
     private final class Card extends Drawing {
         Bundle data;String[] programs=new String[0];final Rect identityBounds=new Rect();Card(Context c,Bundle b){super(c);bind(b);}
         void bind(Bundle b){data=b;String epg=b.getString("epg","");programs=epg.length()==0?new String[0]:epg.split("\n");if(theme()<=4)for(int i=0;i<programs.length;i++){int dash=programs[i].indexOf('–'),space=programs[i].indexOf(' ');if(dash==5&&space>dash)programs[i]=programs[i].substring(0,dash)+programs[i].substring(space);}setContentDescription(b.getString("title","")+" "+b.getString("epg","")+" "+b.getString("status",""));invalidate();}
-        protected void onMeasure(int ws,int hs){float d=scale(getContext());setMeasuredDimension(resolveSize(Math.round((theme()==3?600:theme()<=4?720:680)*d),ws),resolveSize(Math.round((theme()==3?110:theme()==2?120:96)*d),hs));}
+        protected void onMeasure(int ws,int hs){float d=scale(getContext());setMeasuredDimension(resolveSize(Math.round((theme()==3?600:theme()<=4?720:680)*d),ws),resolveSize(Math.round(124*d),hs));}
         protected void onDraw(Canvas canvas){float w=getWidth(),h=getHeight(),d=scale(getContext());canvas.save();canvas.scale(d,d);w/=d;h/=d;
             if(theme()>=5){
                 box(canvas,0,0,w,h,panel(),theme()==5?22:6);
                 if(theme()==6)box(canvas,0,15,4,h-15,accent(),1);
                 String number=data.getString("number","").replace(" |","");
-                text(canvas,number,24,32,14,accent(),50);text(canvas,data.getString("title",""),24,66,25,0xfff5f7fa,210);
-                line(canvas,250,20,250,h-20);text(canvas,programs.length>0?programs[0]:data.getString("status",""),270,37,18,0xfff4f6f9,w-294);
-                text(canvas,programs.length>1?programs[1]:data.getString("info",""),270,66,programs.length>1?18:14,0xffaeb9c8,w-294);
-                text(canvas,"确定：频道列表    菜单：播放设置",270,89,11,theme()==6?0xffeeeeee:0xffb3c4d9,w-294);canvas.restore();return;
+                // Channel identity follows the reference: large number above a
+                // smaller name, both centered in the left column.
+                centerIdentity(canvas,number,16,234,h/2-3,30,0xfff5f7fa);
+                centerIdentity(canvas,data.getString("title",""),16,234,h/2+25,18,0xfff5f7fa);
+                line(canvas,250,14,250,h-14);
+                cardLines(canvas,270,w-294,d);
+                canvas.restore();return;
             }
             box(canvas,0,0,w,h,theme()==2?0xe61b3335:theme()==3?0xd9000000:0x99252c38,theme()==4?0:h/2);
             float split=theme()==3?230:theme()==2?294:194;
@@ -220,17 +274,21 @@ public abstract class SharedTvUi implements TvUi {
             else{p.setFakeBoldText(true);centerIdentity(canvas,number,16,split-16,47,38,0xffffffff);p.setFakeBoldText(false);centerIdentity(canvas,title,16,split-16,81,22,0xffeeeeef);}
             line(canvas,split,theme()==3?23:theme()==2?12:7,split,h-(theme()==3?23:theme()==2?12:7));
             float left=split+(theme()==4?8:theme()==2?10:16),available=w-left-16;
-            text(canvas,programs.length>0?(theme()==3?"当前节目：":"正在播放：")+programs[0]:data.getString("status",""),left,theme()==3?45:theme()==2?41:29,theme()==4?20:18,theme()==4?0xffbec1c7:0xffeeeeef,available);
-            text(canvas,programs.length>1?(theme()==3?"下个节目：":"下一节目：")+programs[1]:data.getString("info",""),left,theme()==3?81:theme()==2?67:57,theme()==4?20:18,theme()==3?0xffa8a8aa:0xffafb6be,available);
-            if(theme()!=3){
-                if(theme()==4)line(canvas,left,35,w-16,35);
-                float y=theme()==2?96:83,x=left;
-                if(theme()==2){x=hint(canvas,x,y,0,"设置",d);x=hint(canvas,x,y,1,"列表",d);x=hint(canvas,x,y,2,"换源",d);}
-                else{x=hint(canvas,x,y,1,"列表",d);x=hint(canvas,x,y,2,"换源",d);x=hint(canvas,x,y,0,"设置",d);}
-                text(canvas,data.getString("dateTime",""),x+6,y,theme()==2?15:16,0xffafb6be,theme()==4?w-x-100:w-x-20);
-                if(theme()==4)text(canvas,data.getString("line",""),w-78,y,16,0xffafb6be,70);
-            }
+            cardLines(canvas,left,available,d);
             canvas.restore();
+        }
+        private void cardLines(Canvas canvas,float left,float available,float d){
+            // Center the complete four-line block using font metrics rather than
+            // baseline offsets, so visible top/bottom padding is equal.
+            p.setTypeface(Typeface.DEFAULT);p.setTextSize(18);
+            float top=p.ascent();p.setTextSize(16);float bottom=p.descent();
+            float first=(getHeight()/d-(72+bottom-top))/2-top;
+            text(canvas,data.getString("status",""),left,first,18,0xffeeeeef,available);
+            text(canvas,programs.length>0?programs[0]:data.getString("info",""),left,first+24,16,0xffcbd0d5,available);
+            text(canvas,programs.length>1?programs[1]:"",left,first+48,16,0xffcbd0d5,available);
+            float x=left,y=first+72;
+            x=hint(canvas,x,y,0,"设置",d);x=hint(canvas,x,y,1,"列表",d);x=hint(canvas,x,y,2,"换源",d);
+            text(canvas,data.getString("dateTime",""),x+6,y,14,0xffafb6be,available-(x-left)-6);
         }
         private void centerIdentity(Canvas c,String value,float l,float r,float y,float size,int color){
             if(value==null||value.length()==0)return;
@@ -265,11 +323,11 @@ public abstract class SharedTvUi implements TvUi {
             text(c,title,x+19,y,16,0xffafb6be,34);return x+61;
         }
     }
-    private final class Menu extends LinearLayout {
+    private final class Menu extends LinearLayout implements MenuWidth {
         final Events events;final ListView categories,options;final float d;final String[] titles;int category=-1,categoryPitch;Bundle choices;boolean binding;
         float textSize;
         final android.text.TextPaint ellipsisPaint=new android.text.TextPaint();
-        Menu(Context c,Bundle state,Events e){super(c);events=e;d=scale(c);titles=state.getStringArray("categories");setOrientation(HORIZONTAL);background(this,panel(),radius()*d);
+        Menu(Context c,Bundle state,Events e){super(c);focusOptions=state.getBoolean("focusOptions");remoteNavigation=state.getBoolean("remoteInput");events=e;d=scale(c);titles=state.getStringArray("categories");setOrientation(HORIZONTAL);background(this,panel(),radius()*d);
             textSize=menuFontSize();
             options=new ListView(c);categories=new ListView(c);
             for(ListView list:new ListView[]{options,categories}){list.setDivider(null);list.setSelector(new ColorDrawable(Color.TRANSPARENT));list.setCacheColorHint(Color.TRANSPARENT);list.setChoiceMode(ListView.CHOICE_MODE_SINGLE);list.setFocusableInTouchMode(true);}
@@ -277,14 +335,39 @@ public abstract class SharedTvUi implements TvUi {
             addView(options,new LinearLayout.LayoutParams(0,-1,theme()==3?175:theme()==4?142:1));addView(categories,new LinearLayout.LayoutParams(0,-1,theme()==2?1.08f:theme()==3?151:theme()==4?133:1));
             categories.setPadding(0,Math.round((theme()==2?17:theme()==3?20:0)*d),0,0);
             categories.setAdapter(new MenuAdapter(c,titles,true,-1));
+            categories.setOnHoverListener((view,event)->true);
             categories.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onItemSelected(AdapterView<?> p,View v,int pos,long id){choose(pos);}public void onNothingSelected(AdapterView<?> p){}});
-            categories.setOnItemClickListener((p,v,pos,id)->{choose(pos);if(choices.getBoolean("openOnClick")){events.action(category,-1);return;}options.requestFocus();options.setSelection(choices.getInt("selected",0));});
+            categories.setOnItemClickListener((p,v,pos,id)->{choose(pos);if(choices.getBoolean("openOnClick")){events.action(category,-1);return;}options.requestFocus();options.setSelection(Math.max(choices.getInt("firstEnabled",0),choices.getInt("selected",0)));});
             options.setOnItemClickListener((p,v,pos,id)->{events.action(category,pos);refresh();});
             View.OnFocusChangeListener focus=(v,hasFocus)->{invalidateRows(options);invalidateRows(categories);};
             options.setOnFocusChangeListener(focus);categories.setOnFocusChangeListener(focus);
             options.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onItemSelected(AdapterView<?> p,View v,int pos,long id){invalidateRows(options);}public void onNothingSelected(AdapterView<?> p){invalidateRows(options);}});
-            categories.setSelection(0);choose(0);categories.requestFocus();
+            categories.setSelection(0);choose(0);
+            if(focusOptions){options.setSelection(Math.max(choices.getInt("firstEnabled",0),choices.getInt("selected",0)));options.requestFocus();}
+            else categories.requestFocus();
         }
+        public int preferredWidth(int height){
+            Paint measure=new Paint(3);
+            float font=menuTextSize(menuCategoryPitch(d,height,titles.length)/d);
+            measure.setTextSize(font);
+            float left=0,right=0;
+            for(String title:titles)right=Math.max(right,measure.measureText(title));
+            // Fix the drawer width from all categories before showing it. Switching
+            // between short and long submenus must never resize the popup.
+            for(int i=0;i<titles.length;i++) {
+                Bundle all=events.options(i);
+                String[] items=all==null?null:all.getStringArray("items");
+                if(items!=null)for(String title:items)left=Math.max(left,measure.measureText(title));
+            }
+            // Restore any host-side option snapshot for the active category.
+            if(category>=0)events.options(category);
+            // Include the pill inset, radio mark and breathing room on both sides.
+            left+=theme()==2?60:40;right+=theme()==2?44:24;
+            float lw=theme()==3?175:theme()==4?142:1;
+            float rw=theme()==2?1.08f:theme()==3?151:theme()==4?133:1;
+            return (int)Math.ceil(Math.max(left/lw,right/rw)*(lw+rw)*d);
+        }
+        boolean remoteNavigation,focusOptions;
         int naturalPitch(){return menuPitch(d);}
         void optionPadding(int height){
             int count=options.getCount(),room=Math.max(0,height-count*naturalPitch());
@@ -314,7 +397,12 @@ public abstract class SharedTvUi implements TvUi {
             super.onMeasure(widthSpec,heightSpec);
         }
         void invalidateRows(ListView list){for(int i=0;i<list.getChildCount();i++)list.getChildAt(i).invalidate();}
-        protected boolean onRequestFocusInDescendants(int direction,Rect previous){return categories.requestFocus(direction,previous);}
+        void inputMode(boolean remote){
+            if(remoteNavigation!=remote){remoteNavigation=remote;invalidateRows(categories);invalidateRows(options);}
+            if(getContext() instanceof InputMode)((InputMode)getContext()).themeInputMode(remote);
+        }
+        public boolean dispatchTouchEvent(MotionEvent event){if(event.getActionMasked()==MotionEvent.ACTION_DOWN)inputMode(false);return super.dispatchTouchEvent(event);}
+        protected boolean onRequestFocusInDescendants(int direction,Rect previous){return focusOptions?options.requestFocus(direction,previous):categories.requestFocus(direction,previous);}
         void choose(int pos){if(binding||pos==category)return;category=pos;populate(false);}
         void refresh(){populate(true);}
         void populate(boolean preserve){if(category<0)return;binding=true;choices=events.options(category);if(choices==null)choices=new Bundle();String[] items=choices.getStringArray("items");if(items==null)items=new String[0];int selected=choices.getInt("selected",-1);
@@ -326,7 +414,7 @@ public abstract class SharedTvUi implements TvUi {
                 adapter.items=items;adapter.checked=selected;adapter.notifyDataSetChanged();
             }else{
                 options.setAdapter(new MenuAdapter(getContext(),items,false,selected));
-                if(items.length>0)options.setSelection(Math.max(0,Math.min(items.length-1,selected)));
+                if(items.length>0)options.setSelection(Math.max(choices.getInt("firstEnabled",0),Math.min(items.length-1,selected)));
             }
             optionPadding(getHeight());
             ((BaseAdapter)categories.getAdapter()).notifyDataSetChanged();binding=false;
@@ -335,13 +423,16 @@ public abstract class SharedTvUi implements TvUi {
         // Handle it in the pre-IME stage so the submenu can return to its category first.
         public boolean dispatchKeyEventPreIme(KeyEvent e){if(e.getKeyCode()==KeyEvent.KEYCODE_BACK)return dispatchKeyEvent(e);return super.dispatchKeyEventPreIme(e);}
         public boolean dispatchKeyEvent(KeyEvent e){int key=e.getKeyCode();
+            if(e.getAction()==KeyEvent.ACTION_DOWN&&(key==KeyEvent.KEYCODE_DPAD_UP||key==KeyEvent.KEYCODE_DPAD_DOWN||key==KeyEvent.KEYCODE_DPAD_LEFT||key==KeyEvent.KEYCODE_DPAD_RIGHT||key==KeyEvent.KEYCODE_DPAD_CENTER||key==KeyEvent.KEYCODE_ENTER||key==KeyEvent.KEYCODE_NUMPAD_ENTER||key==KeyEvent.KEYCODE_MENU||key==KeyEvent.KEYCODE_BACK))inputMode(true);
             if(key==KeyEvent.KEYCODE_BACK||key==KeyEvent.KEYCODE_MENU){if(e.getAction()==KeyEvent.ACTION_DOWN){if(key==KeyEvent.KEYCODE_BACK&&options.hasFocus())categories.requestFocus();else events.dismiss();}return true;}
-            if(key==KeyEvent.KEYCODE_DPAD_LEFT||key==KeyEvent.KEYCODE_DPAD_RIGHT){if(e.getAction()==KeyEvent.ACTION_DOWN){if(key==KeyEvent.KEYCODE_DPAD_LEFT){options.requestFocus();if(options.getSelectedItemPosition()<0)options.setSelection(0);}else{categories.requestFocus();categories.setSelection(category);}}return true;}
+            if(key==KeyEvent.KEYCODE_DPAD_LEFT||key==KeyEvent.KEYCODE_DPAD_RIGHT){if(e.getAction()==KeyEvent.ACTION_DOWN){if(key==KeyEvent.KEYCODE_DPAD_LEFT){options.requestFocus();if(options.getSelectedItemPosition()<choices.getInt("firstEnabled",0))options.setSelection(choices.getInt("firstEnabled",0));}else{categories.requestFocus();categories.setSelection(category);}}return true;}
             return super.dispatchKeyEvent(e);
         }
         private final class MenuAdapter extends BaseAdapter {
             final Context context;String[] items;final boolean main;int checked;
             MenuAdapter(Context c,String[] values,boolean m,int selected){context=c;items=values;main=m;checked=selected;}
+            public boolean areAllItemsEnabled(){return main||choices.getInt("firstEnabled",0)==0;}
+            public boolean isEnabled(int position){return main||position>=choices.getInt("firstEnabled",0);}
             public int getCount(){return items.length;}public Object getItem(int i){return items[i];}public long getItemId(int i){return i;}
             public View getView(int i,View old,ViewGroup parent){MenuRow row=old instanceof MenuRow?(MenuRow)old:new MenuRow(context);row.getLayoutParams().height=main&&categoryPitch>0?categoryPitch:naturalPitch();row.label=items[i];row.main=main;row.index=i;row.radio=!main&&(checked>=0||items[i].endsWith(" ●")||items[i].endsWith(" ○"));row.checked=!main&&(checked==i||items[i].endsWith(" ●"));String title=row.radio&&(items[i].endsWith(" ●")||items[i].endsWith(" ○"))?items[i].substring(0,items[i].length()-2):items[i];row.setContentDescription(title+(row.radio?(row.checked?"，已选中":"，未选中"):""));row.invalidate();return row;}
         }
@@ -350,14 +441,15 @@ public abstract class SharedTvUi implements TvUi {
             MenuRow(Context c){super(c);setLayoutParams(new AbsListView.LayoutParams(-1,naturalPitch()));}
             protected void drawableStateChanged(){super.drawableStateChanged();invalidate();}
             protected void onDraw(Canvas canvas){canvas.save();canvas.scale(d,d);float w=getWidth()/d,h=getHeight()/d;
-                boolean focus=main?index==category:options.hasFocus()&&options.getSelectedItemPosition()==index;
-                if(focus&&(main||options.hasFocus())){
-                    // A checked option keeps its accent text even while this list owns focus.
-                    // Use a quiet fill so that text remains distinct from the focus background.
-                    if(!main&&checked&&theme()!=5){if(theme()!=4)box(canvas,theme()==2?12:0,theme()==2?9:0,w-(theme()==2?12:0),h-(theme()==2?9:0),(accent()&0x00ffffff)|0x26000000,theme()==2?(h-18)/2:4);}
+                boolean active=main&&index==category;
+                // Remote focus owns one background; checked settings keep text/radio marks.
+                boolean optionFocus=remoteNavigation&&options.hasFocus();
+                boolean focus=main?active&&!optionFocus:optionFocus&&index>=choices.getInt("firstEnabled",0)&&options.getSelectedItemPosition()==index;
+                if(focus){
+                    if(theme()==4){box(canvas,8,3,w-8,h-3,(accent()&0x00ffffff)|0x26000000,0);box(canvas,8,10,11,h-10,accent(),0);}
                     else selected(canvas,theme()==2?12:0,theme()==2?9:0,w-(theme()==2?12:0),h-(theme()==2?9:0));
                 }
-                int color=theme()==5&&focus?0xff142438:(!main&&checked||theme()==4&&focus)?accent():0xffe1e3e6;
+                int color=theme()==5&&focus?0xff142438:theme()==4&&focus||(active||!main&&checked)&&!focus?accent():0xffe1e3e6;
                 // Selection, label length and radio decoration never change
                 // the typeface, weight, size or baseline of a menu sibling.
                 float size=textSize;
@@ -367,14 +459,29 @@ public abstract class SharedTvUi implements TvUi {
                     String title=label.endsWith(" ●")||label.endsWith(" ○")?label.substring(0,label.length()-2):label;
                     p.setTextSize(size);float total=Math.min(p.measureText(title),Math.max(0,w-40))+20,x=(w-total)/2;
                     text(canvas,title,x,baseline,size,color,total-20);float cx=x+total-7,cy=h/2;
-                    p.setColor(color);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(1.4f);canvas.drawCircle(cx,cy,6,p);
-                    p.setStyle(Paint.Style.FILL);if(checked)canvas.drawCircle(cx,cy,2.7f,p);
+                    // Draw in device pixels to avoid subpixel stroke scaling on old HWUI.
+                    int stroke=Math.max(1,Math.round(1.5f*d));float phase=(stroke&1)*.5f;
+                    float pixelX=Math.round(cx*d-phase)+phase,pixelY=Math.round(cy*d-phase)+phase;
+                    int saved=canvas.save();canvas.scale(1/d,1/d);
+                    p.setColor(color);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(stroke);
+                    canvas.drawCircle(pixelX,pixelY,Math.max(3,Math.round(6*d)),p);
+                    p.setStyle(Paint.Style.FILL);
+                    if(checked)canvas.drawCircle(pixelX,pixelY,Math.max(1,Math.round(2.7f*d)),p);
+                    canvas.restoreToCount(saved);
                 }else{
                     // Keep the common font for long labels. Middle ellipsis
                     // also retains the version number at the end of the row.
                     String fitted=label;
-                    if(p.measureText(label)>w-16){ellipsisPaint.set(p);fitted=android.text.TextUtils.ellipsize(label,ellipsisPaint,Math.max(0,w-16),android.text.TextUtils.TruncateAt.MIDDLE).toString();}
-                    center(canvas,fitted,8,w-8,baseline,size,color);
+                    float inset=theme()==2?20:8;
+                    if(p.measureText(label)>w-inset*2){
+                        ellipsisPaint.set(p);float room=Math.max(0,w-inset*2);
+                        if(!main&&label.startsWith("网页电视 ")){
+                            String version=label.substring(label.lastIndexOf(' '));
+                            float prefixRoom=Math.max(0,room-p.measureText(version));
+                            fitted=android.text.TextUtils.ellipsize("网页电视",ellipsisPaint,prefixRoom,android.text.TextUtils.TruncateAt.END).toString()+version;
+                        }else fitted=android.text.TextUtils.ellipsize(label,ellipsisPaint,room,android.text.TextUtils.TruncateAt.MIDDLE).toString();
+                    }
+                    center(canvas,fitted,inset,w-inset,baseline,size,color);
                 }canvas.restore();
             }
         }

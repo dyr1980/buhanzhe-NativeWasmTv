@@ -22,6 +22,20 @@ final class EpgListAdapter extends BaseAdapter {
     private List<EpgManager.Program> programs = Collections.emptyList();
     private float uiScale = 1f;
     private Channel channel;
+    private int pagedRowHeight;
+    int navigationRowHeight(android.widget.ListView list){
+        if(TvUiPlugin.current()==null&&pagedRowHeight>0)return pagedRowHeight;
+        if(TvUiPlugin.current()!=null)return themedHeight(list);
+        View sample=getView(0,null,list);int height=sample.getLayoutParams().height;
+        if(TvUiPlugin.current()==null){
+            ViewHolder holder=(ViewHolder)sample.getTag();
+            int gap=((ViewGroup.MarginLayoutParams)holder.title.getLayoutParams()).topMargin;
+            height=sample.getPaddingTop()+sample.getPaddingBottom()+holder.time.getLineHeight()+holder.title.getLineHeight()*2+gap;
+            height=Math.max(height,Math.round(52f*density*uiScale));
+            if(pagedRowHeight!=height){pagedRowHeight=height;notifyDataSetChanged();}
+        }
+        return Math.max(1,height);
+    }
     private final SimpleDateFormat dateFormat=new SimpleDateFormat("MM-dd HH:mm",Locale.getDefault());
 
     EpgListAdapter(Context context, UiScaleHelper uiScaleHelper) {
@@ -35,6 +49,7 @@ final class EpgListAdapter extends BaseAdapter {
             return;
         }
         this.uiScale = uiScale;
+        pagedRowHeight=0;
         notifyDataSetChanged();
     }
 
@@ -75,7 +90,7 @@ final class EpgListAdapter extends BaseAdapter {
 
     @Override
     public View getView(int position, View convertView, ViewGroup parent) {
-        if(TvUiPlugin.current()!=null){try{return themedRow(position,convertView);}catch(RuntimeException|LinkageError error){TvUiPlugin.rejectRenderer(inflater.getContext(),error);convertView=null;}}
+        if(TvUiPlugin.current()!=null){try{return themedRow(position,convertView,parent);}catch(RuntimeException|LinkageError error){TvUiPlugin.rejectRenderer(inflater.getContext(),error);convertView=null;}}
         ViewHolder holder;
         if (convertView == null || !(convertView.getTag() instanceof ViewHolder)) {
             convertView = inflater.inflate(R.layout.item_epg_program, parent, false);
@@ -87,6 +102,7 @@ final class EpgListAdapter extends BaseAdapter {
             holder = (ViewHolder) convertView.getTag();
         }
         uiScaleHelper.apply(convertView, uiScale);
+        if(pagedRowHeight>0)convertView.getLayoutParams().height=pagedRowHeight;
         convertView.setMinimumHeight(Math.round(52f * density * uiScale));
         EpgManager.Program program = getItem(position);
         // A queued ListView bind can outlive the list it was scheduled for.
@@ -106,11 +122,11 @@ final class EpgListAdapter extends BaseAdapter {
         holder.title.setText(programTitle(program,now));
         boolean current = program.isPlaying(System.currentTimeMillis());
         convertView.setBackgroundResource(current
-                ? R.drawable.epg_program_current_background
-                : R.drawable.epg_program_background);
+                ? R.drawable.epg_program_current_background : R.drawable.epg_program_background);
         convertView.setActivated(current);
         holder.time.setActivated(current);
         holder.title.setActivated(current);
+        holder.time.setTextColor(parent.getResources().getColorStateList(R.color.epg_program_time_text));
         convertView.refreshDrawableState();
         return convertView;
     }
@@ -122,7 +138,17 @@ final class EpgListAdapter extends BaseAdapter {
         return marker+program.title;
     }
 
-    private View themedRow(int position,View old){
+    private int themedHeight(android.widget.ListView list){
+        String id=TvUiPlugin.current().id;
+        float scale=inflater.getContext() instanceof xiao.bu.tv.skin.SharedTvUi.Viewport
+                ?((xiao.bu.tv.skin.SharedTvUi.Viewport)inflater.getContext()).themeScale():uiScale;
+        int preferred=Math.max(1,Math.round(xiao.bu.tv.skin.SharedTvUi.preferredRowHeight(id)*scale));
+        int available=list.getHeight()-2*list.getPaddingTop(),divider=list.getDividerHeight();
+        return available<=0?preferred:Math.max(1,xiao.bu.tv.skin.SharedTvUi.fittedRowHeight(
+                available+divider,preferred+divider)-divider);
+    }
+
+    private View themedRow(int position,View old,ViewGroup parent){
         float scale=inflater.getContext() instanceof xiao.bu.tv.skin.SharedTvUi.Viewport
                 ?((xiao.bu.tv.skin.SharedTvUi.Viewport)inflater.getContext()).themeScale():uiScale;
         ThemedRow holder=old!=null&&old.getTag() instanceof ThemedRow?(ThemedRow)old.getTag():null;
@@ -130,6 +156,8 @@ final class EpgListAdapter extends BaseAdapter {
             holder=new ThemedRow();holder.revision=TvUiPlugin.revision();holder.scale=scale;
             old=TvUiPlugin.provider().create(inflater.getContext(),"epg-row",holder.state,null,null);old.setTag(holder);
         }
+        if(parent instanceof android.widget.ListView)
+            old.getLayoutParams().height=themedHeight((android.widget.ListView)parent);
         EpgManager.Program program=getItem(position);long now=System.currentTimeMillis();
         holder.state.putString("time",program==null?"":(program.startMillis<EpgManager.dayStart(now)?dateFormat:timeFormat).format(new Date(program.startMillis))+"–"+timeFormat.format(new Date(program.stopMillis)));
         holder.state.putString("title",program==null?"":programTitle(program,now));

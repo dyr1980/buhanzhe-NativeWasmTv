@@ -39,6 +39,17 @@ public final class ExitBackInstrumentation extends Instrumentation {
                 back();TvUiMenu menu=(TvUiMenu)field(a,"tvUiMenu");
                 check(!a.isFinishing(),"First BACK exited "+id);
                 check("builtin".equals(id)?((View)field(a,"backPrompt")).getVisibility()==View.VISIBLE:menu.visible(),"First BACK did not show exit confirmation "+id);
+                if("builtin".equals(id)){
+                    key(KeyEvent.KEYCODE_DPAD_CENTER);SystemClock.sleep(120);
+                    check(((View)field(a,"managementPanel")).isShown()&&a.hasWindowFocus(),"Classic BACK then OK opened web instead of native QR");
+                    check(((View)field(a,"backPrompt")).getVisibility()==View.GONE&&!menu.visible(),"Classic shortcut left a prompt or theme menu open");
+                    back();check(!((View)field(a,"managementPanel")).isShown()&&!a.isFinishing(),"BACK did not close classic QR");
+                    // MIUI maps globally injected MENU to Recents. Deliver the
+                    // same remote events to the foreground Activity directly.
+                    main(()->{a.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_MENU));a.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_MENU));});SystemClock.sleep(120);
+                    check(((View)field(a,"managementPanel")).isShown()&&a.hasWindowFocus(),"Classic MENU opened web instead of native QR");
+                    back();back();check(((View)field(a,"backPrompt")).isShown()&&!a.isFinishing(),"Classic exit prompt did not return");
+                }
                 if(!"builtin".equals(id)&&!bridge){
                     key(KeyEvent.KEYCODE_DPAD_LEFT);key(KeyEvent.KEYCODE_DPAD_CENTER);waitForIdleSync();
                     check(menu.visible()&&field(menu,"exitEvents")==null&&!a.isFinishing(),"Exit DPAD settings action failed "+id);
@@ -51,9 +62,9 @@ public final class ExitBackInstrumentation extends Instrumentation {
                 until=SystemClock.elapsedRealtime()+8000;while(!a.isDestroyed()&&SystemClock.elapsedRealtime()<until)SystemClock.sleep(40);
                 check(a.isFinishing()&&a.isDestroyed(),"Second BACK failed to exit "+id);
                 check(field(a,"player")==null,"Player retained after exit "+id);
-                rows.put(new JSONObject().put("theme",id).put("bridgeBack",bridge).put("firstBackShowsConfirmation",true).put("heldBackIgnored",true).put("secondBackExits",true).put("playerReleased",true));
+                rows.put(new JSONObject().put("theme",id).put("bridgeBack",bridge).put("firstBackShowsConfirmation",true).put("heldBackIgnored",true).put("secondBackExits",true).put("playerReleased",true).put("classicRemoteQr",id.equals("builtin")));
             }
-            result.putString("stream","PASS: six themes, real first/second BACK, held-key repeat, DPAD settings, ordinary menu BACK and web-control BACK\n");code=-1;
+            result.putString("stream","PASS: classic BACK+OK and MENU keep native QR; six themes, real first/second BACK, held-key repeat, DPAD settings, ordinary menu BACK and web-control BACK\n");code=-1;
         }catch(Throwable error){result.putString("stream",android.util.Log.getStackTraceString(error));}
         finally{
             try{File out=new File(c.getExternalFilesDir(null),"exit-back-results.json");try(FileOutputStream stream=new FileOutputStream(out)){stream.write(rows.toString(2).getBytes("UTF-8"));}}catch(Exception ignored){}

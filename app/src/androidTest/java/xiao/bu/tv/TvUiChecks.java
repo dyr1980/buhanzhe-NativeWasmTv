@@ -163,13 +163,21 @@ final class TvUiChecks {
         }
     }
     private static void managementEntry(Instrumentation t,MainActivity a,int category,File out,String name)throws Exception {
+        managementEntry(t,a,category,out,name,false);
+    }
+    private static void managementEntry(Instrumentation t,MainActivity a,int category,File out,String name,boolean remote)throws Exception {
         Method device=MainActivity.class.getDeclaredMethod("isTelevisionDevice");device.setAccessible(true);
         Method tvMode=MainActivity.class.getDeclaredMethod("hasTelevisionUi");tvMode.setAccessible(true);
-        boolean television=(Boolean)tvMode.invoke(a)||!ManagementActivity.isTablet(a)&&(Boolean)device.invoke(a);
+        boolean television=remote||(Boolean)tvMode.invoke(a)||!ManagementActivity.isTablet(a)&&(Boolean)device.invoke(a);
         Instrumentation.ActivityMonitor monitor=television?null:t.addMonitor(ManagementActivity.class.getName(),null,false);
         try {
-            main(t,()->{invoke(a,"openTvUiMenu");menuList(a,true).setSelection(category);menuList(a,true).performItemClick(null,category,category);});
-            if(category==6)tapMenuOption(t,a,4);
+            main(t,()->{Method mode=MainActivity.class.getDeclaredMethod("setRemoteInputMode",boolean.class);mode.setAccessible(true);mode.invoke(a,!remote);invoke(a,"openTvUiMenu");menuList(a,true).setSelection(category);menuList(a,true).performItemClick(null,category,category);});
+            if(category==6){
+                if(remote){
+                    main(t,()->{ListView options=menuList(a,false);options.requestFocusFromTouch();options.requestFocus();options.setSelection(4);});t.waitForIdleSync();
+                    t.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_DPAD_CENTER);t.waitForIdleSync();
+                }else tapMenuOption(t,a,4);
+            }
             if(television){check(((View)field(a,"managementPanel")).isShown(),"TV management did not show QR");main(t,()->invoke(a,"closeManagementPanel"));return;}
             android.app.Activity page=t.waitForMonitorWithTimeout(monitor,6000);check(page!=null,"Web management did not open Activity");
             try {
@@ -193,7 +201,8 @@ final class TvUiChecks {
             for(String id:new String[]{"ui2","ui3","ui4","ui5","ui6"}){
                 TvUiPlugin.select(a,id);t.waitForIdleSync();
                 managementEntry(t,a,6,out,id+"-preferences");
-                result.put(new JSONObject().put("theme",id).put("preferencesWebManagement",true));
+                managementEntry(t,a,6,out,id+"-remote-qr",true);
+                result.put(new JSONObject().put("theme",id).put("preferencesWebManagement",true).put("touchAfterRemote",true).put("remoteAfterTouch",true).put("remoteQr",true));
             }
             row.put("webManagementEntries",result).put("usesSidebar",ManagementActivity.usesSidebar(a));
         }finally{TvUiPlugin.select(a,saved);t.waitForIdleSync();}
@@ -696,9 +705,12 @@ final class TvUiChecks {
         check(!((View)field(a,"managementPanel")).isShown(),"Right tap opened QR");screenshot(t,out,"phone-right-settings");closeMenu(t,a);
         JSONArray gestures=new JSONArray();
         // Finite-video gestures are covered by PlaybackGesturesInstrumentation;
-        // channel swipes apply only to live playback.
+        // Live playback uses vertical channel swipes and horizontal source swipes.
         Method durationMethod=MainActivity.class.getDeclaredMethod("seekableDuration");durationMethod.setAccessible(true);
         for(boolean horizontal:(Long)durationMethod.invoke(a)>0?new boolean[0]:new boolean[]{false,true}){
+            Method channelMethod=MainActivity.class.getDeclaredMethod("currentChannel");channelMethod.setAccessible(true);
+            Channel active=(Channel)channelMethod.invoke(a);
+            if(horizontal&&active.sourceCount()<2)continue; // Single-source rebound is covered separately.
             main(t,()->{VideoControlsOverlay c=(VideoControlsOverlay)field(a,"videoControlsOverlay");if(c!=null)c.hide();});
             DirectVideoView video=(DirectVideoView)field(a,"videoView");android.view.Surface surface=video.getVideoSurface();
             int channel=(Integer)field(a,"currentChannelIndex"),source=(Integer)field(a,"currentSourceIndex");
@@ -718,8 +730,9 @@ final class TvUiChecks {
             check(video.getVideoSurface()==surface&&surface.isValid(),"Swipe destroyed retiring Surface");
             check(incoming!=video&&incoming.getVideoSurface()!=surface&&incoming.isSurfaceReady(),"Phone did not prepare on a second Surface");
             ready(t,a);check(!incoming.isFrameCovered(),"First frame remained covered");
-            check((Integer)field(a,"currentChannelIndex")!=channel,"Swipe did not change channel");
-            gestures.put(new JSONObject().put("axis",horizontal?"horizontal-channel":"vertical-channel").put("followed",true).put("settled",true).put("retainedOldSurface",true).put("parallelSurfaces",true).put("coveredUntilFirstFrame",waiting));
+            if(horizontal)check((Integer)field(a,"currentChannelIndex")==channel&&(Integer)field(a,"currentSourceIndex")!=source,"Swipe did not change source on the same channel");
+            else check((Integer)field(a,"currentChannelIndex")!=channel,"Swipe did not change channel");
+            gestures.put(new JSONObject().put("axis",horizontal?"horizontal-source":"vertical-channel").put("followed",true).put("settled",true).put("retainedOldSurface",true).put("parallelSurfaces",true).put("coveredUntilFirstFrame",waiting));
         }
         main(t,()->invoke(a,"openTvUiMenu"));
         main(t,()->menuList(a,true).performItemClick(null,4,4));

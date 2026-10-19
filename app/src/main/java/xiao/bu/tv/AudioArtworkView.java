@@ -64,6 +64,7 @@ public final class AudioArtworkView extends FrameLayout {
         request();
     }
     void showPending(String name,String source,Bitmap art){
+        setPlaying(false);
         title=name==null?"":name;logo=source;pending=true;cover=art;revision++;
         if(ui!=null){ui.showPending(title,logo,art);syncVisibility();}else{fallback.setText(title+"\n缓冲中");setVisibility(VISIBLE);}
         request();

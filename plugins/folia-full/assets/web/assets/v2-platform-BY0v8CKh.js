@@ -1,0 +1,1 @@
+var e=typeof navigator<`u`&&navigator.userAgent.toLowerCase().includes(`mac`),t=t=>e?t.metaKey:t.ctrlKey,n=t=>e?t.ctrlKey:t.metaKey,r=e?`Cmd`:`Ctrl`,i=()=>typeof window<`u`&&!!window.foliaAndroid,a=()=>typeof navigator<`u`&&navigator.userAgent.toLowerCase().includes(`android`);export{t as a,e as i,a as n,n as o,i as r,r as t};

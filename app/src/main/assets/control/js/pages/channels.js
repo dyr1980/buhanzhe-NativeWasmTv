@@ -157,6 +157,7 @@ function addRecommendedSource(source) {
 function removePlaylistSource(index) {
   if (mergeBusy || playlistFileBusy) return;
   playlistSources.splice(index, 1);
+  saveChannelDraft();
   renderPlaylistSources();
 }
 
@@ -705,6 +706,26 @@ function playlistStreamUrl(value, base) {
   }
 }
 
+function playlistCatchupAttributes(line, defaults, base) {
+  var result={}, keys=["catchup","catchup-source","catchup-days","catchup-correction","timeshift"];
+  for(var i=0;i<keys.length;i++) {
+    var key=keys[i],value=playlistAttribute(line,key);
+    if(!value&&defaults)value=defaults[key]||"";
+    if(value)result[key]=value;
+  }
+  var template=result["catchup-source"];
+  if(template&&result.catchup!=="append"&&!/^[?&]/.test(template)&&!/^https?:\/\//i.test(template)) {
+    try{result["catchup-source"]=new URL(template,base).href.replace(/%7B/gi,"{").replace(/%7D/gi,"}");}catch(ignore){}
+  }
+  return result;
+}
+function playlistCatchupText(attributes) {
+  var text="";
+  for(var key in attributes)if(Object.prototype.hasOwnProperty.call(attributes,key))
+    text+=' '+key+'="'+escapePlaylistAttribute(attributes[key])+'"';
+  return text;
+}
+
 function parsePlaylistOnPhone(text, source) {
   var lines = String(text || "")
       .replace(/^\uFEFF/, "")
@@ -752,6 +773,7 @@ function parsePlaylistOnPhone(text, source) {
         group: playlistAttribute(line, "group-title") || group,
         epgId: playlistAttribute(line, "tvg-id"),
         logoUrl: playlistAttribute(line, "tvg-logo"),
+        catchup: playlistCatchupAttributes(line, playlistCatchupAttributes(lines[0],null,source.location), source.location),
         subtitleUrls: [],
         radio: /^(true|1)$/i.test(playlistAttribute(line, "radio"))
       };
@@ -769,6 +791,7 @@ function parsePlaylistOnPhone(text, source) {
         epgId: pending.epgId || "",
         logoUrl: pending.logoUrl || "",
         radio: pending.radio,
+        catchup: pending.catchup,
         subtitleUrls: pending.subtitleUrls,
         url: url
       });
@@ -840,6 +863,7 @@ function mergePhoneEntries(results) {
           logoUrl: item.logoUrl || "",
           radio: !!item.radio,
           subtitleUrls: [],
+          catchups: [],
           urls: []
         };
         merged.push(target);
@@ -856,7 +880,7 @@ function mergePhoneEntries(results) {
           duplicate = true;
           break;
         }
-      if (!duplicate) target.urls.push(item.url);
+      if (!duplicate) {target.urls.push(item.url);target.catchups.push(item.catchup || {});}
       byUrl[urlKey] = target;
     }
   }
@@ -888,7 +912,7 @@ function buildMergedM3u(merged) {
           (item.radio ? '" radio="true' : '') +
           '" group-title="' +
           escapePlaylistAttribute(item.group) +
-          '",' +
+          '"' + playlistCatchupText((item.catchups || [])[u] || {}) + ',' +
           item.name.replace(/[\r\n]/g, " ")
       );
       var subtitles = item.subtitleUrls || [];
@@ -919,7 +943,22 @@ function mergeAndPushPlaylistSources() {
   var enabled = [];
   for (var i = 0; i < cleaned.length; i++) if (cleaned[i].enabled) enabled.push(cleaned[i]);
   if (!enabled.length) {
-    toast("请至少开启一个频道来源", true);
+    // An empty source list is a valid deletion, not a merge validation error.
+    // Let the TV clear removed source caches and rebuild its built-in catalogue.
+    mergeBusy = true;
+    document.getElementById("mergeButton").disabled = true;
+    setMergeUi("正在刷新电视", "保存频道来源设置", "working");
+    api("/api/settings", {playlistSources: cleaned}, function(error, response) {
+      mergeBusy = false;
+      document.getElementById("mergeButton").disabled = false;
+      if(error){setMergeUi("刷新失败", error.message, "");toast(error.message,true);renderPlaylistSources();return;}
+      playlistSources=cleaned;
+      channelBaseSources=channelSourceSnapshot(cleaned);
+      saveChannelDraft();renderPlaylistSources();
+      setMergeUi("频道列表已刷新", "已移除停用或删除的频道来源", "done");
+      toast(cleaned.length?"已停用频道来源":"已删除全部自建频道来源");
+      refresh();
+    });
     return;
   }
   playlistSources = cleaned;

@@ -26,11 +26,11 @@ t.begin(2, 1000); check(!t.finished(2)); check(!t.finished(1));
 t.stage(1, "load-ready", 1200); check(!t.finished(2));
 t.stage(2, "first-data", 1100); t.stage(2, "load-ready", 1200);
 t.cost(2, "下载", 300); t.cost(2, "下载", 500);
-check(t.display(2).contains("下载Σ:300ms"));
+check(t.display(2).contains("下载:300ms"));
 check(t.display(2).contains("加载:边下边播"));
 t.begin(3, 2000); t.segment(3, 20, 10, true);
 t.stage(3, "player-open-requested", 2050); t.stage(3, "player-prepared", 2100); t.stage(3, "load-ready", 2200);
-check(t.display(3).contains("解密Σ:10ms")); check(t.display(3).contains("准备:50ms"));
+check(t.display(3).contains("解密:10ms")); check(t.display(3).contains("准备:50ms"));
 }
 }
 '''

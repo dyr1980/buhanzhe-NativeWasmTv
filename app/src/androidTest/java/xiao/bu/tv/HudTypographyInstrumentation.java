@@ -33,7 +33,7 @@ public final class HudTypographyInstrumentation extends Instrumentation {
     }
     private void audit(String id,String preset,String phase)throws Exception{
         labels(false);SystemClock.sleep(70);Bitmap screen=getUiAutomation().takeScreenshot();check(screen!=null,"Screenshot missing");
-        if(preset.equals("auto"))try(FileOutputStream f=new FileOutputStream(new File(out,id+"-"+phase+".png"))){screen.compress(Bitmap.CompressFormat.PNG,100,f);}screen.recycle();
+        if(preset.equals("standard"))try(FileOutputStream f=new FileOutputStream(new File(out,id+"-"+phase+".png"))){screen.compress(Bitmap.CompressFormat.PNG,100,f);}screen.recycle();
         labels(true);SystemClock.sleep(70);screen=getUiAutomation().takeScreenshot();
         try{
             TextView clock=(TextView)get("videoClock"),speed=(TextView)get("networkSpeedOverlay"),position=(TextView)get("videoPosition");
@@ -41,7 +41,18 @@ public final class HudTypographyInstrumentation extends Instrumentation {
             boolean same=clock.getTextSize()==speed.getTextSize()&&clock.getTypeface()==speed.getTypeface()&&clock.getTextScaleX()==speed.getTextScaleX()
                     &&Math.abs(c.height()-s.height())<=1&&Math.abs(c.width()-s.width())<=1;
             JSONObject row=new JSONObject().put("theme",id).put("preset",preset).put("phase",phase).put("sameFont",same).put("clockPx",clock.getTextSize()).put("speedPx",speed.getTextSize()).put("clockGlyph",c.width()+"x"+c.height()).put("speedGlyph",s.width()+"x"+s.height());results.put(row);
-            if(!baseline)check(same,"HUD font mismatch: "+row);check(position.getTextSize()==clock.getTextSize(),"Progress font differs");
+            if(!baseline){
+                {
+                    View root=(View)get("root");float scale=(Float)get("effectiveUiScale");int shortSide=Math.min(root.getWidth(),root.getHeight());
+                    float expectedClock=11f*activity.getResources().getDisplayMetrics().scaledDensity*scale;
+                    float expectedSpeed=expectedClock;
+                    float expectedDebug=Math.max(10f,Math.min(48f,shortSide*.022f)-4f*shortSide/540f)*scale;
+                    check(Math.abs(clock.getTextSize()-expectedClock)<.1f,"Clock differs from compact HUD size");
+                    check(Math.abs(speed.getTextSize()-expectedSpeed)<.1f,"Traffic differs from compact HUD size");
+                    check(Math.abs((Float)get("debugInfoTextSizePx")-expectedDebug)<.1f,"Classic debug base differs from v1.8.0");
+                    row.put("classicTagFonts",true).put("debugBasePx",expectedDebug);
+                }
+            }check(position.getTextSize()==clock.getTextSize(),"Progress font differs");
         }finally{screen.recycle();}
     }
     public void onStart(){Bundle result=new Bundle();int code=1;ChannelCatalog.Group[] saved=ChannelCatalog.GROUPS;String savedTheme="builtin",savedScale="auto";
@@ -54,7 +65,7 @@ public final class HudTypographyInstrumentation extends Instrumentation {
             setting(new JSONObject().put("showDateTime",true).put("showNetworkSpeed",true).put("dateTimeFormat","time_only").put("clockLocation","right").put("showPlaybackPosition",false));
             IMediaPlayer player=(IMediaPlayer)get("player");Surface surface=((DirectVideoView)get("videoView")).getVideoSurface();long start=player.getCurrentPosition();
             final View[] backdrop={null};main(()->{FrameLayout root=(FrameLayout)get("root");backdrop[0]=new View(activity);backdrop[0].setBackgroundColor(Color.BLACK);root.addView(backdrop[0],new FrameLayout.LayoutParams(-1,-1));});
-            for(String preset:new String[]{"auto","small","large"}){
+            for(String preset:new String[]{"standard","small","large"}){
                 setting(new JSONObject().put("uiScaleMode",preset));
                 for(String id:new String[]{"builtin","ui2","ui3","ui4","ui5","ui6"}){
                     TvUiPlugin.select(c,id);until(()->(Integer)get("appliedTvUiRevision")==TvUiPlugin.revision(),5000,"Theme not applied");waitForIdleSync();SystemClock.sleep(70);audit(id,preset,"switch");

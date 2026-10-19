@@ -1,6 +1,6 @@
 function loadTvUi() {
   api("/api/tv-ui",null,function(error,result){
-    document.getElementById("tvUiStatus").textContent=error?error.message:(result.error || "已生效，播放保持不中断");
+    document.getElementById("tvUiStatus").textContent=error?error.message:(result.error || "离线切换，播放不中断");
     if(!error)document.getElementById("tvUiStyle").value=result.selected;
   });
 }
@@ -9,27 +9,6 @@ function saveTvUiStyle() {
   api("/api/tv-ui",{id:select.value},function(error){
     select.disabled=false;if(error)toast(error.message,true);else toast("电视界面已切换");loadTvUi();
   },30000);
-}
-function installTvUi() {
-  var input=document.getElementById("tvUiJar"),file=input.files[0];if(!file)return;
-  if(file.size>512*1024){toast("界面 JAR 不能超过 512 KB",true);input.value="";return;}
-  var xhr=new XMLHttpRequest();xhr.open("POST","/api/tv-ui",true);xhr.timeout=30000;
-  xhr.setRequestHeader("Content-Type","application/octet-stream");
-  xhr.onload=function(){try{var r=JSON.parse(xhr.responseText);if(xhr.status!==200||!r.ok)throw new Error(r.error||"导入失败");toast("界面插件已导入，可在上方切换");loadTvUi();}catch(e){toast(e.message,true);}input.value="";};
-  xhr.onerror=xhr.ontimeout=function(){input.value="";toast("界面插件导入失败",true);};xhr.send(file);
-}
-function updatePlaybackPlugins() {
-  var button = document.getElementById("updatePlaybackPlugins");
-  if (button.disabled) return;
-  button.disabled = true;
-  button.textContent = "正在检查更新…";
-  api("/api/settings", {updateCjsPlugin: true}, function(error, result) {
-    button.disabled = false;
-    button.textContent = "更新播放插件";
-    if (error) { toast(error.message, true); return; }
-    toast((result.message || "插件更新检查完成") + "；正在使用的插件重启后生效");
-    refresh();
-  }, 120000);
 }
 var radioUiSaving=false, radioUiSequence=0, radioUiTimer=null, radioUiOptionsSignature="";
 function loadRadioUi() {
@@ -47,8 +26,7 @@ function loadRadioUi() {
       radioUiOptionsSignature=signature;
     }
     select.value=current;select.disabled=false;
-    status.textContent=result.error || (result.catalogRefreshing ? "正在刷新可选界面…" : result.catalogError || "选择后立即切换，已下载的界面离线可用");
-    document.getElementById("radioUiRefresh").disabled=!!result.catalogRefreshing;
+    status.textContent=result.error || (result.catalogRefreshing ? "正在刷新可选界面…" : result.catalogError || "已下载的界面可离线使用");
     if(result.catalogRefreshing)radioUiTimer=setTimeout(loadRadioUi,1000);
   });
 }
@@ -60,10 +38,6 @@ function saveRadioUiStyle() {
     radioUiSaving=false;select.disabled=false;
     toast(error?error.message:"电台界面已切换",!!error);loadRadioUi();
   },40000);
-}
-function refreshRadioUiChoices() {
-  var button=document.getElementById("radioUiRefresh");if(button.disabled||radioUiSaving)return;button.disabled=true;
-  api("/api/radio-ui",{refresh:true},function(error){if(error){button.disabled=false;toast(error.message,true);}else loadRadioUi();});
 }
 function saveReverse() {
   var reverse = document.getElementById("reverse");
@@ -90,7 +64,6 @@ function saveAutoStart() {
 function saveDecoder() {
   var decoder = document.getElementById("decoder"),
     hardware = document.getElementById("hardwareDecoder"),
-    surface = document.getElementById("surfaceMode"),
     transport = document.getElementById("rtspTransport"),
     sps = document.getElementById("spsCompatibility");
   toast("正在切换解码配置…");
@@ -99,7 +72,6 @@ function saveDecoder() {
     {
       decodeMode: decoder.value,
       hardwareDecoder: hardware.value,
-      surfaceMode: surface.value,
       rtspTransport: transport.value,
       h264SpsCompatibility: sps.value === "true"
     },
@@ -161,7 +133,6 @@ function renderPageState() {
   document.getElementById("autoStart").checked = s.autoStart === true;
   document.getElementById("decoder").value = s.decodeMode || "auto";
   document.getElementById("hdrMode").value = s.hdrMode === "passthrough" ? "hardware" : s.hdrMode || "hardware";
-  document.getElementById("surfaceMode").value = s.surfaceMode || "normal";
   document.getElementById("rtspTransport").value = s.rtspTransport || "tcp";
   document.getElementById("spsCompatibility").value = String(s.h264SpsCompatibility !== false);
   renderHardwareDecoders();

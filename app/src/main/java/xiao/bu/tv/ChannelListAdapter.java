@@ -9,7 +9,7 @@ import android.widget.BaseAdapter;
 import android.widget.ImageView;
 import android.widget.TextView;
 
-final class ChannelListAdapter extends BaseAdapter {
+final class ChannelListAdapter extends BaseAdapter implements xiao.bu.tv.skin.SharedTvUi.TitleWidths {
     interface FavoriteListener {
         boolean isFavorite(int position);
         void onFavoriteClick(int position);
@@ -28,6 +28,30 @@ final class ChannelListAdapter extends BaseAdapter {
     private int playingSourceIndex;
     private FavoriteListener favoriteListener;
     private EpgManager epgManager;
+
+    private float measuredTitleSize=-1f, measuredTitleWidth;
+    private int measuredFirst=-1,measuredCount=-1;
+    public float titleWidth(android.graphics.Paint paint,int first,int count) {
+        if(measuredTitleSize!=paint.getTextSize()||measuredFirst!=first||measuredCount!=count) {
+            measuredFirst=first;measuredCount=count;
+            measuredTitleSize=paint.getTextSize();measuredTitleWidth=0;
+            if(showingGroups){for(ChannelCatalog.Group group:groups)
+                measuredTitleWidth=Math.max(measuredTitleWidth,paint.measureText(group.title));}
+            else {for(int i=Math.max(0,first);i<Math.min(channels.length,first+count);i++)
+                measuredTitleWidth=Math.max(measuredTitleWidth,paint.measureText(channels[i].name));}
+        }
+        return measuredTitleWidth;
+    }
+
+    void refreshVisibleSelection(android.widget.ListView list) {
+        for(int i=0;i<list.getChildCount();i++) {
+            int position=list.getFirstVisiblePosition()+i;
+            if(position>=getCount())break;
+            View row=list.getChildAt(i);
+            getView(position,row,list);
+            row.invalidate();
+        }
+    }
 
     void setEpgManager(EpgManager manager) { epgManager = manager; }
     private final View.OnClickListener favoriteClickListener =
@@ -88,6 +112,7 @@ final class ChannelListAdapter extends BaseAdapter {
         this.groups = groups;
         this.selectedIndex = selectedIndex;
         showingGroups = true;
+        measuredTitleSize=-1f;
         notifyDataSetChanged();
     }
 
@@ -99,6 +124,7 @@ final class ChannelListAdapter extends BaseAdapter {
         this.playingIndex = playingIndex;
         this.playingSourceIndex = playingSourceIndex;
         showingGroups = false;
+        measuredTitleSize=-1f;
         notifyDataSetChanged();
     }
 
@@ -158,7 +184,7 @@ final class ChannelListAdapter extends BaseAdapter {
     public View getView(int position, View convertView, ViewGroup parent) {
         if(TvUiPlugin.current()!=null){try{return pluginRow(position,convertView);}catch(RuntimeException|LinkageError failure){TvUiPlugin.rejectRenderer(inflater.getContext(),failure);convertView=null;}}
         ViewHolder holder;
-        boolean favoriteFocused = !showingGroups && position == favoriteFocusIndex;
+        boolean favoriteFocused = !showingGroups && parent.hasFocus() && position == favoriteFocusIndex;
         // A recycled row can survive an adapter or group/channel mode change.
         // Never bind a group holder (without program/favorite views) as a channel.
         ViewHolder recycled = convertView != null && convertView.getTag() instanceof ViewHolder
@@ -186,6 +212,15 @@ final class ChannelListAdapter extends BaseAdapter {
         if (holder.themeScale != uiScale) {
             uiScaleHelper.apply(convertView, uiScale);
             holder.themeScale = uiScale;
+        }
+
+        if (!showingGroups && parent instanceof android.widget.ListView && parent.getHeight()>0) {
+            android.widget.ListView list=(android.widget.ListView)parent;
+            int preferred=Math.max(1,Math.round(46f*parent.getResources().getDisplayMetrics().density*uiScale));
+            int divider=list.getDividerHeight();
+            int available=Math.max(1,list.getHeight()-list.getPaddingTop()*2);
+            int pitch=xiao.bu.tv.skin.SharedTvUi.fittedRowHeight(available+divider,preferred+divider);
+            convertView.getLayoutParams().height=Math.max(1,pitch-divider);
         }
 
         if (showingGroups) {
@@ -222,6 +257,10 @@ final class ChannelListAdapter extends BaseAdapter {
                     ? R.drawable.collection_fill : R.drawable.collection);
             holder.favorite.setContentDescription(favorite ? "取消收藏" : "收藏");
             holder.favorite.setSelected(favoriteFocused);
+            // ListView propagates its selected state to descendants on DPAD OK.
+            // An inactive star must not acquire a background from that state.
+            holder.favorite.setBackgroundResource(favoriteFocused
+                    ? R.drawable.favorite_button_background : android.R.color.transparent);
             // Keep the focus border inside the measured button bounds.
             holder.favorite.setScaleX(1f);
             holder.favorite.setScaleY(1f);
@@ -229,7 +268,17 @@ final class ChannelListAdapter extends BaseAdapter {
             holder.favorite.setOnClickListener(favoriteClickListener);
             holder.favorite.setOnTouchListener(favoriteTouchListener);
         }
-        convertView.setActivated(position == selectedIndex && !favoriteFocused);
+        boolean focused=position==selectedIndex&&parent.hasFocus()&&!favoriteFocused;
+        // ListView reapplies activated flags during layout. Inactive columns need
+        // a transparent drawable as well, otherwise they retain a second fill.
+        convertView.setBackgroundResource(focused
+                ? showingGroups ? R.drawable.channel_group_selected_background : R.drawable.channel_selected_background
+                : android.R.color.transparent);
+        convertView.setActivated(focused);
+        holder.name.setTextColor((showingGroups?position==selectedIndex&&!parent.hasFocus():position==playingIndex&&!focused)
+                ? parent.getResources().getColor(R.color.accent)
+                : focused ? android.graphics.Color.WHITE
+                : parent.getResources().getColorStateList(R.color.channel_item_text).getDefaultColor());
         return convertView;
     }
 

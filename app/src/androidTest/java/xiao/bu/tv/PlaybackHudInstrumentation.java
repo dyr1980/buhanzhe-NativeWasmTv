@@ -45,8 +45,16 @@ public final class PlaybackHudInstrumentation extends Instrumentation {
             else check(Math.abs(root.getWidth()-p.getRight()-((FrameLayout.LayoutParams)p.getLayoutParams()).rightMargin)<=1,"Position not right aligned "+id);
             check(debug.getRight()<traffic.getLeft(),"Traffic overlaps debug "+id+" "+debug.getRight()+"/"+traffic.getLeft());
             check(root.getHeight()-traffic.getBottom()<root.getHeight()*.05f,"Traffic floated above bottom "+id);
-            check(Math.abs(debug.getTextSize()-(Float)get("debugInfoTextSizePx"))<.1f,"Debug shrunk "+id);
-            String data=debug.getText().toString();check(data.contains("CPU")&&data.contains("fps")&&!data.contains("secret"),"Critical data/URL compacting "+data);
+            float baseSize=(Float)get("debugInfoTextSizePx");
+            if(!id.equals("builtin"))check(Math.abs(debug.getTextSize()-baseSize)<.1f,"Debug shrunk "+id);
+            else check(debug.getTextSize()<=baseSize+.1f,"Classic debug exceeded v1.8.0 size");
+            String data=debug.getText().toString();check(data.contains("CPU")&&data.contains("fps"),"Critical debug data missing "+data);
+            String url=PlaybackHudText.source((String)invoke("currentDebugSourcePath",new Class[]{}));
+            FrameLayout.LayoutParams params=(FrameLayout.LayoutParams)debug.getLayoutParams();
+            int width=Math.max(1,root.getWidth()-params.leftMargin-params.rightMargin-4);
+            String expected=android.text.TextUtils.ellipsize(url,debug.getPaint(),width,android.text.TextUtils.TruncateAt.MIDDLE).toString();
+            check(data.split("\n",2)[0].equals(expected),"URL did not use available width "+id);
+            if(debug.getPaint().measureText(url)<=width)check(data.startsWith(url+"\n"),"Fitting URL was truncated "+id);
         });
     }
     private static void sameBackground(android.graphics.drawable.Drawable clock,android.graphics.drawable.Drawable progress,String id){

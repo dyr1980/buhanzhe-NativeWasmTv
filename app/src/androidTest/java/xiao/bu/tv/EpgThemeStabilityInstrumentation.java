@@ -90,6 +90,7 @@ public final class EpgThemeStabilityInstrumentation extends Instrumentation {
         select(id);
         main(()->{set("epgExpanded",false);call("showEpgForBrowsingChannel",new Class[]{int.class},0);});
         waitForIdleSync();SystemClock.sleep(90);
+        shot("collapsed-"+id);
         clickGuideHandle();guideRows();shot("entry-"+id);
         clickGuideHandle();
         main(()->{
@@ -101,6 +102,10 @@ public final class EpgThemeStabilityInstrumentation extends Instrumentation {
         waitForIdleSync();
         key(KeyEvent.KEYCODE_DPAD_RIGHT);key(KeyEvent.KEYCODE_DPAD_RIGHT);guideRows();
         final int[] before={-1};main(()->{ListView list=(ListView)get("epgList");check(list.hasFocus(),"Remote did not focus guide "+id);before[0]=list.getSelectedItemPosition();});
+        // Theme changes now retain the programme cursor; the preceding theme may
+        // have left this two-programme fixture at its end. Check both directions.
+        if(before[0]>0)key(KeyEvent.KEYCODE_DPAD_UP);
+        main(()->{ListView list=(ListView)get("epgList");check(list.getSelectedItemPosition()==0,"Remote UP did not return to first programme "+id);before[0]=list.getSelectedItemPosition();});
         key(KeyEvent.KEYCODE_DPAD_DOWN);
         main(()->{ListView list=(ListView)get("epgList");check(list.hasFocus()&&list.getSelectedItemPosition()>before[0],"Remote DOWN did not advance programme "+id);});
         key(KeyEvent.KEYCODE_DPAD_LEFT);

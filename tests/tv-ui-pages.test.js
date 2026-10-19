@@ -8,10 +8,7 @@ vm.createContext(ctx);vm.runInContext(fs.readFileSync('app/src/main/assets/contr
 assert.equal(element('tvUiStyle').value,'ui3');
 element('tvUiStyle').value='ui2';ctx.saveTvUiStyle();assert.equal(selected,'ui2');assert.equal(element('tvUiStyle').disabled,false);
 fail=true;element('tvUiStyle').value='ui4';ctx.saveTvUiStyle();assert.equal(element('tvUiStyle').value,'ui2');assert.equal(element('tvUiStyle').disabled,false);
-element('tvUiJar').files=[{size:1024}];ctx.installTvUi();assert.equal(lastXhr.path,'/api/tv-ui');assert.equal(lastXhr.file.size,1024);
-element('tvUiJar').value='uploaded';lastXhr.status=200;lastXhr.responseText='{"ok":true}';lastXhr.onload();assert.equal(element('tvUiJar').value,'');
-const old=lastXhr;element('tvUiJar').files=[{size:512*1024+1}];ctx.installTvUi();assert.strictEqual(lastXhr,old);
-console.log('PASS TV UI settings initial selection, save/failure restore, JAR upload and size limit');
+console.log('PASS TV UI initial selection, save/failure restore');
 assert.equal(element('radioUiStyle').options.length,2);
 element('radioUiStyle').value='optical';ctx.saveRadioUiStyle();assert.equal(radioSelected,'optical');
 radioFail=true;element('radioUiStyle').value='classic';ctx.saveRadioUiStyle();assert.equal(element('radioUiStyle').value,'optical');assert.equal(element('radioUiStyle').disabled,false);radioFail=false;
@@ -19,6 +16,7 @@ choices.push({id:'future-ui',name:'<b>新增界面</b>'});ctx.loadRadioUi();asse
 hold=true;ctx.loadRadioUi();element('radioUiStyle').value='classic';ctx.saveRadioUiStyle();
 reads[0]({message:'obsolete'},null);assert.equal(element('radioUiStyle').value,'classic');
 reads[1](null,radioState());assert.equal(element('radioUiStyle').value,'classic');hold=false;
-ctx.refreshRadioUiChoices();assert.equal(element('radioUiRefresh').disabled,true);assert.equal(typeof tick,'function');checking=false;tick();assert.equal(element('radioUiRefresh').disabled,false);
+checking=true;ctx.loadRadioUi();assert.equal(typeof tick,'function');checking=false;tick();
 const html=fs.readFileSync('app/src/main/assets/control/pages/advanced.html','utf8');assert.ok(!html.includes('radioUiUrl')&&!html.includes('radioUiJar')&&!html.includes('radioUiToggle'));
-console.log('PASS radio selection, download failure rollback, future catalog IDs, stale reads, refresh and URL-free controls');
+assert.ok(!html.includes('appearance-tools')&&!html.includes('tvUiJar')&&!html.includes('radioUiRefresh'));
+console.log('PASS radio selection, failure rollback, stale reads and catalog polling without removed controls');

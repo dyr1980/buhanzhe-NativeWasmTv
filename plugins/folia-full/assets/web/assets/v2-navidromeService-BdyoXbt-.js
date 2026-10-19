@@ -1,0 +1,1 @@
+import{Ct as e,bt as t}from"./v2-bootstrap-B1SmtauN.js";export{t as getNavidromeConfig,e as navidromeApi};

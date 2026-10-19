@@ -1,0 +1,1 @@
+import{m as e}from"./v2-framer-motion-BZ3l3jRs.js";import{R as t}from"./v2-bootstrap-B1SmtauN.js";var n=e();function r(e){return(0,n.jsx)(`div`,{className:`flex h-full justify-center overflow-y-auto px-4 py-8`,children:(0,n.jsx)(`div`,{className:`w-full max-w-lg self-start`,children:(0,n.jsx)(t,{...e})})})}export{r as default};

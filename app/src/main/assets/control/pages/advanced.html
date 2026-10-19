@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
     <title>高级设置 · nTv</title>
     <script src="/js/theme.js"></script>
-    <link rel="stylesheet" href="/css/common.css?v=20261017-radio-select" />
-    <link rel="stylesheet" href="/css/night.css?v=20261017-radio-select" />
+    <link rel="stylesheet" href="/css/common.css?v=20261019-remove-surface-setting" />
+    <link rel="stylesheet" href="/css/night.css?v=20261019-remove-surface-setting" />
   </head>
   <body data-parent="/index.html">
     <main class="secondary-page channel-config-page">
@@ -108,13 +108,6 @@
             </select>
           </div>
           <div class="field">
-            <label for="surfaceMode">Surface 输出模式</label>
-            <select id="surfaceMode" onchange="saveDecoder()">
-              <option value="normal">普通模式</option>
-              <option value="legacy">旧电视兼容模式</option>
-            </select>
-          </div>
-          <div class="field">
             <label for="rtspTransport">RTSP 传输协议</label>
             <select id="rtspTransport" onchange="saveDecoder()">
               <option value="tcp">TCP（默认稳定）</option>
@@ -136,39 +129,35 @@
         <p class="hint">隔行视频追求画质可选软解：自动使用 BWDIF 逐场去隔行，1080i50 输出目标为 50fps；逐行视频直接播放。处理速度取决于 CPU 性能。硬解由系统处理去隔行，应用无法统一保证其算法与输出场率。</p>
         <p class="hint">自动：屏幕支持对应 HDR 格式且系统为 Android 8.0 及以上时直出，否则转为 SDR。转为 SDR：Android 12 及以上优先使用解码器映射，旧系统使用 GPU。GPU 转为 SDR：硬解时固定使用 GPU 映射，适合解码器映射颜色异常的设备。强制 BT.709：仅用于源色彩标记异常，不做 HDR 亮度映射。解码方式仍由解码设置控制；切换后重新播放当前频道。</p>
       </section>
-      <section>
-        <div class="section-head"><h2>播放插件</h2></div>
-        <p class="hint">已有插件先使用本地缓存，每次冷启动后台检查一次更新，切台不重复检查。也可手动更新；正在使用的插件更新后重启生效。</p>
-        <button id="updatePlaybackPlugins" type="button" class="primary wide" onclick="updatePlaybackPlugins()">更新播放插件</button>
-      </section>
-      <section class="radio-ui-section">
-        <strong>界面主题</strong>
-        <label for="tvUiStyle">界面样式</label>
-        <select id="tvUiStyle" onchange="saveTvUiStyle()">
+      <section class="browser-section">
+        <div class="browser-settings-list">
+        <div class="browser-setting-row">
+          <div class="browser-setting-copy">
+            <b>界面主题</b><span id="tvUiStatus" role="status">离线切换，播放不中断</span>
+          </div>
+          <select id="tvUiStyle" aria-label="界面主题" onchange="saveTvUiStyle()">
           <option value="builtin">原版界面</option>
           <option value="ui2">青色圆角</option>
           <option value="ui3">蓝色卡片</option>
           <option value="ui4">简洁侧栏</option>
           <option value="ui5">清透极简</option>
           <option value="ui6">影院红黑</option>
-        </select>
-        <p class="hint">全部界面均以 JAR 随包提供，离线可切换；切换不重启播放器。</p>
-        <button type="button" onclick="document.getElementById('tvUiJar').click()">导入界面 JAR</button>
-        <input id="tvUiJar" type="file" accept=".jar" hidden onchange="installTvUi()" />
-        <span id="tvUiStatus" class="hint" role="status"></span>
-      </section>
-      <section class="radio-ui-section">
-        <div class="section-head"><strong>电台界面</strong><button type="button" id="radioUiRefresh" onclick="refreshRadioUiChoices()">刷新选项</button></div>
-        <label for="radioUiStyle">界面样式</label>
-        <select id="radioUiStyle" onchange="saveRadioUiStyle()" disabled>
-          <option value="classic">经典唱片</option><option value="optical">柔光唱片</option>
-        </select>
-        <p id="radioUiStatus" class="hint" role="status">读取中…</p>
+          </select>
+        </div>
+        <div class="browser-setting-row">
+          <div class="browser-setting-copy">
+            <b>电台界面</b><span id="radioUiStatus" role="status">已下载的界面可离线使用</span>
+          </div>
+          <select id="radioUiStyle" aria-label="电台界面" onchange="saveRadioUiStyle()" disabled>
+            <option value="classic">经典唱片</option><option value="optical">柔光唱片</option>
+          </select>
+        </div>
+        </div>
       </section>
     </main>
     <div id="message" class="message"></div>
     <script src="/js/navigation.js?v=20260926"></script>
     <script src="/js/common.js?v=20260926-nav"></script>
-    <script src="/js/pages/advanced.js?v=20261017-radio-select"></script>
+    <script src="/js/pages/advanced.js?v=20261019-remove-surface-setting"></script>
   </body>
 </html>

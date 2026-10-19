@@ -1129,4 +1129,34 @@ test('fill mode saves and remains selected alongside existing aspect modes', () 
   save.respond({ok:true});c.state.settings.videoScaleMode='4:3';c.renderPageState();
   assert.equal(b.elements.get('videoScale').value,'4:3');
 });
+test('deleting the last custom source can refresh an empty catalogue and retry after failure', () => {
+  const b=browser('channels'),c=b.context;
+  c.playlistSources=[{id:'last',name:'last',location:'https://example.com/list.m3u',enabled:true}];
+  let saved=0,reads=0;c.saveChannelDraft=()=>{saved++;};
+  c.requestPlaylistText=()=>{reads++;};
+  c.removePlaylistSource(0);assert.equal(c.playlistSources.length,0);assert.equal(saved,1);
+  c.mergeAndPushPlaylistSources();
+  let request=b.requests.filter(r=>r.url==='/api/settings').pop();
+  assert.deepEqual(JSON.parse(request.body).playlistSources,[]);assert.equal(reads,0);
+  assert.equal(c.mergeBusy,true);
+  request.onerror();assert.equal(c.mergeBusy,false);assert.equal(b.elements.get('mergeButton').disabled,false);
+  c.mergeAndPushPlaylistSources();request=b.requests.filter(r=>r.url==='/api/settings').pop();
+  request.respond({ok:true});assert.equal(c.mergeBusy,false);assert.equal(c.channelBaseSources,'[]');
+});
+test('phone merge preserves DIYP catchup templates separately for each live line', () => {
+  const b=browser('channels'),c=b.context;
+  const template='http://10.1.1.1:1111/CCTV/CCTV-1/catchup?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}';
+  const raw='#EXTM3U catchup-days="5"\n#KODIPROP:inputstream=inputstream.ffmpegdirect\n'
+    +'#EXTINF:-1 catchup="default" catchup-source="'+template+'" group-title="CCTV",CCTV-1\nhttp://10.1.1.1:1111/CCTV/CCTV-1\n'
+    +'#EXTINF:-1 catchup="append" catchup-source="?start={utc}" group-title="CCTV",CCTV-1\nhttp://example.com/second\n';
+  const parsed=c.parsePlaylistOnPhone(raw.replace(/\\n/g,'\n'),{id:'diyp',location:'http://example.com/list.m3u'});
+  assert.equal(parsed.entries.length,2);
+  const merged=c.mergePhoneEntries([parsed]);assert.equal(merged.channels.length,1);
+  const rebuilt=c.buildMergedM3u(merged).text;
+  const restored=c.parsePlaylistOnPhone(rebuilt,{id:'roundtrip',location:'http://example.com/merged.m3u'});
+  assert.equal(restored.entries[0].catchup['catchup-source'],template);
+  assert.equal(restored.entries[0].catchup['catchup-days'],'5');
+  assert.equal(restored.entries[1].catchup.catchup,'append');
+  assert.equal(restored.entries[1].catchup['catchup-source'],'?start={utc}');
+});
 console.log('All ' + passed + ' control-page regression scenarios passed.');

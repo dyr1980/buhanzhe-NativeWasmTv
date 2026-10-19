@@ -1,17 +1,11 @@
-"""Verify six small DEX entries backed by one host renderer and real menu action/selection mappings."""
+"""Verify built-in theme delivery and real menu action/selection mappings."""
 import hashlib,json,os,subprocess,tempfile,zipfile
 from pathlib import Path
 root=Path(__file__).resolve().parent.parent
-for id in ('builtin','ui2','ui3','ui4','ui5','ui6'):
-    jar=root/'plugins/tv-ui/dist'/f'{id}.jar'
-    assert jar.read_bytes()==(root/'app/src/main/assets/tv-ui'/jar.name).read_bytes()
-    assert len(jar.read_bytes())<2048
-    assert hashlib.sha256(jar.read_bytes()).hexdigest()==jar.with_suffix('.sha256').read_text().strip()
-    with zipfile.ZipFile(jar) as z:
-        assert sorted(z.namelist())==['classes.dex','tv-ui.json']
-        dex=z.read('classes.dex');assert dex.startswith(b'dex\n035\0')
-        assert b'Lxiao/bu/plugins/tvui/BuiltinUi;' in dex if id=='builtin' else b'Lxiao/bu/tv/skin/SharedTvUi;' in dex and b'NativeUi$Menu' not in dex
-        meta=json.loads(z.read('tv-ui.json'));assert meta['id']==id and meta['api']==2 and meta['minSdk']==14
+# Themes are host code; no APK-side DEX archives or dynamic theme loader remain.
+assert not list((root/'app/src/main/assets/tv-ui').glob('*.jar'))
+loader=(root/'app/src/main/java/xiao/bu/tv/TvUiPlugin.java').read_text(encoding='utf-8')
+assert 'DexClassLoader' not in loader and 'new BuiltinTheme' in loader
 with tempfile.TemporaryDirectory() as folder:
     out=Path(folder)
     files={
@@ -45,7 +39,7 @@ with tempfile.TemporaryDirectory() as folder:
               menu.action(3,2);ok(h.key.equals("autoSwitchSourceSeconds")&&h.value.equals(10));
               menu.action(5,1);ok(h.key.equals("showNetworkSpeed")&&h.value.equals(true));
               menu.action(5,3);ok(h.key.equals("showPlaybackPosition")&&h.value.equals(true));
-              ok(menu.options(5).getStringArray("items").length==6);ok(menu.options(5).getStringArray("items")[4].equals("HDR 模式"));menu.action(5,4);ok(h.where.equals("hdr"));menu.action(5,5);ok(h.where.equals("guide"));
+              ok(menu.options(5).getStringArray("items").length==7);ok(menu.options(5).getStringArray("items")[4].equals("界面大小"));menu.action(5,4);ok(h.where.equals("ui-size"));menu.action(5,5);ok(h.where.equals("hdr"));menu.action(5,6);ok(h.where.equals("guide"));
               Bundle groups=menu.options(4);ok(!groups.getBoolean("openOnClick"));ok(groups.getStringArray("items")[0].equals("我的收藏 ●"));ok(groups.getStringArray("items")[2].endsWith(" ○"));
               int dismisses=window.dismissed;h.where=null;h.groupId=null;menu.action(4,-1);ok(h.groupId==null);menu.action(4,0);ok(h.groupId.equals("favorites")&&!h.visible&&h.where==null&&window.dismissed==dismisses);
               menu.action(4,2);ok(h.groupId.equals("group:b")&&h.visible);
@@ -54,10 +48,10 @@ with tempfile.TemporaryDirectory() as folder:
               ok(menu.options(4).getStringArray("items")[0].endsWith(" ○"));menu.action(4,1);ok(h.groupId.equals("group:b")&&!h.visible);
               ok(!menu.options(6).getBoolean("openOnClick"));menu.action(6,0);ok(h.key.equals("autoStart")&&h.value.equals(true));
               menu.action(6,1);ok(h.key.equals("reverseKeys")&&h.value.equals(true));
-              menu.action(6,2);ok(h.where.equals("styles"));menu.action(6,3);ok(h.where.equals("radio-styles"));menu.action(6,4);ok(h.where.equals("manage"));menu.action(6,5);ok(h.where.equals("cache"));menu.action(6,6);ok(h.where.equals("exit"));
-              ok(menu.options(6).getStringArray("items").length==7);
+              menu.action(6,2);ok(h.where.equals("styles"));menu.action(6,3);ok(h.where.equals("radio-styles"));menu.action(6,4);ok(h.where.equals("system-settings"));menu.action(6,5);ok(h.where.equals("manage"));menu.action(6,6);ok(h.where.equals("cache"));menu.action(6,7);ok(h.where.equals("exit"));
+              ok(menu.options(6).getStringArray("items").length==8);
               ok(menu.options(6).getStringArray("items")[0].endsWith(" ○"));h.state.putBoolean("boot",true);ok(menu.options(6).getStringArray("items")[0].endsWith(" ●"));
-              ok(menu.options(7).getStringArray("items")[1].equals("检查更新"));ok(menu.options(6).getStringArray("items")[2].equals("界面主题"));ok(menu.options(6).getStringArray("items")[3].equals("唱片界面"));ok(menu.options(6).getStringArray("items")[4].equals("网页管理"));ok(menu.options(7).getStringArray("items").length==2);
+              ok(menu.options(7).getStringArray("items")[1].equals("检查更新"));ok(menu.options(6).getStringArray("items")[2].equals("界面主题"));ok(menu.options(6).getStringArray("items")[3].equals("唱片界面"));ok(menu.options(6).getStringArray("items")[4].equals("系统设置")&&menu.options(6).getStringArray("items")[5].equals("网页管理"));ok(menu.options(7).getStringArray("items").length==2);
               h.state.putString("updateState","idle");h.state.putString("updateMessage","点击检查更新");
               String[] versionRows=menu.options(7).getStringArray("items");int updatePrompts=0;for(String text:versionRows)if(text.contains("检查更新"))updatePrompts++;
               ok(updatePrompts==1&&versionRows.length==2);

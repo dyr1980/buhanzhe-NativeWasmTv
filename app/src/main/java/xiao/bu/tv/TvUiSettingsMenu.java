@@ -17,16 +17,18 @@ final class TvUiSettingsMenu implements TvUi.Events {
         if("source".equals(key)){int count=s.getInt("sources");String[] rows=new String[count];for(int i=0;i<count;i++)rows[i]="线路"+(i+1);return choices(rows,s.getInt("source"));}
         if("ratio".equals(key)){String mode=s.getString("ratio");return choices(new String[]{"全屏显示","原始比例","16:9","4:3","填充"},"stretch".equals(mode)?0:"16:9".equals(mode)?2:"4:3".equals(mode)?3:"fill".equals(mode)?4:1);}
         if("decode".equals(key)){String mode=s.getString("decode");return choices(new String[]{"智能硬解","硬件解码","软件解码"},"hardware".equals(mode)?1:"software".equals(mode)?2:0);}
-        if("timeout".equals(key))return choices(new String[]{"关闭自动换源","5 秒换源","10 秒换源"},s.getInt("timeout")==5?1:s.getInt("timeout")==10?2:0);
+        if("timeout".equals(key))return choices(new String[]{"关闭","5 秒换源","10 秒换源"},s.getInt("timeout")==5?1:s.getInt("timeout")==10?2:0);
         if("channels".equals(key)){
             groupChoices=host.groups();String[] names=groupChoices.getStringArray("names");boolean[] shown=groupChoices.getBooleanArray("visible");
             String[] rows=new String[names.length];for(int i=0;i<rows.length;i++)rows[i]=check(names[i],shown[i]);
             return choices(rows,-1);
         }
-        if("display".equals(key))return choices(new String[]{check("屏显时间",s.getBoolean("clock")),check("显示网速",s.getBoolean("speed")),check("调试信息",s.getBoolean("debug")),check("播放进度",s.getBoolean("position")),"HDR 模式","遥控器说明"},-1);
-        if("preferences".equals(key))return choices(new String[]{check("开机自启",s.getBoolean("boot")),check("换台反转",s.getBoolean("reverse")),"界面主题","唱片界面","网页管理","清空缓存","退出应用"},-1);
+        if("display".equals(key))return choices(new String[]{check("屏显时间",s.getBoolean("clock")),check("显示网速",s.getBoolean("speed")),check("调试信息",s.getBoolean("debug")),check("播放进度",s.getBoolean("position")),"界面大小","HDR 模式","遥控器说明"},-1);
+        if("preferences".equals(key))return choices(new String[]{check("开机自启",s.getBoolean("boot")),check("换台反转",s.getBoolean("reverse")),"界面主题","唱片界面","系统设置","网页管理","清空缓存","退出应用"},-1);
         String state=s.getString("updateState"),button="checking".equals(state)?"正在检查…":"available".equals(state)||"ready".equals(state)?"更新至 "+s.getString("updateVersion"):"检查更新";
-        return choices(new String[]{"网页电视 "+s.getString("version"),button},-1);
+        Bundle versionChoices=choices(new String[]{s.getString("version"),button},-1);
+        versionChoices.putInt("firstEnabled",1);
+        return versionChoices;
     }
     public void action(int category,int option){if(category<0||category>=keys.length)return;Bundle s=host.state();String key=keys[category];
         if("channels".equals(key)){
@@ -38,8 +40,8 @@ final class TvUiSettingsMenu implements TvUi.Events {
         else if("ratio".equals(key))host.setting("videoScaleMode",new String[]{"stretch","fit","16:9","4:3","fill"}[option]);
         else if("decode".equals(key))host.setting("decodeMode",new String[]{"auto","hardware","software"}[option]);
         else if("timeout".equals(key))host.setting("autoSwitchSourceSeconds",option==1?5:option==2?10:0);
-        else if("display".equals(key)){if(option==0)host.setting("showDateTime",!s.getBoolean("clock"));else if(option==1)host.setting("showNetworkSpeed",!s.getBoolean("speed"));else if(option==2)host.setting("showDebugInfo",!s.getBoolean("debug"));else if(option==3)host.setting("showPlaybackPosition",!s.getBoolean("position"));else go(option==4?"hdr":"guide");}
-        else if("preferences".equals(key)){if(option==0)host.setting("autoStart",!s.getBoolean("boot"));else if(option==1)host.setting("reverseKeys",!s.getBoolean("reverse"));else go(option==2?"styles":option==3?"radio-styles":option==4?"manage":option==5?"cache":"exit");}
+        else if("display".equals(key)){if(option==0)host.setting("showDateTime",!s.getBoolean("clock"));else if(option==1)host.setting("showNetworkSpeed",!s.getBoolean("speed"));else if(option==2)host.setting("showDebugInfo",!s.getBoolean("debug"));else if(option==3)host.setting("showPlaybackPosition",!s.getBoolean("position"));else go(option==4?"ui-size":option==5?"hdr":"guide");}
+        else if("preferences".equals(key)){if(option==0)host.setting("autoStart",!s.getBoolean("boot"));else if(option==1)host.setting("reverseKeys",!s.getBoolean("reverse"));else go(option==2?"styles":option==3?"radio-styles":option==4?"system-settings":option==5?"manage":option==6?"cache":"exit");}
         else{if(option==1){String state=s.getString("updateState");if(!"checking".equals(state)&&!"downloading".equals(state))host.navigate("available".equals(state)||"ready".equals(state)?"install-update":"update");}}
     }
     private void go(String where){menu.dismiss();host.navigate(where);}

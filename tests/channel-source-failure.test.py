@@ -26,6 +26,7 @@ class ChannelSourceFailureCheck {
  boolean returnFromFailedSniffedPlayback(String s){return false;}
  void cancelChannelManifest(){}void clearPendingPlayer(){}void cancelCustomSourceTimeout(){}
  void releasePlayer(){releasePlayer(false);}void releasePlayer(boolean keep){released=true;}
+ boolean showStoppedRadioArtwork(Channel c){return false;}
  void abortChannelSwitchAnimation(){}void hideLoading(){}void showChannelBar(String n,String s){status=s;}
  void cancelPendingRelativeSwitch(){}void clearNumericChannelInput(){}void resetPlaybackRecoveryState(){}
  void startChannel(int index){if(index!=7)throw new AssertionError("Selection changed");starts++;}
