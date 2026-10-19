@@ -45,17 +45,24 @@ if any(f.is_file() and f.name != '.env.example' for f in source.glob('.env*')):
 npm = shutil.which('npm.cmd') or shutil.which('npm')
 if not a.skip_install:
     subprocess.run([npm, 'ci', '--ignore-scripts', '--no-audit', '--no-fund'], cwd=source, check=True)
+if not a.skip_install:
+    subprocess.run([npm, 'ci', '--ignore-scripts', '--no-audit', '--no-fund'], cwd=HERE, check=True)
 config = source / 'vite.ntv.config.ts'
 config.write_text("""import upstream from './vite.config.ts';
 import {mergeConfig} from 'vite';
+import {Features} from 'lightningcss';
 import {traditionalLocalePlugin} from './dev/i18n/traditionalLocalePlugin.mjs';
 import {commandPinyinPlugin} from './dev/pinyin/commandPinyinPlugin.mjs';
 import {icuFoliaDataPlugin} from './dev/icuFolia/icuFoliaDataPlugin.mjs';
+const compatEntry=__NTV_COMPAT_ENTRY__;
+const ntvCompat=()=>({name:'ntv-runtime-compat',enforce:'pre' as const,transform(code:string,id:string){const file=id.split('?')[0];if(file.endsWith('/src/index.tsx')||file.endsWith('.worker.ts'))return {code:'import '+JSON.stringify(compatEntry)+';'+String.fromCharCode(10)+code,map:null};}});
 export default async (env:any)=>{const base=await upstream(env);base.plugins=base.plugins.flat(Infinity).filter((p:any)=>p&&!String(p.name).includes('pwa'));return mergeConfig(base,{
- build:{target:'chrome100',cssTarget:'chrome100'},
- worker:{plugins:()=>[traditionalLocalePlugin(),commandPinyinPlugin(),icuFoliaDataPlugin()]}
+ build:{target:'chrome111',cssTarget:'chrome111',cssMinify:'lightningcss'},
+ plugins:[ntvCompat()],
+ css:{lightningcss:{targets:{chrome:111<<16},include:Features.HexAlphaColors|Features.SpaceSeparatedColorNotation}},
+ worker:{plugins:()=>[ntvCompat(),traditionalLocalePlugin(),commandPinyinPlugin(),icuFoliaDataPlugin()]}
 });};
-""", encoding='utf-8')
+""".replace("__NTV_COMPAT_ENTRY__", json.dumps((HERE/"compat-entry.js").as_posix())), encoding='utf-8')
 env = {k:v for k,v in os.environ.items() if not k.startswith(('VITE_', 'GEMINI_', 'OPENAI_'))}
 env.pop('GITHUB_ACTIONS', None)
 env.update(FOLIA_BUILD_REPO='chthollyphile/folia-major', VERCEL_GIT_COMMIT_SHA=REV, VERCEL_GIT_COMMIT_REF='main', VITE_NETEASE_API_BASE='/ncm-api', VITE_KUGOU_API_BASE='/kugou-api', VITE_QQ_API_BASE='/qq-api')
@@ -65,10 +72,11 @@ web = HERE / 'assets/web'
 if web.resolve() != (ROOT/'plugins/folia-full/assets/web').resolve(): raise SystemExit('Invalid output directory')
 if web.exists(): shutil.rmtree(web)
 shutil.copytree(source / 'dist', web)
+subprocess.run([shutil.which('node'), str(HERE/'compat-assets.mjs'), str(web)], check=True)
 files = {f.relative_to(web).as_posix():hashlib.sha256(f.read_bytes()).hexdigest() for f in web.rglob('*') if f.is_file()}
 manifest = dict(repository='https://github.com/chthollyphile/folia-major', revision=REV,
     archive=url, archiveSha256=hashlib.sha256(archive.read_bytes()).hexdigest(),
-    build='npm ci --ignore-scripts; vite build --config vite.ntv.config.ts', target='chrome100', files=files)
+    build='npm ci --ignore-scripts; vite build --config vite.ntv.config.ts', target='chrome111', minimumWebView=111, cssCompatibility='Lightning CSS: no hex alpha; legacy comma rgba; AST-lowered inline CSS strings' , files=files)
 (HERE/'assets/upstream-manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2)+'\n', encoding='utf-8')
 shutil.copyfile(source/'LICENSE', HERE/'LICENSE')
 print(f'Compiled official Folia {REV}: {len(files)} static files')

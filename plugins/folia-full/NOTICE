@@ -8,9 +8,12 @@ Copyright: Folia contributors and the respective dependency authors.
 The frontend is compiled locally from the pinned official source and locked npm
 packages, not copied from a third-party website. assets/upstream-manifest.json
 records the source archive and generated asset SHA-256 hashes. build-web.py
-contains the complete build adaptation: Chrome 100 target, worker virtual-module
+contains the complete build adaptation: Chrome 111 target, worker virtual-module
 plugins, disabled PWA replacement, relative provider API bases, and direct GitHub
 codeload URL for the same locked KuGouMusicApi dependency version.
+Lightning CSS 1.32.0 lowers hex-alpha colors for legacy Android targetSdk.
+compat-assets.mjs uses Babel parser 7.29.9 for embedded color literals.
+core-js 3.51.0 (MIT; license in licenses/core-js.txt) supplies newer JS APIs.
 
 Java loopback serving, pointer input, HTTP transport bridge and Android file
 selection are nTv adaptations in this directory and app/src/main/java/xiao/bu/tv.

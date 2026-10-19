@@ -1053,42 +1053,7 @@ fn mainFragment(
     var offset =  gfu.uInputSize.zw * (filterUniforms.uRotation * (map.xy - 0.5)) * filterUniforms.uScale; 
    
     return textureSample(uTexture, uSampler, clamp(uv + offset, gfu.uInputClamp.xy, gfu.uInputClamp.zw));
-}`,du=class extends wn{constructor(...e){let t=e[0];t instanceof rt&&(e[1]&&T(d,`DisplacementFilter now uses options object instead of params. {sprite, scale}`),t={sprite:t,scale:e[1]});let{sprite:n,scale:r,...i}=t,a=r??20;typeof a==`number`&&(a=new p(a,a));let o=new B({uFilterMatrix:{value:new H,type:`mat3x3<f32>`},uScale:{value:a,type:`vec2<f32>`},uRotation:{value:new Float32Array([0,0,0,0]),type:`mat2x2<f32>`}}),s=k.from({vertex:lu,fragment:cu,name:`displacement-filter`}),c=re.from({vertex:{source:uu,entryPoint:`mainVertex`},fragment:{source:uu,entryPoint:`mainFragment`}}),l=n.texture.source;super({...i,gpuProgram:c,glProgram:s,resources:{filterUniforms:o,uMapTexture:l,uMapSampler:l.style}}),this._sprite=t.sprite,this._sprite.renderable=!1}apply(e,t,n,r){let i=this.resources.filterUniforms.uniforms;e.calculateSpriteMatrix(i.uFilterMatrix,this._sprite);let a=this._sprite.worldTransform,o=Math.sqrt(a.a*a.a+a.b*a.b),s=Math.sqrt(a.c*a.c+a.d*a.d);o!==0&&s!==0&&(i.uRotation[0]=a.a/o,i.uRotation[1]=a.b/o,i.uRotation[2]=a.c/s,i.uRotation[3]=a.d/s),this.resources.uMapTexture=this._sprite.texture.source,e.applyFilter(this,t,n,r)}get scale(){return this.resources.filterUniforms.uniforms.uScale}},fu=`
-in vec2 vTextureCoord;
-in vec4 vColor;
-
-out vec4 finalColor;
-
-uniform float uNoise;
-uniform float uSeed;
-uniform sampler2D uTexture;
-
-float rand(vec2 co)
-{
-    return fract(sin(dot(co.xy, vec2(12.9898, 78.233))) * 43758.5453);
-}
-
-void main()
-{
-    vec4 color = texture(uTexture, vTextureCoord);
-    float randomValue = rand(gl_FragCoord.xy * uSeed);
-    float diff = (randomValue - 0.5) *  uNoise;
-
-    // Un-premultiply alpha before applying the color matrix. See issue #3539.
-    if (color.a > 0.0) {
-        color.rgb /= color.a;
-    }
-
-    color.r += diff;
-    color.g += diff;
-    color.b += diff;
-
-    // Premultiply alpha again.
-    color.rgb *= color.a;
-
-    finalColor = color;
-}
-`,pu=`
+}`,du=class extends wn{constructor(...e){let t=e[0];t instanceof rt&&(e[1]&&T(d,`DisplacementFilter now uses options object instead of params. {sprite, scale}`),t={sprite:t,scale:e[1]});let{sprite:n,scale:r,...i}=t,a=r??20;typeof a==`number`&&(a=new p(a,a));let o=new B({uFilterMatrix:{value:new H,type:`mat3x3<f32>`},uScale:{value:a,type:`vec2<f32>`},uRotation:{value:new Float32Array([0,0,0,0]),type:`mat2x2<f32>`}}),s=k.from({vertex:lu,fragment:cu,name:`displacement-filter`}),c=re.from({vertex:{source:uu,entryPoint:`mainVertex`},fragment:{source:uu,entryPoint:`mainFragment`}}),l=n.texture.source;super({...i,gpuProgram:c,glProgram:s,resources:{filterUniforms:o,uMapTexture:l,uMapSampler:l.style}}),this._sprite=t.sprite,this._sprite.renderable=!1}apply(e,t,n,r){let i=this.resources.filterUniforms.uniforms;e.calculateSpriteMatrix(i.uFilterMatrix,this._sprite);let a=this._sprite.worldTransform,o=Math.sqrt(a.a*a.a+a.b*a.b),s=Math.sqrt(a.c*a.c+a.d*a.d);o!==0&&s!==0&&(i.uRotation[0]=a.a/o,i.uRotation[1]=a.b/o,i.uRotation[2]=a.c/s,i.uRotation[3]=a.d/s),this.resources.uMapTexture=this._sprite.texture.source,e.applyFilter(this,t,n,r)}get scale(){return this.resources.filterUniforms.uniforms.uScale}},fu="\nin vec2 vTextureCoord;\nin vec4 vColor;\n\nout vec4 finalColor;\n\nuniform float uNoise;\nuniform float uSeed;\nuniform sampler2D uTexture;\n\nfloat rand(vec2 co)\n{\n    return fract(sin(dot(co.xy, vec2(12.9898, 78.233))) * 43758.5453);\n}\n\nvoid main()\n{\n    vec4 color = texture(uTexture, vTextureCoord);\n    float randomValue = rand(gl_FragCoord.xy * uSeed);\n    float diff = (randomValue - 0.5) *  uNoise;\n\n    // Un-premultiply alpha before applying the color matrix. See issue rgba(51,85,51,0.6).\n    if (color.a > 0.0) {\n        color.rgb /= color.a;\n    }\n\n    color.r += diff;\n    color.g += diff;\n    color.b += diff;\n\n    // Premultiply alpha again.\n    color.rgb *= color.a;\n\n    finalColor = color;\n}\n",pu=`
 
 struct GlobalFilterUniforms {
   uInputSize:vec4<f32>,

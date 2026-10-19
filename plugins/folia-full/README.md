@@ -6,8 +6,11 @@
 
 ## 安装和交互
 
-需要本次更新的宿主 APK：新 JAR 约 10.3 MiB，旧宿主的 8 MiB 上限无法加载。
-要求 Android 7.0+ 和较新的系统 WebView；已在 Android 7.1.1 / WebView 119 验证。
+需要本次更新的宿主 APK：新 JAR 约 10.4 MiB，旧宿主的 8 MiB 上限无法加载。
+要求 Android 7.0+、**Android System WebView 111 或以上**。推荐 WebView 119+。
+已在 Android 7.1.1 / WebView 119 真机验证，并使用 Chromium 111.0.5563.33 验证前端。
+系统版本与 WebView 内核版本是两回事，Android 7 自带的旧内核不满足要求。
+插件启动时检查原始内核 UA，低于 111 会明确提示更新，不受宿主伪装 UA 的设置影响。
 
 将 `dist/folia-full.jar` 上传到 HTTPS 服务，在 M3U 中使用：
 
@@ -17,7 +20,7 @@
 https://你的服务器/folia-full.jar?sha256=当前JAR的SHA256
 ```
 
-`dist/example.m3u` 已包含当前产物的真实 SHA-256，替换域名即可。
+`dist/example.m3u` 已包含当前产物的在线下载地址和真实 SHA-256。
 更新 JAR 后必须同步更新 M3U 中的哈希。
 
 - 触摸、鼠标和手机飞鼠通过原生事件分发到插件视图，保留浏览器实际命中测试。
@@ -29,6 +32,7 @@ https://你的服务器/folia-full.jar?sha256=当前JAR的SHA256
 ## 源码构建
 
 构建前端需要 Node.js 24+、npm 和 Python；Android 设备不需要 Node.js 或 QuickJS。
+依赖由上游 package-lock.json 和本目录 package-lock.json 分别锁定。
 
 ```powershell
 python plugins/folia-full/build-web.py
@@ -39,9 +43,20 @@ python plugins/folia-full/build.py
 `--source 路径` 可以复用已有源码，但会逐文件校验它与固定归档一致；
 `--skip-install` 仅适用于该目录已经成功运行 npm ci 的情况。
 
-构建适配全部写在脚本中：目标 Chrome 100、为 worker 提供上游虚拟模块插件、
+构建适配全部写在脚本中：目标 Chrome 111、为 worker 提供上游虚拟模块插件、
 禁用替换内置页面的 PWA 插件、使用相对 API 地址。酷狗依赖使用同一固定版本的
 GitHub codeload 下载地址，未替换依赖实现。源码文件不另做业务修改。
+
+样式使用 Lightning CSS 1.32.0，将 4/8 位十六进制透明色降级为传统 rgba()，
+同时处理颜色语法和 CSS 嵌套。宿主 targetSdk 25 下，即使内核 119 也会禁用
+CSS hex-alpha，因此仅设置 Chrome 构建目标不能解决白色按钮问题。
+compat-assets.mjs 使用 Babel parser 处理生成 JS 中的完整颜色字符串/模板常量，
+避免对整个脚本直接替换。core-js 3.51.0 为页面和 worker 补齐 Promise.withResolvers、
+Object/Map.groupBy 等较新 API。兼容依赖只在构建时打包，不在手机启动时下载。
+
+111 是当前支持下限，依据上游 Tailwind 4 的 color-mix 等基础功能及旧内核验证设定，
+并不承诺低于 111 的 WebView 可完整运行。WebGPU、GPU 模型分析和部分高级特效仍取决于
+内核与设备能力，转译库不能提供硬件功能。
 
 `assets/upstream-manifest.json` 记录官方提交、源码归档 SHA-256 和每个生成文件的哈希。
 `build.py` 会验证来源和文件哈希后再打包。Java 编译需要 Java 8、Android 30 和
@@ -74,5 +89,6 @@ Java 转发 fetch、XHR、POST、Cookie 和媒体 Range 请求。
 
 独立测试包 `xiao.bu.tv.channeltest`，不会替换正式包：
 HTTPS JAR 校验加载、官方源码前端挂载、100% / 150% 下真实触摸和手机飞鼠点击、
-原版页面导航、带浏览历史时连续两次返回关闭插件并显示频道主页。
+原版更新弹窗及引导、深色帮助/设置页无白色控件、兼容 API、
+带浏览历史时连续两次返回关闭插件并显示频道主页。
 测试代码见 `FoliaFullInstrumentation`。本次没有宣称逐项验证所有账号、主题和在线服务。

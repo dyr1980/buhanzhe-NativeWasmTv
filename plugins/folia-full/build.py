@@ -43,7 +43,7 @@ target.mkdir(exist_ok=True)
 jar = target / 'folia-full.jar'
 with zipfile.ZipFile(jar, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
     archive.write(dex/'classes.dex', 'classes.dex')
-    archive.writestr('channel-plugin.json', json.dumps(dict(api=1, version=2, minSdk=24,
+    archive.writestr('channel-plugin.json', json.dumps(dict(api=1, version=3, minSdk=24, minWebView=111,
                      entry='xiao.bu.channel.FoliaFull', page='web/index.html')))
     for file in (here/'assets').rglob('*'):
         if file.is_file():
@@ -53,6 +53,6 @@ with zipfile.ZipFile(jar, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
 digest = hashlib.sha256(jar.read_bytes()).hexdigest()
 jar.with_suffix('.sha256').write_text(digest+'\n', encoding='ascii')
 example = ('#EXTM3U\n#EXTINF:-1 group-title="音乐",Folia 源码版\n'
-           'https://example.com/folia-full.jar?sha256='+digest+'\n')
+           'https://raw.githubusercontent.com/buhanzhe/NativeWasmTv/master/plugins/folia-full/dist/folia-full.jar?sha256='+digest+'\n')
 (target/'example.m3u').write_text(example, encoding='utf-8')
 print(f'Built {jar}, {jar.stat().st_size} bytes, SHA-256 {digest}')

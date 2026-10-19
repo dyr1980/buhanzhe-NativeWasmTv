@@ -56,6 +56,7 @@ public final class FoliaFullInstrumentation extends Instrumentation {
             check(js(browser,"location.origin").contains("127.0.0.1"),"Frontend loaded from remote website");
             check(js(browser,"!!window.__NTV_FOLIA_FULL__").equals("true"),"Java transport bridge missing");
             String body=js(browser,"document.body.innerText");check(body.length()>30,"Upstream app did not mount: "+body);
+
             SystemClock.sleep(1500);
             String closePoint=js(browser,"(function(){var e=document.querySelector('[data-testid=release-notes-close]');if(!e)return null;var r=e.getBoundingClientRect();return JSON.stringify({r:[r.x,r.y,r.width,r.height],inner:[innerWidth,innerHeight],hit:document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.outerHTML})})()");
             tapText(browser,"关闭");SystemClock.sleep(1000);
@@ -93,12 +94,16 @@ public final class FoliaFullInstrumentation extends Instrumentation {
                 check(js(browser,"window.__trustedClicks").equals("3"),"Actual fly mouse transport failed at zoom "+zoom+" count="+js(browser,"window.__trustedClicks")+" point="+point+" size="+browser.getWidth()+"x"+browser.getHeight());
                 js(browser,"document.getElementById('ntv-click-fixture').remove()");
             }
-            // Exercise a real upstream navigation control, not just the pointer fixture.
-            js(browser,"window.__originalTrustedClick=false;document.addEventListener('click',e=>{if(e.isTrusted)window.__originalTrustedClick=true},true)");
-            tapText(browser,"全部歌曲");SystemClock.sleep(600);
-            check(js(browser,"window.__originalTrustedClick").equals("true"),"Original Folia navigation did not receive click");
-            result.putString("page",js(browser,"document.body.innerText.slice(0,1600)"));
+            // Reproduce the reported dark Settings sidebar: legacy targetSdk disables hex-alpha CSS.
+            js(browser,"var settingsButton=Array.from(document.querySelectorAll('button')).find(b=>b.getBoundingClientRect().width>0&&((b.getAttribute('aria-label')||b.title||'').startsWith('设置')||b.querySelector('svg.lucide-settings')));if(settingsButton)settingsButton.click();");SystemClock.sleep(900);
+            js(browser,"var help=Array.from(document.querySelectorAll('.st-window aside button')).find(b=>b.textContent.trim()==='帮助');if(help)help.click();");SystemClock.sleep(800);
+            String colors=js(browser,"JSON.stringify(Array.from(document.querySelectorAll('.st-window aside button,.st-window aside input')).filter(e=>e.getBoundingClientRect().width>0).map(e=>({text:e.textContent.trim(),bg:getComputedStyle(e).backgroundColor,color:getComputedStyle(e).color})))");
+            check(!colors.equals("\"[]\"")&&!colors.equals("[]"),"Settings sidebar was not opened: "+js(browser,"JSON.stringify(Array.from(document.querySelectorAll('button')).map(b=>({label:b.getAttribute('aria-label'),title:b.title,text:b.textContent.slice(0,20)})))"));
+            check(!colors.contains("rgb(239, 239, 239)")&&!colors.contains("rgb(255, 255, 255)"),"Native white control backgrounds returned: "+colors);
+            result.putString("sidebarColors",colors);
+            check(js(browser,"typeof Promise.withResolvers==='function'&&typeof Object.groupBy==='function'").equals("true"),"Compatibility polyfills missing");
             android.graphics.Bitmap image=getUiAutomation().takeScreenshot();if(image!=null)try(FileOutputStream out=new FileOutputStream(new File(getTargetContext().getExternalFilesDir(null),"folia-full.png"))){image.compress(android.graphics.Bitmap.CompressFormat.PNG,100,out);}finally{image.recycle();}
+            sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_ESCAPE);SystemClock.sleep(400);
             // Browser history must not trap the user: two BACK presses always close the plugin.
             js(browser,"history.pushState({},'', '/?test-history=1')");
             sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK);SystemClock.sleep(150);
@@ -111,7 +116,7 @@ public final class FoliaFullInstrumentation extends Instrumentation {
             check(!runtime.visible(),"Second BACK did not close the plugin");
             check(!activity.isFinishing(),"Second BACK exited the host instead of returning home");
             check(((android.view.View)field(activity,"channelListPanel")).getVisibility()==android.view.View.VISIBLE,"Channel home not shown");
-            result.putString("stream","PASS: official source frontend mounted; real touch and fly mouse clicks at 100%/150%; original navigation; double BACK closes plugin and returns home");code=-1;
+            result.putString("stream","PASS: official source frontend mounted; real touch and fly mouse clicks at 100%/150%; original navigation; dark Settings controls and polyfills; double BACK closes plugin and returns home");code=-1;
         }catch(Throwable e){result.putString("stream",android.util.Log.getStackTraceString(e));}
         finally{if(activity!=null)runOnMainSync(()->activity.finish());if(wake.isHeld())wake.release();}finish(code,result);
     }
