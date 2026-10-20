@@ -54,8 +54,8 @@ final class FoliaServer {
             path=URLDecoder.decode(path.split("\\?",2)[0],"UTF-8");
             if(path.contains("..")||path.contains("\\")){reply(out,403,"text/plain",new byte[0]);return;}
             if("/".equals(path))path="/index.html";
-            if("/ntv-bridge.js".equals(path)) {
-                try(InputStream bridge=assets.getResourceAsStream("ntv-bridge.js")){
+            if("/ntv-bridge.js".equals(path)||"/ntv-files.js".equals(path)) {
+                try(InputStream bridge=assets.getResourceAsStream(path.substring(1))){
                     String js=new String(read(bridge,256*1024),"UTF-8").replace("__NTV_TOKEN__",token).replace("__NTV_UPSTREAM__",upstream);
                     reply(out,200,"application/javascript",js.getBytes("UTF-8"));
                 }
@@ -66,7 +66,7 @@ final class FoliaServer {
                 byte[] data=read(asset,24*1024*1024);
                 if(path.endsWith("index.html")) {
                     String html=new String(data,"UTF-8");
-                    html=html.replace("<head>","<head><script src=\"/ntv-bridge.js\"></script>");
+                    html=html.replace("<head>","<head><script src=\"/ntv-files.js\"></script><script src=\"/ntv-bridge.js\"></script>");
                     data=html.getBytes("UTF-8");
                 }
                 reply(out,200,mime(path),"HEAD".equals(method)?new byte[0]:data);

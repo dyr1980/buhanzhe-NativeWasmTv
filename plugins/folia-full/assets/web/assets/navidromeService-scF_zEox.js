@@ -1,0 +1,1 @@
+import{fr as e,vr as t}from"./bootstrap-BpLAM64m.js";export{e as getNavidromeConfig,t as navidromeApi};

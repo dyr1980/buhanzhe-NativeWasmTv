@@ -55,7 +55,7 @@ import {traditionalLocalePlugin} from './dev/i18n/traditionalLocalePlugin.mjs';
 import {commandPinyinPlugin} from './dev/pinyin/commandPinyinPlugin.mjs';
 import {icuFoliaDataPlugin} from './dev/icuFolia/icuFoliaDataPlugin.mjs';
 const compatEntry=__NTV_COMPAT_ENTRY__;
-const ntvCompat=()=>({name:'ntv-runtime-compat',enforce:'pre' as const,transform(code:string,id:string){const file=id.split('?')[0];if(file.endsWith('/src/index.tsx')||file.endsWith('.worker.ts'))return {code:'import '+JSON.stringify(compatEntry)+';'+String.fromCharCode(10)+code,map:null};}});
+const ntvCompat=()=>({name:'ntv-runtime-compat',enforce:'pre' as const,transform(code:string,id:string){const file=id.split('?')[0];if(file.endsWith('/services/localLibraryAvailability.ts')){const token="if (window.electron) return { supported: true, reason: null };";if(!code.includes(token))throw new Error('Local library availability contract changed');return {code:code.replace(token,token+" if ((window as any).__NTV_FOLIA_FILES__?.supported) return { supported: true, reason: null };"),map:null};} if(file.endsWith('/src/index.tsx')||file.endsWith('.worker.ts'))return {code:'import '+JSON.stringify(compatEntry)+';'+String.fromCharCode(10)+code,map:null};}});
 export default async (env:any)=>{const base=await upstream(env);base.plugins=base.plugins.flat(Infinity).filter((p:any)=>p&&!String(p.name).includes('pwa'));return mergeConfig(base,{
  build:{target:'chrome111',cssTarget:'chrome111',cssMinify:'lightningcss'},
  plugins:[ntvCompat()],

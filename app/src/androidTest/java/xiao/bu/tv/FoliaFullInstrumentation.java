@@ -30,6 +30,81 @@ public final class FoliaFullInstrumentation extends Instrumentation {
         if("null".equals(result))return;JSONArray p=new JSONArray(result);int[] location=new int[2];runOnMainSync(()->web.getLocationOnScreen(location));float scale=web.getWidth()/(float)p.getDouble(2),x=location[0]+(float)p.getDouble(0)*scale,y=location[1]+(float)p.getDouble(1)*scale;
         long now=SystemClock.uptimeMillis();android.view.MotionEvent down=android.view.MotionEvent.obtain(now,now,0,x,y,0),up=android.view.MotionEvent.obtain(now,now+60,1,x,y,0);sendPointerSync(down);SystemClock.sleep(60);sendPointerSync(up);down.recycle();up.recycle();
     }
+    private void tapNativeText(String text)throws Exception {
+        for(int attempt=0;attempt<8;attempt++){
+            android.view.accessibility.AccessibilityNodeInfo root=getUiAutomation().getRootInActiveWindow();
+            if(root!=null){
+                for(android.view.accessibility.AccessibilityNodeInfo node:root.findAccessibilityNodeInfosByText(text)){
+                    if(node.isVisibleToUser()){
+                        android.view.accessibility.AccessibilityNodeInfo target=node;
+                        while(target!=null&&!target.isClickable())target=target.getParent();
+                        if(target!=null&&target.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)){SystemClock.sleep(200);return;}
+                    }
+                }
+                java.util.ArrayDeque<android.view.accessibility.AccessibilityNodeInfo> queue=new java.util.ArrayDeque<>();queue.add(root);
+                while(!queue.isEmpty()){android.view.accessibility.AccessibilityNodeInfo node=queue.remove();if(node.isScrollable()){node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD);break;}for(int i=0;i<node.getChildCount();i++){android.view.accessibility.AccessibilityNodeInfo child=node.getChild(i);if(child!=null)queue.add(child);}}
+            }
+            SystemClock.sleep(200);
+        }
+        throw new AssertionError("Native chooser control missing: "+text);
+    }
+    private void mediaAndFiles(WebView browser)throws Exception {
+        java.nio.ByteBuffer wav=java.nio.ByteBuffer.allocate(44+8000*2*4).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        wav.put("RIFF".getBytes("US-ASCII")).putInt(wav.capacity()-8).put("WAVEfmt ".getBytes("US-ASCII")).putInt(16).putShort((short)1).putShort((short)1).putInt(8000).putInt(16000).putShort((short)2).putShort((short)16).put("data".getBytes("US-ASCII")).putInt(wav.capacity()-44);
+        byte[] audio=wav.array();java.net.ServerSocket server=new java.net.ServerSocket(0,8,java.net.InetAddress.getByName("127.0.0.1"));
+        Thread fixture=new Thread(()->{while(!server.isClosed())try(java.net.Socket socket=server.accept()){
+            java.io.BufferedReader reader=new java.io.BufferedReader(new java.io.InputStreamReader(socket.getInputStream(),"US-ASCII"));String line;while((line=reader.readLine())!=null&&!line.isEmpty()){}
+            java.io.OutputStream out=socket.getOutputStream();out.write(("HTTP/1.1 200 OK\r\nContent-Type: audio/wav\r\nContent-Length: "+audio.length+"\r\nConnection: close\r\n\r\n").getBytes("US-ASCII"));out.write(audio);out.flush();
+        }catch(Exception ignored){}},"folia-audio-fixture");fixture.setDaemon(true);fixture.start();
+        try {
+            String url="http://127.0.0.1:"+server.getLocalPort()+"/fixture.wav";
+            js(browser,"window.__mediaResult='pending';window.__mediaFixture=new Audio();__mediaFixture.setAttribute('src',"+JSONObject.quote(url)+");document.body.appendChild(__mediaFixture);if(__mediaFixture.getAttribute('src')!=="+JSONObject.quote(url)+")window.__mediaResult='source-mismatch';else __mediaFixture.play().then(()=>{window.__mediaResult='playing'}).catch(e=>window.__mediaResult=String(e))");
+            long until=SystemClock.elapsedRealtime()+12000;while(js(browser,"window.__mediaResult").contains("pending")&&SystemClock.elapsedRealtime()<until)SystemClock.sleep(100);
+            check(js(browser,"window.__mediaResult").contains("playing"),"Autoplay failed: "+js(browser,"window.__mediaResult"));SystemClock.sleep(500);
+            check(js(browser,"__mediaFixture.currentTime>0&&!__mediaFixture.paused").equals("true"),"Audio time did not advance");
+            js(browser,"__mediaFixture.pause();__mediaFixture.remove()");
+        } finally {server.close();}
+        File directory=new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC),"000-ntv-folia-fixture");check(!directory.exists()||directory.isDirectory(),"Invalid test fixture path");directory.mkdirs();
+        File first=new File(directory,"NativeSelected.wav"),second=new File(directory,"NextSelected.wav"),lyric=new File(directory,"NativeSelected.lrc");
+        for(File file:new File[]{first,second})try(FileOutputStream out=new FileOutputStream(file)){out.write(audio);}
+        try(FileOutputStream out=new FileOutputStream(lyric)){out.write("[00:00.00]Native selection fixture".getBytes("UTF-8"));}
+        js(browser,"window.__pickResult='pending';var b=document.createElement('button');b.id='ntv-file-pick';b.innerHTML='<span>NativeFileSelectionFixture</span>';b.style.cssText='position:fixed;left:100px;top:100px;width:300px;height:80px;z-index:2147483647';b.onclick=()=>{window.__pickResult='pending';window.showDirectoryPicker().then(d=>{window.__pickedDirectory=d;window.__pickResult='selected'}).catch(e=>window.__pickResult=e.name)};document.body.appendChild(b)");
+        boolean systemPicker=!"true".equals(args.getString("nativePicker"))&&new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*").resolveActivity(getTargetContext().getPackageManager())!=null;
+        ActivityMonitor cancelled=systemPicker?addMonitor(new IntentFilter(Intent.ACTION_CHOOSER),new ActivityResult(Activity.RESULT_CANCELED,null),true):null;
+        tapText(browser,"NativeFileSelectionFixture");SystemClock.sleep(500);
+        if(!systemPicker)tapNativeText("取消");if(cancelled!=null)removeMonitor(cancelled);
+        if(systemPicker)check(cancelled.getHits()>0,"Native chooser was never launched");
+        check(js(browser,"window.__pickResult").contains("AbortError"),"Cancel did not settle picker: "+js(browser,"window.__pickResult"));
+        Intent selected=new Intent().setData(android.net.Uri.fromFile(first));
+        ClipData clip=ClipData.newRawUri("fixtures",android.net.Uri.fromFile(first));clip.addItem(new ClipData.Item(android.net.Uri.fromFile(second)));clip.addItem(new ClipData.Item(android.net.Uri.fromFile(lyric)));selected.setClipData(clip);
+        ActivityMonitor chosen=systemPicker?addMonitor(new IntentFilter(Intent.ACTION_CHOOSER),new ActivityResult(Activity.RESULT_OK,selected),true):null;
+        js(browser,"window.__pickResult='pending'");tapText(browser,"NativeFileSelectionFixture");SystemClock.sleep(400);
+        if(!systemPicker){
+            tapNativeText(directory.getName());tapNativeText(first.getName());tapNativeText(second.getName());tapNativeText(lyric.getName());
+            android.graphics.Bitmap image=getUiAutomation().takeScreenshot();
+            if(image!=null)try(FileOutputStream out=new FileOutputStream(new File(getTargetContext().getExternalFilesDir(null),"folia-native-picker.png"))){image.compress(android.graphics.Bitmap.CompressFormat.PNG,100,out);}finally{image.recycle();}
+            tapNativeText("导入 (3)");
+        }
+        long until=SystemClock.elapsedRealtime()+10000;
+        while(js(browser,"window.__pickResult").contains("pending")&&SystemClock.elapsedRealtime()<until)SystemClock.sleep(100);if(chosen!=null)removeMonitor(chosen);
+        if(systemPicker)check(chosen.getHits()>0,"Native multi-file chooser did not launch");check(js(browser,"window.__pickResult").contains("selected"),"Selection failed: "+js(browser,"window.__pickResult"));
+        js(browser,"window.__persist='pending';(async()=>{var files=[];for await(var h of __pickedDirectory.values())files.push([h.name,(await h.getFile()).size]);window.__chosenFiles=JSON.stringify(files);var r=indexedDB.open('ntv-file-test',1);r.onupgradeneeded=()=>r.result.createObjectStore('handles');r.onsuccess=()=>{var db=r.result,t=db.transaction('handles','readwrite');t.objectStore('handles').put(__pickedDirectory,'selected');t.oncomplete=()=>{db.close();window.__persist='saved'};t.onerror=()=>window.__persist=String(t.error)};})().catch(e=>window.__persist=String(e))");
+        until=SystemClock.elapsedRealtime()+8000;while(js(browser,"window.__persist").contains("pending")&&SystemClock.elapsedRealtime()<until)SystemClock.sleep(100);
+        check(js(browser,"window.__persist").contains("saved"),"Handles were not persisted: "+js(browser,"window.__persist"));
+        check(js(browser,"window.__chosenFiles").contains("NativeSelected.lrc"),"Lyrics file was filtered out");
+        js(browser,"window.__testReloadSentinel='old'");runOnMainSync(browser::reload);until=SystemClock.elapsedRealtime()+20000;
+        while(SystemClock.elapsedRealtime()<until){if(js(browser,"!!window.__NTV_FOLIA_FILES__&&typeof window.__testReloadSentinel==='undefined'").equals("true"))break;SystemClock.sleep(100);}
+        js(browser,"window.__restored='pending';var r=indexedDB.open('ntv-file-test',1);r.onsuccess=()=>{var db=r.result,g=db.transaction('handles').objectStore('handles').get('selected');g.onsuccess=async()=>{try{var d=g.result,names=[];window.__restoredDirectory=d;for await(var h of d.values()){var f=await h.getFile();names.push(f.name+':'+f.size);if(f.name.endsWith('.lrc'))window.__restoredLyric=await f.text()}window.__restored=JSON.stringify(names);db.close()}catch(e){window.__restored=String(e)}}}");
+        until=SystemClock.elapsedRealtime()+8000;while(js(browser,"window.__restored").contains("pending")&&SystemClock.elapsedRealtime()<until)SystemClock.sleep(100);
+        check(js(browser,"window.__restored").contains("NativeSelected.wav"),"Persisted file handles failed after reload: "+js(browser,"window.__restored"));
+        check(js(browser,"window.__restoredLyric").contains("Native selection fixture"),"Persisted lyric bytes differ");
+        try(InputStream in=getContext().getAssets().open("folia-native-import.js")){js(browser,new String(RadioUiCatalog.read(in,32768),"UTF-8"));}
+        until=SystemClock.elapsedRealtime()+25000;while(js(browser,"window.__upstreamImport").contains("pending")&&SystemClock.elapsedRealtime()<until)SystemClock.sleep(150);
+        check(js(browser,"window.__upstreamImport.startsWith('{')&&JSON.parse(window.__upstreamImport).count===2&&JSON.parse(window.__upstreamImport).localPlayback===true").equals("true"),"Original Folia importer or local playback failed: "+js(browser,"window.__upstreamImport"));
+        Bundle evidence=new Bundle();evidence.putString("stream","Local file evidence: systemPicker="+systemPicker+"; "+js(browser,"window.__upstreamImport"));sendStatus(0,evidence);
+        js(browser,"indexedDB.deleteDatabase('ntv-file-test')");
+        for(File file:new File[]{first,second,lyric})file.delete();directory.delete();
+    }
     private void trustFixture()throws Exception{
         java.security.cert.Certificate cert;try(InputStream in=new FileInputStream(args.getString("cert"))){cert=java.security.cert.CertificateFactory.getInstance("X.509").generateCertificate(in);}
         java.security.KeyStore store=java.security.KeyStore.getInstance(java.security.KeyStore.getDefaultType());store.load(null);store.setCertificateEntry("fixture",cert);
@@ -55,6 +130,8 @@ public final class FoliaFullInstrumentation extends Instrumentation {
             check(web!=null,"No full application WebView");final WebView browser=web;
             check(js(browser,"location.origin").contains("127.0.0.1"),"Frontend loaded from remote website");
             check(js(browser,"!!window.__NTV_FOLIA_FULL__").equals("true"),"Java transport bridge missing");
+            mediaAndFiles(browser);
+            long remount=SystemClock.elapsedRealtime()+30000;while(SystemClock.elapsedRealtime()<remount&&!js(browser,"document.querySelector('#root')&&document.querySelector('#root').innerText.length>30").equals("true"))SystemClock.sleep(100);
             String body=js(browser,"document.body.innerText");check(body.length()>30,"Upstream app did not mount: "+body);
 
             SystemClock.sleep(1500);
@@ -116,7 +193,7 @@ public final class FoliaFullInstrumentation extends Instrumentation {
             check(!runtime.visible(),"Second BACK did not close the plugin");
             check(!activity.isFinishing(),"Second BACK exited the host instead of returning home");
             check(((android.view.View)field(activity,"channelListPanel")).getVisibility()==android.view.View.VISIBLE,"Channel home not shown");
-            result.putString("stream","PASS: official source frontend mounted; real touch and fly mouse clicks at 100%/150%; original navigation; dark Settings controls and polyfills; double BACK closes plugin and returns home");code=-1;
+            result.putString("stream","PASS: official source frontend mounted; real touch and fly mouse clicks at 100%/150%; original navigation; dark Settings controls and polyfills; HTTP autoplay and native file selection/cancel/persist and upstream WAV+LRC import; double BACK closes plugin and returns home");code=-1;
         }catch(Throwable e){result.putString("stream",android.util.Log.getStackTraceString(e));}
         finally{if(activity!=null)runOnMainSync(()->activity.finish());if(wake.isHeld())wake.release();}finish(code,result);
     }

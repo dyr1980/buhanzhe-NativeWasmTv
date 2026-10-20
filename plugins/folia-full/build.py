@@ -43,7 +43,7 @@ target.mkdir(exist_ok=True)
 jar = target / 'folia-full.jar'
 with zipfile.ZipFile(jar, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
     archive.write(dex/'classes.dex', 'classes.dex')
-    archive.writestr('channel-plugin.json', json.dumps(dict(api=1, version=3, minSdk=24, minWebView=111,
+    archive.writestr('channel-plugin.json', json.dumps(dict(api=1, version=4, minSdk=24, minWebView=111,
                      entry='xiao.bu.channel.FoliaFull', page='web/index.html')))
     for file in (here/'assets').rglob('*'):
         if file.is_file():
