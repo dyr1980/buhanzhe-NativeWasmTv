@@ -20,3 +20,14 @@ selection are nTv adaptations in this directory and app/src/main/java/xiao/bu/tv
 Online music APIs remain external services; no Node.js backend is embedded.
 No account credentials or music files are included. The adapter source is
 provided under AGPL-3.0 together with this package.
+
+The Android file adapter provides read-only, IndexedDB-persisted copies of files
+explicitly selected by the user. The Vite adaptation enables local-library
+availability for this bridge. It does not claim desktop directory watching or
+write access. Media getAttribute(src) is mapped back to the original URL so the
+upstream autoplay source guard agrees with the Java proxy transport.
+
+When no system document Activity is enabled, Android 7-12 can use the bundled
+read-only file picker after granting storage read permission. It does not enable
+system components or bypass Android's permissions. Newer Android versions need
+an enabled system picker if the legacy read permission is unavailable.

@@ -15,7 +15,7 @@ import xiao.bu.tv.skin.TvUi;
 final class TvUiPlugin {
     interface Listener { void onTvUiChanged(); }
     static final String[] IDS={"builtin","ui2","ui3","ui4","ui5","ui6"};
-    static final String[] NAMES={"原版界面","青色圆角","蓝色卡片","简洁侧栏","清透极简","影院红黑"};
+    static final String[] NAMES={"原版界面","青色圆角","蓝色卡片","简洁侧栏","清透极简","银雾玻璃"};
     private static final Object lock=new Object();
     private static final ExecutorService worker=Executors.newSingleThreadExecutor();
     private static final Handler main=new Handler(Looper.getMainLooper());
@@ -34,6 +34,7 @@ final class TvUiPlugin {
         listener=new WeakReference<>(value);
         final Context app=c.getApplicationContext();
         String id=app.getSharedPreferences("tv_ui",0).getString("selected","builtin");
+        if(!valid(id)){id="builtin";app.getSharedPreferences("tv_ui",0).edit().putString("selected",id).apply();}
         if("builtin".equals(id)&&active==null)return;
         if(active!=null&&active.id.equals(id)){notifyChanged();return;}
         selectAsync(app,id);

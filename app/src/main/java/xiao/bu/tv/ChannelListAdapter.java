@@ -32,13 +32,12 @@ final class ChannelListAdapter extends BaseAdapter implements xiao.bu.tv.skin.Sh
     private float measuredTitleSize=-1f, measuredTitleWidth;
     private int measuredFirst=-1,measuredCount=-1;
     public float titleWidth(android.graphics.Paint paint,int first,int count) {
+        if(!showingGroups)return ChannelNameWidth.pixels(paint);
         if(measuredTitleSize!=paint.getTextSize()||measuredFirst!=first||measuredCount!=count) {
             measuredFirst=first;measuredCount=count;
             measuredTitleSize=paint.getTextSize();measuredTitleWidth=0;
             if(showingGroups){for(ChannelCatalog.Group group:groups)
                 measuredTitleWidth=Math.max(measuredTitleWidth,paint.measureText(group.title));}
-            else {for(int i=Math.max(0,first);i<Math.min(channels.length,first+count);i++)
-                measuredTitleWidth=Math.max(measuredTitleWidth,paint.measureText(channels[i].name));}
         }
         return measuredTitleWidth;
     }
@@ -214,7 +213,7 @@ final class ChannelListAdapter extends BaseAdapter implements xiao.bu.tv.skin.Sh
             holder.themeScale = uiScale;
         }
 
-        if (!showingGroups && parent instanceof android.widget.ListView && parent.getHeight()>0) {
+        if (parent instanceof android.widget.ListView && parent.getHeight()>0) {
             android.widget.ListView list=(android.widget.ListView)parent;
             int preferred=Math.max(1,Math.round(46f*parent.getResources().getDisplayMetrics().density*uiScale));
             int divider=list.getDividerHeight();
@@ -289,10 +288,10 @@ final class ChannelListAdapter extends BaseAdapter implements xiao.bu.tv.skin.Sh
         if(holder==null||holder.revision!=TvUiPlugin.revision()||holder.group!=showingGroups||Math.abs(holder.scale-rowScale)>.001f){holder=new UiRow();holder.scale=rowScale;holder.revision=TvUiPlugin.revision();holder.group=showingGroups;holder.state.putBoolean("group",showingGroups);old=TvUiPlugin.provider().create(inflater.getContext(),showingGroups?"group-row":"channel-row",holder.state,null,null);old.setTag(holder);}
         android.os.Bundle b=holder.state;
         b.putBoolean("selected",position==selectedIndex);b.putBoolean("favoriteFocused",position==favoriteFocusIndex);b.putBoolean("playing",!showingGroups&&position==playingIndex);
-        if(showingGroups){b.putString("title",groups[position].title);}
+        if(showingGroups){b.putString("title",groups[position].title);b.putString("number",String.valueOf(position+1));b.putInt("count",groups[position].channels.length);b.putBoolean("favoriteGroup",groups[position].source==ChannelCatalog.SOURCE_FAVORITES);}
         else{Channel channel=channels[position];b.putString("title",channel.name);b.putString("number",ChannelCatalog.displayNumber(channelGroupIndex,position));
             String title=holder.currentProgram.titleFor(epgManager,channel,System.currentTimeMillis());
-            b.putString("program",title);b.putBoolean("favorite",favoriteListener!=null&&favoriteListener.isFavorite(position));
+            b.putInt("sources",channel.urls.length);b.putInt("source",playingSourceIndex);b.putString("program",title);b.putBoolean("favorite",favoriteListener!=null&&favoriteListener.isFavorite(position));
         }
         TvUiPlugin.provider().update(old,b);return old;
     }

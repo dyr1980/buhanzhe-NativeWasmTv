@@ -32,7 +32,7 @@ final class TvUiMenu {
         // Fullscreen drawings must follow the actual popup window bounds. A fixed
         // anchor size can be clipped by window insets while its content retains
         // that larger size, shifting the apparent center on wide phone screens.
-        int width=menu?Math.round(("ui3".equals(style.id)?326:"ui5".equals(style.id)||"ui6".equals(style.id)?320:275)*d):ViewGroup.LayoutParams.MATCH_PARENT;
+        int width=menu?Math.round(("ui3".equals(style.id)?326:"ui5".equals(style.id)?320:275)*d):ViewGroup.LayoutParams.MATCH_PARENT;
         int inset=menu&&!"ui4".equals(style.id)?Math.round(22*d):0;
         int verticalInset=menu&&"ui2".equals(style.id)?Math.round(8*d):inset;
         int horizontalInset=menu&&"ui3".equals(style.id)?Math.round(24*d):inset;

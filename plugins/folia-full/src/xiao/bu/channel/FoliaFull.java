@@ -11,6 +11,7 @@ import xiao.bu.tv.jar.ChannelPlugin;
 public final class FoliaFull implements ChannelPlugin {
     private WebView browser;
     private FoliaServer server;
+    private FoliaLocalPicker localPicker;
     private volatile boolean disposed;
     public View create(Context context,ClassLoader resources,JSONObject config,Host host)throws Exception {
         if(Build.VERSION.SDK_INT<24)throw new java.io.IOException("完整版需要 Android 7.0 及以上与较新的系统 WebView");
@@ -73,9 +74,19 @@ public final class FoliaFull implements ChannelPlugin {
         });
         browser.setWebChromeClient(new WebChromeClient(){
             public boolean onShowFileChooser(WebView view,ValueCallback<android.net.Uri[]> callback,FileChooserParams params){
-                if(!(host instanceof ChannelPlugin.BrowserHost)){callback.onReceiveValue(null);return true;}
                 String[] types=params.getAcceptTypes();
-                ((ChannelPlugin.BrowserHost)host).chooseFiles(callback,types.length==1&&!types[0].isEmpty()?types[0]:"*/*",params.getMode()==FileChooserParams.MODE_OPEN_MULTIPLE);
+                ValueCallback<android.net.Uri[]> result=files->{
+                    callback.onReceiveValue(files);
+                    if(!disposed&&browser==view&&(files==null||files.length==0))
+                        view.evaluateJavascript("window.__NTV_FOLIA_FILES__&&window.__NTV_FOLIA_FILES__.cancel()",null);
+                };
+                String mime=types.length==1&&types[0].matches("[a-zA-Z0-9.+-]+/[a-zA-Z0-9.*+-]+")?types[0]:"*/*";
+                if(!"application/x-ntv-folia-directory".equals(mime)&&host instanceof ChannelPlugin.BrowserHost)
+                    ((ChannelPlugin.BrowserHost)host).chooseFiles(result,mime,params.getMode()==FileChooserParams.MODE_OPEN_MULTIPLE);
+                else if(context instanceof android.app.Activity){
+                    if(localPicker==null)localPicker=new FoliaLocalPicker((android.app.Activity)context,host);
+                    localPicker.open(result,params.getMode()==FileChooserParams.MODE_OPEN_MULTIPLE);
+                }else result.onReceiveValue(null);
                 return true;
             }
             public boolean onConsoleMessage(ConsoleMessage message){android.util.Log.d("FoliaFull",message.message()+" @"+message.sourceId()+":"+message.lineNumber());return true;}
@@ -85,5 +96,5 @@ public final class FoliaFull implements ChannelPlugin {
         return browser;
     }
     public void update(long position,boolean playing){/* Upstream Web Audio owns the complete playback clock. */}
-    public void dispose(){disposed=true;if(browser!=null){browser.removeJavascriptInterface("NTVFoliaExport");browser.stopLoading();browser.loadUrl("about:blank");browser.destroy();browser=null;}if(server!=null){server.close();server=null;}}
+    public void dispose(){disposed=true;if(localPicker!=null){localPicker.cancel();localPicker=null;}if(browser!=null){browser.removeJavascriptInterface("NTVFoliaExport");browser.stopLoading();browser.loadUrl("about:blank");browser.destroy();browser=null;}if(server!=null){server.close();server=null;}}
 }

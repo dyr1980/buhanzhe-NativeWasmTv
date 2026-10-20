@@ -190,18 +190,37 @@ function saveDateTime() {
   );
 }
 
+var uiScaleEditing = false;
+function uiScalePreview() {
+  uiScaleEditing = true;
+  document.getElementById("uiScalePercentValue").textContent = document.getElementById("uiScalePercent").value + "%";
+}
+function uiScaleModeChanged() {
+  var custom = document.getElementById("uiScaleMode").value === "custom";
+  document.getElementById("uiScaleCustomControls").style.display = custom ? "block" : "none";
+  uiScalePreview();
+  saveDisplay();
+}
 function saveDisplay() {
   var scale = document.getElementById("videoScale"),
     resolution = document.getElementById("resolutionMode"),
     uiScale = document.getElementById("uiScaleMode");
+  var custom = uiScale.value === "custom";
+  var percent = Number(document.getElementById("uiScalePercent").value);
+  if (custom && (!isFinite(percent) || Math.floor(percent) !== percent || percent < 10 || percent > 300)) {
+    toast("界面大小请输入 10–300 的整数百分比", true);
+    uiScale.focus();
+    return;
+  }
   api(
     "/api/settings",
     {
       videoScaleMode: scale.value,
       resolutionMode: resolution.value,
-      uiScaleMode: uiScale.value
+      uiScaleMode: custom ? String(percent) : uiScale.value
     },
     function (error) {
+      uiScaleEditing = false;
       if (error) {
         toast(error.message, true);
         refresh();
@@ -234,7 +253,15 @@ function renderPageState() {
   document.getElementById("autoSwitchSourceSeconds").value = String(
     s.autoSwitchSourceSeconds == null ? (s.autoSwitchSource === true ? 5 : 0) : s.autoSwitchSourceSeconds);
   renderSiteQualities();
-  document.getElementById("uiScaleMode").value = s.uiScaleMode === "auto" ? "standard" : (s.uiScaleMode || "standard");
+  var presets = { small: 80, slightly_small: 90, standard: 100, large: 125, extra_large: 150, extra_extra_large: 200 };
+  var uiScaleInput = document.getElementById("uiScaleMode");
+  var slider = document.getElementById("uiScalePercent");
+  if (!uiScaleEditing && document.activeElement !== slider && document.activeElement !== uiScaleInput) {
+    uiScaleInput.value = presets[s.uiScaleMode] ? s.uiScaleMode : Number(s.uiScaleMode) ? "custom" : "standard";
+    slider.value = String(presets[s.uiScaleMode] || Number(s.uiScaleMode) || 100);
+    document.getElementById("uiScalePercentValue").textContent = slider.value + "%";
+    document.getElementById("uiScaleCustomControls").style.display = uiScaleInput.value === "custom" ? "block" : "none";
+  }
   var display = state.display || {},
     size = Number(display.diagonalInches) || 0,
     parts = ["44dp 基准，随屏幕适配", "当前行高约 " + Math.round(46 * (Number(s.uiScaleFactor) || 1)) + "dp"];

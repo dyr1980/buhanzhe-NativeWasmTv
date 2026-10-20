@@ -184,7 +184,6 @@ public final class WebSourceView extends FrameLayout {
     private void setPageCovered(boolean covered) {
         Log.d(TAG, "Web page cover enabled=" + covered);
         pageCovered = covered;
-        tabBar.setPageCovered(covered);
         if (covered) {
             tabBar.dismissTransientPanels();
             dismissSmartContextPopup();
@@ -232,7 +231,6 @@ public final class WebSourceView extends FrameLayout {
         setClipChildren(true);
         tabBar = new WebTabBar(context, new WebTabBar.Callback() {
             @Override public void onReload() { reloadPage(); }
-            @Override public void onTogglePageCover() { setPageCovered(!pageCovered); }
             @Override public void onNavigate(String value) { navigateAddress(value); }
             @Override public void onChannel(int groupIndex, int channelIndex) {
                 if (listener != null) listener.onBrowserChannel(groupIndex, channelIndex);

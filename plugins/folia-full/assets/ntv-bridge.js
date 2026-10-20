@@ -24,6 +24,8 @@
   if(src&&src.set)Object.defineProperty(HTMLMediaElement.prototype,'src',{configurable:true,enumerable:src.enumerable,get:function(){return unproxy(src.get.call(this));},set:function(url){src.set.call(this,proxy(url));}});
   var current=Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype,'currentSrc');
   if(current&&current.configurable)Object.defineProperty(HTMLMediaElement.prototype,'currentSrc',{configurable:true,enumerable:current.enumerable,get:function(){return unproxy(current.get.call(this));}});
+  var getAttribute=Element.prototype.getAttribute;
+  Element.prototype.getAttribute=function(name){var value=getAttribute.apply(this,arguments);return this instanceof HTMLMediaElement&&String(name).toLowerCase()==='src'&&value!==null?unproxy(value):value;};
   var attribute=Element.prototype.setAttribute;
   Element.prototype.setAttribute=function(name,value){if(this instanceof HTMLMediaElement&&String(name).toLowerCase()==='src')value=proxy(value);return attribute.call(this,name,value);};
   document.addEventListener('click',function(event){

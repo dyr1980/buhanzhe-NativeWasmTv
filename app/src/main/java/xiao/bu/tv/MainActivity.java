@@ -1204,7 +1204,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         epgFavorite = (TextView) findViewById(R.id.epg_favorite);
         epgToggle.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
-                if (!epgEnabled) return;
+                if (!epgEnabled || !hasBrowsingEpg(browsingChannelPosition())) return;
                 epgExpanded = !epgExpanded;
                 showEpgForBrowsingChannel(browsingChannelPosition());
                 if(epgExpanded)focusEpgList();else{rememberEpgCursor();channelList.requestFocus();}
@@ -2341,7 +2341,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         tvUiMenu.show(root,"menu",b,new xiao.bu.tv.skin.TvUi.Events(){
             public Bundle options(int category){
                 Bundle choices=new Bundle();choices.putStringArray("items",new String[]{"较小 80%","稍小 90%","标准 100%","较大 125%","特大 150%","特特大 200%"});
-                int index=0;for(int i=0;i<modes.length;i++)if(modes[i].equals(uiScaleMode))index=i;
+                int index=-1;for(int i=0;i<modes.length;i++)if(modes[i].equals(uiScaleMode))index=i;
                 choices.putInt("selected",index);return choices;
             }
             public void action(int category,int option){if(option>=0&&option<modes.length&&!modes[option].equals(uiScaleMode))applyTvUiSetting("uiScaleMode",modes[option]);}
@@ -4800,7 +4800,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             String rawMode = request.optString("uiScaleMode", UI_SCALE_STANDARD);
             final String requestedMode = sanitizeUiScaleMode(rawMode);
             if (!requestedMode.equals(rawMode)) {
-                throw new JSONException("不支持的界面大小档位");
+                throw new JSONException("界面大小请输入 10–300 的整数百分比");
             }
             uiScaleMode = requestedMode;
             getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit()
@@ -9365,6 +9365,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
     }
 
     private static String sanitizeUiScaleMode(String mode) {
+        if (UiScalePolicy.isCustomPercent(mode)) return mode;
         if (UI_SCALE_SMALL.equals(mode) || UI_SCALE_SLIGHTLY_SMALL.equals(mode)
                 || UI_SCALE_STANDARD.equals(mode)
                 || UI_SCALE_LARGE.equals(mode)
@@ -11650,7 +11651,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         boolean showEpg = epgColumn != null && epgColumn.getVisibility() == View.VISIBLE;
         if (!showEpg) {
             // Reserve the handle's actual width so it cannot overlap the channel row.
-            int fixedWidth = Math.round(45f * effectiveUiDensity()) + epgTouchSize;
+            int fixedWidth = channelPanelFixedWidth();
             int panelWidth = Math.min(maximumPanelWidth,
                     groupDesired + channelDesired + fixedWidth);
             int[] widths = fitTwoColumns(Math.max(2, panelWidth - fixedWidth),
@@ -11662,8 +11663,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             return;
         }
         int epgDesired = desiredEpgColumnWidth(density);
-        // Padding 28dp, two 17dp separators, and the touch-sized EPG handle.
-        int fixedWidth = Math.round(62f * effectiveUiDensity()) + epgTouchSize;
+        int fixedWidth = channelPanelFixedWidth();
         int desiredPanelWidth = groupDesired + channelDesired + epgDesired + fixedWidth;
         int panelWidth = Math.min(maximumPanelWidth, desiredPanelWidth);
         int availableColumns = Math.max(3, panelWidth - fixedWidth);
@@ -11679,6 +11679,26 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         setExactWidth(epgColumn, widths[2]);
 
         setPanelWidth(panelWidth);
+    }
+
+    private int channelPanelFixedWidth() {
+        // Sum the actual scaled pixels. Rounding a combined dp estimate can
+        // undercount padding/separators and push the guide past the panel edge.
+        ViewGroup row = (ViewGroup) groupList.getParent();
+        int width = channelListPanel.getPaddingLeft() + channelListPanel.getPaddingRight()
+                + row.getPaddingLeft() + row.getPaddingRight();
+        for (int i = 0; i < row.getChildCount(); i++) {
+            View child = row.getChildAt(i);
+            if (child.getVisibility() == View.GONE || child == groupList
+                    || child == channelList || child == epgColumn) continue;
+            ViewGroup.LayoutParams params = child.getLayoutParams();
+            width += Math.max(0, params.width);
+            if (params instanceof ViewGroup.MarginLayoutParams) {
+                ViewGroup.MarginLayoutParams margins = (ViewGroup.MarginLayoutParams) params;
+                width += margins.leftMargin + margins.rightMargin;
+            }
+        }
+        return width;
     }
 
     private int desiredGroupColumnWidth(float density) {
@@ -11699,26 +11719,21 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         Paint countPaint = columnPaint(11f);
         int countWidth = Math.max(Math.round(28f * density),
                 (int) Math.ceil(countPaint.measureText(String.valueOf(widestCount)))
-                        + Math.round(14f * density));
-        int chrome = Math.round(56f * density);
+                        + Math.round(12f * density));
+        int chrome = Math.round(61f * density);
         return clamp((int) Math.ceil(widest) + countWidth + chrome,
                 Math.round(120f * density),
                 (int) Math.ceil(titleCapacity) + countWidth + chrome);
     }
 
     private int desiredChannelColumnWidth(float density) {
-        // Keep the channel column steady while browsing. The title area is sized for
-        // longer channel names; longer names are intentionally ellipsized.
+        // Match the compact controls and the same catalog-wide title cap as all themes.
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1) {
-            return Math.round((14f * effectiveUiScale * 10f + 130f) * density);
+            return Math.round((14f * effectiveUiScale * ChannelNameWidth.MAX_CHARS + 111f) * density);
         }
         Paint paint=columnPaint(14f);
-        float capacity=paint.measureText("频道名称完整显示十字"),widest=0;
-        if(browsingGroupIndex>=0&&browsingGroupIndex<ChannelCatalog.GROUPS.length)
-            for(Channel channel:ChannelCatalog.GROUPS[browsingGroupIndex].channels)
-                widest=Math.max(widest,paint.measureText(channel.name));
         return Math.max(Math.round(180f*density),
-                (int)Math.ceil(Math.min(capacity,widest))+Math.round(110f*density));
+                (int)Math.ceil(ChannelNameWidth.pixels(paint))+Math.round(111f*density));
     }
 
     private int desiredEpgColumnWidth(float density) {
@@ -11739,7 +11754,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                 }
             }
         }
-        return clamp((int) Math.ceil(widest) + Math.round(28f * density),
+        return clamp((int) Math.ceil(widest) + Math.round(24f * density),
                 Math.round(220f * density), Math.round(440f * density));
     }
 
@@ -11828,9 +11843,9 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                 ? root.getWidth() : getResources().getDisplayMetrics().widthPixels;
         float density = effectiveUiDensity();
         // Stable geometry: status, bitrate and EPG text must not resize the card.
-        int width = Math.min(Math.round(440f * density),
+        int width = Math.min(Math.round(380f * density),
                 Math.max(1, screenWidth - Math.round(32f * density)));
-        int height = Math.round(118f * density);
+        int height = Math.round(108f * density);
         ViewGroup.LayoutParams params = channelBar.getLayoutParams();
         if (params.width != width || params.height != height) {
             params.width = width;
@@ -11969,13 +11984,27 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         refreshTvUiCard();
     }
 
+    private boolean hasBrowsingEpg(int position) {
+        if (!epgEnabled || epgManager == null || browsingGroupIndex < 0
+                || browsingGroupIndex >= ChannelCatalog.GROUPS.length) return false;
+        Channel[] channels=ChannelCatalog.GROUPS[browsingGroupIndex].channels;
+        if(channels.length==0)return false;
+        int safe=position>=0&&position<channels.length?position:Math.max(0,Math.min(channels.length-1,browsingChannelPosition()));
+        return !epgManager.programsFor(channels[safe]).isEmpty();
+    }
+
     private void showEpgForBrowsingChannel(int position) {
         if (!epgEnabled) { epgExpanded = false; setEpgColumnVisible(false); return; }
         if (epgManager == null || epgAdapter == null
                 || browsingGroupIndex < 0 || browsingGroupIndex >= ChannelCatalog.GROUPS.length) {
             return;
         }
-        epgToggle.setText(TvUiPlugin.current()!=null?"节\n目\n预\n告":epgExpanded ? "节\n目\n单\n‹" : "节\n目\n单\n›");
+        boolean available=hasBrowsingEpg(position);
+        epgToggle.setEnabled(available);
+        if(!available)epgExpanded=false;
+        boolean horizontalGuide=TvUiPlugin.current()!=null&&"ui6".equals(TvUiPlugin.current().id);
+        epgToggle.setText(horizontalGuide?(epgExpanded?"节目单  ‹":"节目单  ›"):
+                TvUiPlugin.current()!=null?"节\n目\n预\n告":epgExpanded ? "节\n目\n单\n‹" : "节\n目\n单\n›");
         epgToggle.setContentDescription(epgExpanded ? "收起节目单" : "展开节目单");
         setEpgColumnVisible(epgExpanded);
         // Channel rows show current programmes even with the guide collapsed.
@@ -11993,7 +12022,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         int safePosition = position >= 0 && position < channels.length
                 ? position : browsingChannelPosition();
         Channel channel = channels[safePosition];
-        if(channel.catchupDays()>0)epgToggle.setText("节\n目\n单");
+        if(channel.catchupDays()>0&&!horizontalGuide)epgToggle.setText("节\n目\n单");
         epgFavorite.setEnabled(true);
         epgFavorite.setText(isBrowsingChannelFavorite(safePosition) ? "★ 已收藏" : "☆ 收藏");
         java.util.List<EpgManager.Program> programs = epgManager.programsFor(channel);
@@ -13934,12 +13963,12 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
     }
     private int navigationRowHeight(ListView list) {
         if(list==epgList)return epgAdapter.navigationRowHeight(list);
-        if(list==channelList&&TvUiPlugin.current()!=null){
+        if((list==channelList||list==groupList)&&TvUiPlugin.current()!=null){
             String id=TvUiPlugin.current().id;
             int preferred=Math.max(1,Math.round(xiao.bu.tv.skin.SharedTvUi.preferredRowHeight(id)*themeScale()));
             return xiao.bu.tv.skin.SharedTvUi.fittedRowHeight(list.getHeight(),preferred);
         }
-        if(list==channelList&&list.getHeight()>0){
+        if((list==channelList||list==groupList)&&list.getHeight()>0){
             int divider=list.getDividerHeight();
             int preferred=Math.max(1,Math.round(46*effectiveUiDensity()));
             return Math.max(1,xiao.bu.tv.skin.SharedTvUi.fittedRowHeight(
@@ -13948,7 +13977,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         View row=list.getChildAt(0);
         if(row!=null&&row.getHeight()>0)return row.getHeight();
         if(TvUiPlugin.current()!=null){String id=TvUiPlugin.current().id;return Math.max(1,Math.round(xiao.bu.tv.skin.SharedTvUi.preferredRowHeight(id)*themeScale()));}
-        return Math.max(1,Math.round((list==groupList?44:46)*effectiveUiDensity()));
+        return Math.max(1,Math.round(46*effectiveUiDensity()));
     }
     private void rememberChannelCursor(){
         if(channelList==null||navigationChannels==null||navigationChannels.length==0||channelListPanel==null||!channelListPanel.isShown())return;
@@ -13987,6 +14016,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         }
     }
     private void focusEpgList(){
+        if(!epgExpanded||epgAdapter.getCount()==0)return;
         epgNavigationActive=true;
         setFavoriteActionFocused(false);epgList.requestFocusFromTouch();epgList.requestFocus();
         if(epgAdapter.getCount()>0){
@@ -14861,7 +14891,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                         if (ChannelCatalog.GROUPS[browsingGroupIndex].channels.length > 0) {
                             enterChannelColumn();
                         }
-                    } else if (favoriteActionFocused && epgEnabled) {
+                    } else if (favoriteActionFocused && hasBrowsingEpg(channelList.getSelectedItemPosition())) {
                         epgExpanded = true;
                         showEpgForBrowsingChannel(channelList.getSelectedItemPosition());
                         focusEpgList();
@@ -15034,6 +15064,12 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             return;
         }
         if (jarChannelRuntime != null && jarChannelRuntime.visible()) {
+            if (jarChannelRuntime.goBackIfPossible()) {
+                lastJarBackPressedAt = 0L;
+                lastBackPressedAt = 0L;
+                clearWebCloseConfirmation();
+                return;
+            }
             long now = SystemClock.elapsedRealtime();
             if (lastJarBackPressedAt > 0L && now - lastJarBackPressedAt <= EXIT_CONFIRM_TIMEOUT_MS) {
                 lastJarBackPressedAt = 0L;

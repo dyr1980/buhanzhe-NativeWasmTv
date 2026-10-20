@@ -22,11 +22,11 @@ public abstract class SharedTvUi implements TvUi {
     public interface MenuWidth { int preferredWidth(int height); }
     public interface TitleWidths { float titleWidth(Paint paint,int first,int count); }
     protected abstract int theme();
-    private int accent(){return theme()==5?0xffb8ddff:theme()==6?0xffe50914:theme()==2?0xff29a6de:theme()==3?0xff1c73ee:0xff00d1ff;}
-    private int panel(){return theme()==5?0xea17212e:theme()==6?0xf0141414:theme()==2?0xc21a3031:theme()==3?0xcc24252d:0xcc313b4a;}
-    private float radius(){return theme()==5?22:theme()==6?6:theme()==2?20:theme()==3?10:0;}
-    public static int preferredRowHeight(String id){return "ui2".equals(id)?70:"ui4".equals(id)?60:65;}
-    private float rowHeight(){return theme()==2?70:theme()==4?60:65;}
+    private int accent(){return theme()==6?0xfff4d63d:theme()==5?0xffb8ddff:theme()==2?0xff29a6de:theme()==3?0xff1c73ee:0xff00d1ff;}
+    private int panel(){return theme()==6?0xc0282626:theme()==5?0xea17212e:theme()==2?0xc21a3031:theme()==3?0xcc24252d:0xcc313b4a;}
+    private float radius(){return theme()==6?22:theme()==5?22:theme()==2?20:theme()==3?10:0;}
+    public static int preferredRowHeight(String id){return "ui6".equals(id)?50:"ui2".equals(id)?70:"ui4".equals(id)?60:65;}
+    private float rowHeight(){return theme()==6?50:theme()==2?70:theme()==4?60:65;}
     public static int fittedRowHeight(int available,int preferred){
         if(available<=0)return Math.max(1,preferred);
         return Math.max(1,available/Math.max(1,available/Math.max(1,preferred)));
@@ -42,8 +42,8 @@ public abstract class SharedTvUi implements TvUi {
     private float titleWidth(View slot,float size,int capacity,float minimum){
         Paint paint=new Paint();paint.setTextSize(size);
         android.widget.ListAdapter adapter=((ListView)slot).getAdapter();
-        // Size from the complete group, never from the moving viewport. Focus,
-        // page boundaries and recycled children cannot change the column width.
+        // The adapter supplies the cached catalog-wide channel width. Focus,
+        // category switches and recycled children cannot change column width.
         float width=adapter instanceof TitleWidths?((TitleWidths)adapter).titleWidth(paint,
                 0,adapter.getCount()):capacity*size;
         return Math.max(minimum,Math.min(capacity*size,width));
@@ -88,10 +88,15 @@ public abstract class SharedTvUi implements TvUi {
             float width=p.measureText(text);text(c,text,l+Math.max(0,(room-width)/2),y,size,color,room);
         }
         void selected(Canvas c,float l,float t,float r,float b){
+            if(theme()==6){
+                if(gradient==null||l!=gradientLeft||r!=gradientRight){gradient=new LinearGradient(l,t,r,b,0xfff8f8f7,0xffa9a7a5,Shader.TileMode.CLAMP);gradientLeft=l;gradientRight=r;}
+                p.setShader(gradient);p.setColor(Color.WHITE);rect.set(l,t,r,b);c.drawRoundRect(rect,12,12,p);p.setShader(null);
+                p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(1);p.setColor(0xeaffffff);rect.inset(.5f,.5f);c.drawRoundRect(rect,12,12,p);p.setStyle(Paint.Style.FILL);return;
+            }
             if(theme()==5){box(c,l,t,r,b,0xffe9f3ff,Math.min(20,(b-t)/2));return;}
-            if(theme()==6){box(c,l,t,r,b,0xff343434,4);box(c,l,t+7,l+3,b-7,accent(),1);return;}
             if(theme()==4){
-                box(c,l,t,r,b,0xff245b78,4);
+                if(gradient==null||l!=gradientLeft||r!=gradientRight){gradient=new LinearGradient(l,0,r,0,0xff168de2,0xff245bc4,Shader.TileMode.CLAMP);gradientLeft=l;gradientRight=r;}
+                p.setShader(gradient);p.setColor(Color.WHITE);rect.set(l,t,r,b);c.drawRoundRect(rect,4,4,p);p.setShader(null);
                 box(c,l,t+6,l+3,b-6,accent(),1);
                 return;
             }
@@ -103,14 +108,20 @@ public abstract class SharedTvUi implements TvUi {
     }
     /** Uses the host's existing clock and transport sampling, without its own timer. */
     private final class Hud extends TextView {
-        Hud(Context c,Bundle state){super(c);float d=scale(c);setText(state.getString("text",""));setTextColor(0xffeeeeef);setTextSize(TypedValue.COMPLEX_UNIT_PX,20*d);setSingleLine(true);setIncludeFontPadding(false);setGravity(Gravity.CENTER);setPadding(Math.round(9*d),Math.round(4*d),Math.round(9*d),Math.round(4*d));setShadowLayer(1*d,0,1*d,0x88000000);background(this,theme()==6?0xc0141414:theme()==5?0xb31a2636:theme()==3?0x60000000:0x500d1720,(theme()==6?5:28)*d);setClickable(false);setFocusable(false);}
+        Hud(Context c,Bundle state){super(c);float d=scale(c);setText(state.getString("text",""));setTextColor(0xffeeeeef);setTextSize(TypedValue.COMPLEX_UNIT_PX,20*d);setSingleLine(true);setIncludeFontPadding(false);setGravity(Gravity.CENTER);setPadding(Math.round(9*d),Math.round(4*d),Math.round(9*d),Math.round(4*d));setShadowLayer(1*d,0,1*d,0x88000000);background(this,theme()==5?0xb31a2636:theme()==3?0x60000000:0x500d1720,28*d);setClickable(false);setFocusable(false);}
     }
     private final class Panel extends ViewGroup {
-        final View[] slots;final float d;final Paint shade=new Paint();final RectF shadeBounds=new RectF();int channelPitch,groupPitch;
-        Panel(Context c,View[] views){super(c);d=scale(c);slots=views;setWillNotDraw(false);background(this,panel(),radius()*d);
+        final xiao.bu.tv.FrostedBackdrop glass=new xiao.bu.tv.FrostedBackdrop(this);
+        LinearGradient glassTint;
+        protected void onSizeChanged(int w,int h,int oldw,int oldh){super.onSizeChanged(w,h,oldw,oldh);if(theme()==6)glassTint=new LinearGradient(0,0,w,h,0xff414141,0xff262525,Shader.TileMode.CLAMP);}
+        protected void onVisibilityChanged(View view,int visibility){super.onVisibilityChanged(view,visibility);if(theme()==6){if(visibility==VISIBLE)post(()->glass.capture());else glass.clear();}}
+        protected void onDetachedFromWindow(){glass.clear();super.onDetachedFromWindow();}
+        final View[] slots;final float d;final Paint shade=new Paint(Paint.ANTI_ALIAS_FLAG);final RectF shadeBounds=new RectF();int channelPitch,groupPitch;
+        Panel(Context c,View[] views){super(c);d=scale(c);slots=views;setWillNotDraw(false);if(theme()!=6)background(this,panel(),radius()*d);
             for(View v:views){if(v.getParent()!=null)((ViewGroup)v.getParent()).removeView(v);addView(v);}
             for(int i=0;i<2;i++){ListView list=(ListView)slots[i];list.setPadding(0,0,0,0);list.setDivider(null);list.setSelector(new ColorDrawable(Color.TRANSPARENT));list.setCacheColorHint(Color.TRANSPARENT);}
             TextView epg=(TextView)slots[2];epg.setBackgroundDrawable(new ColorDrawable(theme()==2||theme()==3?Color.TRANSPARENT:0x15000000));epg.setTextSize(TypedValue.COMPLEX_UNIT_PX,13*d);
+            if(theme()==6){epg.setText("节目单  ›");epg.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));}
             if(slots[3] instanceof ViewGroup){ViewGroup column=(ViewGroup)slots[3];for(int i=0;i<column.getChildCount();i++){
                 View child=column.getChildAt(i);
                 if(child instanceof ListView){ListView list=(ListView)child;list.setSelector(new ColorDrawable(Color.TRANSPARENT));list.setDivider(null);list.setPadding(0,0,0,0);}
@@ -119,14 +130,25 @@ public abstract class SharedTvUi implements TvUi {
         }
         protected void onMeasure(int ws,int hs){
             int limit=MeasureSpec.getSize(ws),h=MeasureSpec.getSize(hs);
+            if(theme()==6){
+                int g=Math.round((titleWidth(slots[0],18,8,90)+110)*d);
+                int channel=Math.round((titleWidth(slots[1],18,xiao.bu.tv.ChannelNameWidth.MAX_CHARS,90)+180)*d);
+                boolean expanded=slots[3].getVisibility()!=GONE;
+                int w=Math.min(limit,g+channel+Math.round(24*d)+(expanded?Math.round(230*d):0));
+                g=Math.min(g,w/2);int epg=expanded?Math.min(Math.round(230*d),Math.max(0,w-g-Math.round(180*d))):0;
+                channel=Math.max(1,w-g-epg-Math.round(24*d));setMeasuredDimension(w,h);
+                int available=Math.max(1,h-Math.round(124*d));channelPitch=fittedRowHeight(available,Math.round(rowHeight()*d));groupPitch=channelPitch;
+                for(int i=0;i<4;i++)slots[i].measure(MeasureSpec.makeMeasureSpec(i==0?g:i==1?channel:i==2?Math.round(100*d):epg,MeasureSpec.EXACTLY),MeasureSpec.makeMeasureSpec(i==2?Math.round(40*d):available,MeasureSpec.EXACTLY));
+                return;
+            }
             int handle=slots[2].getVisibility()==GONE?0:Math.max(32,Math.round(30*d));
             // Every theme exposes the host's guide. Theme 2 already reserved its
             // handle; add room in the others instead of narrowing channel names.
             float groupTitle=titleWidth(slots[0],20,8,72);
-            float channelTitle=titleWidth(slots[1],20,10,80);
+            float channelTitle=titleWidth(slots[1],20,xiao.bu.tv.ChannelNameWidth.MAX_CHARS,80);
             int groupDesired=Math.round((groupTitle+36)*d);
             // Width includes trailing breathing room even when the longest title fits exactly.
-            float channelChrome=theme()==2?110:theme()==3?77:theme()==4?97:78;
+            float channelChrome=theme()==2?96:theme()==3?63:theme()==4?83:78;
             int desiredBase=groupDesired+Math.round((channelTitle+channelChrome)*d)+handle;
             boolean expanded=slots[3].getVisibility()!=GONE;
             int w=Math.min(limit,desiredBase+(expanded?Math.round(246*d):0));setMeasuredDimension(w,h);
@@ -134,15 +156,7 @@ public abstract class SharedTvUi implements TvUi {
             int g=Math.min(groupDesired,Math.round(base*.42f));
             int channel=Math.max(1,base-g-handle),vertical=theme()==4?0:Math.round((theme()==3?20:theme()==2?12:6)*d);
             channelPitch=fittedRowHeight(Math.max(1,h-vertical*2),Math.round(rowHeight()*d));
-            groupPitch=Math.round(rowHeight()*d);
-            if(theme()==3){
-                int available=Math.max(1,h-vertical*2);
-                int count=((ListView)slots[0]).getCount();
-                // A fractional final row must not hide the last category at 90%.
-                // Fit one almost-complete page; longer catalogues still paginate.
-                int capacity=Math.max(1,(available+groupPitch-1)/groupPitch);
-                if(count>0&&count<=capacity)groupPitch=Math.max(1,available/count);
-            }
+            groupPitch=channelPitch;
             for(int i=0;i<slots.length;i++){
                 int width=i==0?g:i==1?channel:i==2?handle:epg;
                 int height=i==2?Math.round(110*d):h-vertical*2;
@@ -150,9 +164,28 @@ public abstract class SharedTvUi implements TvUi {
             }
         }
         protected void onLayout(boolean changed,int l,int t,int r,int b){int x=0,pad=theme()==4?0:Math.round((theme()==3?20:theme()==2?12:6)*d),h=b-t;
+            if(theme()==6){
+                x=Math.round(12*d);int top=Math.round(70*d);
+                for(int i=0;i<4;i++){if(i==2)continue;View v=slots[i];v.layout(x,top,x+v.getMeasuredWidth(),top+v.getMeasuredHeight());x+=v.getMeasuredWidth();}
+                View handle=slots[2];handle.layout(getWidth()-Math.round(116*d),h-Math.round(44*d),getWidth()-Math.round(16*d),h-Math.round(4*d));
+                if(changed)post(()->glass.capture());return;
+            }
             for(int i=0;i<slots.length;i++){View v=slots[i];int y=i==2?(h-v.getMeasuredHeight())/2:pad;v.layout(x,y,x+v.getMeasuredWidth(),y+v.getMeasuredHeight());x+=v.getMeasuredWidth();}
         }
-        protected void onDraw(Canvas c){super.onDraw(c);Paint p=shade;p.setColor(theme()==2?0x6b001c20:theme()==3?0x30202430:theme()==4?0x80000106:0x74141c26);float width=slots[0].getRight(),radius=radius()*d;c.save();c.clipRect(0,0,width,getHeight());shadeBounds.set(0,0,width+radius,getHeight());c.drawRoundRect(shadeBounds,radius,radius,p);c.restore();
+        protected void onDraw(Canvas c){super.onDraw(c);Paint p=shade;
+            if(theme()==6){
+                shadeBounds.set(0,0,getWidth(),getHeight());
+                if(!glass.draw(c,shadeBounds,22*d)){p.setShader(glassTint);p.setColor(Color.WHITE);c.drawRoundRect(shadeBounds,22*d,22*d,p);p.setShader(null);}
+                float stroke=Math.max(1,Math.round(d));
+                p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(stroke);p.setColor(0x668f8e8b);shadeBounds.inset(stroke/2,stroke/2);c.drawRoundRect(shadeBounds,22*d-stroke/2,22*d-stroke/2,p);p.setStyle(Paint.Style.FILL);
+                p.setTextSize(18*d);p.setColor(0xffbdbdbf);c.drawText("频道",28*d,42*d,p);
+                View selected=((ListView)slots[0]).getSelectedView();Bundle group=selected instanceof Row?((Row)selected).data:null;
+                p.setColor(Color.WHITE);c.drawText(group==null?"频道列表":group.getString("title","频道列表"),slots[1].getLeft()+18*d,42*d,p);
+                p.setTextSize(13*d);p.setColor(0xffbdbdbf);c.drawText(((ListView)slots[1]).getCount()+" 个频道",slots[1].getLeft()+18*d,62*d,p);
+                p.setStrokeWidth(d/2);p.setColor(0x55aaaaaa);c.drawLine(slots[0].getRight(),24*d,slots[0].getRight(),getHeight()-60*d,p);c.drawLine(22*d,getHeight()-48*d,getWidth()-22*d,getHeight()-48*d,p);
+                p.setTextSize(13*d);p.setColor(0xffdddddf);c.drawText("OK 确定 播放    ≡ 长按 ☆ 收藏",24*d,getHeight()-18*d,p);return;
+            }
+            p.setColor(theme()==2?0x6b001c20:theme()==3?0x30202430:theme()==4?0x80000106:0x74141c26);float width=slots[0].getRight(),radius=radius()*d;c.save();c.clipRect(0,0,width,getHeight());shadeBounds.set(0,0,width+radius,getHeight());c.drawRoundRect(shadeBounds,radius,radius,p);c.restore();
             if(theme()==2&&slots[2].getVisibility()!=GONE){
                 // The reference uses a full-height guide rail, not a small button backdrop.
                 float left=slots[2].getLeft(),right=slots[2].getRight();p.setColor(0x30000000);
@@ -162,9 +195,10 @@ public abstract class SharedTvUi implements TvUi {
         }
     }
     private final class Row extends Drawing {
+        final Rect starBounds=new Rect();
         Bundle data;final float d;final boolean group;int beat;boolean attached,pulsePosted;
         final Runnable pulse=new Runnable(){public void run(){pulsePosted=false;if(!canPulse())return;beat=(beat+1)&7;invalidate(0,0,Math.round(70*d),getHeight());schedulePulse();}};
-        boolean canPulse(){return attached&&!group&&data!=null&&data.getBoolean("playing")&&getWindowVisibility()==VISIBLE&&isShown();}
+        boolean canPulse(){return theme()!=6&&attached&&!group&&data!=null&&data.getBoolean("playing")&&getWindowVisibility()==VISIBLE&&isShown();}
         // At most one 10 Hz callback per visible playing row; no per-frame allocations.
         void schedulePulse(){if(pulse==null)return;if(canPulse()){if(!pulsePosted){pulsePosted=true;postDelayed(pulse,100);}}else{removeCallbacks(pulse);pulsePosted=false;}}
         protected void onAttachedToWindow(){super.onAttachedToWindow();attached=true;schedulePulse();}
@@ -188,6 +222,7 @@ public abstract class SharedTvUi implements TvUi {
             for(int i=0;i<3;i++){int phase=(beat+i*3)&7;float height=5+(phase<4?phase:7-phase)*5;box(c,x+i*(width+3),bottom-height,x+i*(width+3)+width,bottom,i==0?first:i==1?second:third,1);}
         }
         protected void onDraw(Canvas canvas){canvas.save();canvas.scale(d,d);float w=getWidth()/d,h=getHeight()/d;
+            if(theme()==6){glassRow(canvas,w,h);canvas.restore();return;}
             boolean sel=data.getBoolean("selected"),playing=data.getBoolean("playing");
             // Only the column owning navigation focus paints a filled selection.
             boolean focus=sel&&!data.getBoolean("favoriteFocused")&&(getParent() instanceof ListView?((ListView)getParent()).hasFocus():data.getBoolean("focused",!group));
@@ -198,10 +233,10 @@ public abstract class SharedTvUi implements TvUi {
                 if(focus){
                     // A browsed group keeps accent text. Only the column owning
                     // keyboard focus draws a filled selection background.
-                    if(theme()==4){box(canvas,8,3,w-8,h-3,(accent()&0x00ffffff)|0x26000000,0);box(canvas,8,10,11,h-10,accent(),0);}
+                    if(theme()==4)selected(canvas,8,3,w-8,h-3);
                     else selected(canvas,8,theme()==2?8:3,w-8,h-(theme()==2?8:3));
                 }
-                int color=focus&&theme()==5?0xff142438:focus&&theme()!=4?0xffeeeeef:sel&&theme()==3?0xff29a6de:sel?accent():0xffe7e8e9;
+                int color=focus&&theme()==5?0xff142438:focus?0xffeeeeef:sel&&theme()==3?0xff29a6de:sel?accent():0xffe7e8e9;
                 canvas.save();canvas.clipRect(12,0,w-12,h);
                 center(canvas,data.getString("title",""),16,w-16,h/2+7,20,color);canvas.restore();
             }
@@ -211,10 +246,41 @@ public abstract class SharedTvUi implements TvUi {
                 if(playing){int color=focus&&theme()==5?0xff142438:0xffeeeeef;playbackBars(canvas,18,h/2+9,3,color,color,color);}
                 else{p.setColor(0x6485939b);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(1);rect.set(10,h/2-10,46,h/2+10);canvas.drawRoundRect(rect,2,2,p);p.setStyle(Paint.Style.FILL);center(canvas,data.getString("number",""),10,46,h/2+6,16,focus&&theme()==5?0xff142438:0xffe1e4e7);}
                 String program=data.getString("program","");float titleY=program.length()>0?h/2-3:h/2+7;
-                text(canvas,data.getString("title",""),56,titleY,20,playing?(focus&&theme()==5?0xff1c73ee:focus&&theme()!=6?0xffeeeeef:accent()):focus&&theme()==5?0xff142438:0xffeeeeef,w-76-(data.getBoolean("favoriteFocused")?26:0));
+                text(canvas,data.getString("title",""),56,titleY,20,playing?(focus&&theme()==5?0xff1c73ee:focus?0xffeeeeef:accent()):focus&&theme()==5?0xff142438:0xffeeeeef,w-76-(data.getBoolean("favoriteFocused")?26:0));
                 text(canvas,program,56,h/2+17,14,focus&&theme()==5?0xff4b6078:0xffaeb8bf,w-64);
                 if(data.getBoolean("favoriteFocused"))text(canvas,data.getBoolean("favorite")?"★":"☆",w-28,h/2+7,22,accent(),25);
             }canvas.restore();
+        }
+        private void glassRow(Canvas c,float w,float h){
+            boolean playing=data.getBoolean("playing"),chosen=data.getBoolean("selected");
+            boolean ownsFocus=!(getParent() instanceof ListView)||((ListView)getParent()).hasFocus();
+            boolean favoriteFocus=!group&&chosen&&ownsFocus&&data.getBoolean("favoriteFocused");
+            boolean focused=(isPressed()||chosen&&ownsFocus)&&!favoriteFocus;
+            if(group){
+                if(focused)selected(c,0,3,w-10,h-3);
+                else if(chosen)box(c,0,3,w-10,h-3,0x604c4b4e,12);
+                int ink=focused?0xff101112:0xfff0f0f2;String number=data.getBoolean("favoriteGroup")?"★":data.getString("number","");
+                text(c,number,18,h/2+6,18,data.getBoolean("favoriteGroup")&&!focused?0xfff4d63d:ink,28);
+                p.setFakeBoldText(chosen);text(c,data.getString("title",""),48,h/2+6,18,ink,w-94);p.setFakeBoldText(false);
+                center(c,String.valueOf(data.getInt("count",0)),w-43,w-15,h/2+5,14,focused?0xff57585a:0xffc5c5c8);
+                return;
+            }
+            if(focused)selected(c,8,2,w,h-2);
+            int ink=focused?0xff101112:0xfff3f3f5,secondary=focused?0xff57585a:0xffbdbdc2;
+            if(playing)text(c,"▶",16,h/2+5,14,ink,16);
+            String number=data.getString("number","");if(number.length()==1)number="0"+number;
+            center(c,number,28,60,h/2+5,16,ink);
+            float left=72;
+            String program=data.getString("program","");
+            p.setFakeBoldText(true);text(c,data.getString("title",""),left,program.length()>0?h/2-3:h/2+6,18,ink,w-left-100);p.setFakeBoldText(false);
+            text(c,program,left,h/2+17,13,secondary,w-left-100);
+            int sources=data.getInt("sources",1);
+            center(c,playing?(data.getInt("source",0)+1)+"/"+sources:String.valueOf(sources),w-87,w-46,h/2+5,14,secondary);
+            if(favoriteFocus)selected(c,w-46,h/2-20,w-4,h/2+20);
+            String star=data.getBoolean("favorite")?"★":"☆";
+            p.setTypeface(Typeface.DEFAULT);p.setTextSize(25);p.getTextBounds(star,0,star.length(),starBounds);
+            p.setColor(favoriteFocus?0xff101112:data.getBoolean("favorite")?0xfff4d63d:ink);
+            c.drawText(star,w-25-(starBounds.left+starBounds.right)/2f,h/2-(starBounds.top+starBounds.bottom)/2f,p);
         }
         private void referenceRow(Canvas c,float w,float h,boolean sel,boolean playing){
             if(sel)selected(c,theme()==2?8:0,theme()==2?1:0,w-(theme()==2?8:0),h-(theme()==2?1:0));
@@ -228,9 +294,9 @@ public abstract class SharedTvUi implements TvUi {
                 c.drawRoundRect(rect,r,r,p);p.setStyle(Paint.Style.FILL);
                 center(c,data.getString("number",""),badgeLeft,badgeLeft+badgeWidth,h/2+6,theme()==3?13:16,0xffe1e4e7);
             }
-            float left=theme()==2?82:theme()==3?53:73,available=w-left-(theme()==2?26:22)-(data.getBoolean("favoriteFocused")?26:0);
+            float left=theme()==2?82:theme()==3?53:73,available=w-left-(theme()==2?12:8)-(data.getBoolean("favoriteFocused")?26:0);
             String program=data.getString("program","");boolean withProgram=program.length()>0;
-            text(c,data.getString("title",""),left,withProgram?h/2-(theme()==2?2:5):h/2+(theme()==4?8:7),20,playing&&(!sel||theme()==4)?accent():0xffeeeeef,available);
+            text(c,data.getString("title",""),left,withProgram?h/2-(theme()==2?2:5):h/2+(theme()==4?8:7),20,playing&&!sel?accent():0xffeeeeef,available);
             if(withProgram)text(c,program,left,h/2+(theme()==3?20:17),14,0xffbcbfc3,available);
             if(data.getBoolean("favoriteFocused"))text(c,data.getBoolean("favorite")?"★":"☆",w-28,h/2+7,22,accent(),25);
         }
@@ -253,13 +319,13 @@ public abstract class SharedTvUi implements TvUi {
         protected void onDraw(Canvas canvas){
             canvas.save();canvas.scale(d,d);float w=getWidth()/d,h=getHeight()/d;
             boolean focus=isPressed()||isSelected()&&(!(getParent() instanceof ListView)||((ListView)getParent()).hasFocus()),current=data.getBoolean("current");
-            float inset=theme()==2?1:theme()>=5?3:0;
+            float inset=theme()==2?1:theme()==5?3:0;
             if(focus)selected(canvas,theme()==2?8:0,inset,w-(theme()==2?8:0),h-inset);
-            int title=focus&&theme()==5?0xff142438:focus&&theme()==4?accent():0xffeeeeef;
-            int secondary=focus&&theme()==5?0xff4b6078:focus?0xffe8ebed:0xffbcbfc3;
+            int title=focus&&(theme()==5||theme()==6)?0xff142438:focus?Color.WHITE:0xffeeeeef;
+            int secondary=focus&&(theme()==5||theme()==6)?0xff4b6078:focus?Color.WHITE:0xffbcbfc3;
             float left=theme()==2?24:theme()==3?12:16,right=theme()==2?24:12;
             text(canvas,data.getString("time",""),left,h/2-7,14,current&&!focus?accent():secondary,w-left-right);
-            text(canvas,data.getString("title",""),left,h/2+(theme()>=5?12:17),20,title,w-left-right);
+            text(canvas,data.getString("title",""),left,h/2+(theme()==5?12:17),20,title,w-left-right);
             canvas.restore();
         }
     }
@@ -268,9 +334,8 @@ public abstract class SharedTvUi implements TvUi {
         void bind(Bundle b){data=b;String epg=b.getString("epg","");programs=epg.length()==0?new String[0]:epg.split("\n");if(theme()<=4)for(int i=0;i<programs.length;i++){int dash=programs[i].indexOf('–'),space=programs[i].indexOf(' ');if(dash==5&&space>dash)programs[i]=programs[i].substring(0,dash)+programs[i].substring(space);}setContentDescription(b.getString("title","")+" "+b.getString("epg","")+" "+b.getString("status",""));invalidate();}
         protected void onMeasure(int ws,int hs){float d=scale(getContext());setMeasuredDimension(resolveSize(Math.round((theme()==3?600:theme()<=4?720:680)*d),ws),resolveSize(Math.round(124*d),hs));}
         protected void onDraw(Canvas canvas){float w=getWidth(),h=getHeight(),d=scale(getContext());canvas.save();canvas.scale(d,d);w/=d;h/=d;
-            if(theme()>=5){
-                box(canvas,0,0,w,h,panel(),theme()==5?22:6);
-                if(theme()==6)box(canvas,0,15,4,h-15,accent(),1);
+            if(theme()==5||theme()==6){
+                box(canvas,0,0,w,h,panel(),22);
                 String number=data.getString("number","").replace(" |","");
                 // Channel identity follows the reference: large number above a
                 // smaller name, both centered in the left column.
@@ -345,7 +410,7 @@ public abstract class SharedTvUi implements TvUi {
             textSize=menuFontSize();
             options=new ListView(c);categories=new ListView(c);
             for(ListView list:new ListView[]{options,categories}){list.setDivider(null);list.setSelector(new ColorDrawable(Color.TRANSPARENT));list.setCacheColorHint(Color.TRANSPARENT);list.setChoiceMode(ListView.CHOICE_MODE_SINGLE);list.setFocusableInTouchMode(true);}
-            GradientDrawable right=shape(theme()==5?0x40101a28:theme()==6?0x80000000:theme()==2?0xa9001c1b:theme()==3?0x40202430:0x7028313e,0);float rr=radius()*d;right.setCornerRadii(new float[]{0,0,rr,rr,rr,rr,0,0});categories.setBackgroundDrawable(right);
+            GradientDrawable right=shape(theme()==5?0x40101a28:theme()==2?0xa9001c1b:theme()==3?0x40202430:0x7028313e,0);float rr=radius()*d;right.setCornerRadii(new float[]{0,0,rr,rr,rr,rr,0,0});categories.setBackgroundDrawable(right);
             addView(options,new LinearLayout.LayoutParams(0,-1,theme()==3?175:theme()==4?142:1));addView(categories,new LinearLayout.LayoutParams(0,-1,theme()==2?1.08f:theme()==3?151:theme()==4?133:1));
             categories.setPadding(0,Math.round((theme()==2?17:theme()==3?20:0)*d),0,0);
             categories.setAdapter(new MenuAdapter(c,titles,true,-1));
@@ -468,10 +533,10 @@ public abstract class SharedTvUi implements TvUi {
                 boolean optionFocus=remoteNavigation&&options.hasFocus();
                 boolean focus=main?active&&!optionFocus:optionFocus&&index>=choices.getInt("firstEnabled",0)&&options.getSelectedItemPosition()==index;
                 if(focus){
-                    if(theme()==4){box(canvas,8,3,w-8,h-3,(accent()&0x00ffffff)|0x26000000,0);box(canvas,8,10,11,h-10,accent(),0);}
+                    if(theme()==4)selected(canvas,8,3,w-8,h-3);
                     else selected(canvas,theme()==2?8:0,theme()==2?9:0,w-(theme()==2?8:0),h-(theme()==2?9:0));
                 }
-                int color=theme()==5&&focus?0xff142438:theme()==4&&focus||(active||!main&&checked)&&!focus?accent():0xffe1e3e6;
+                int color=(theme()==5||theme()==6)&&focus?0xff142438:(active||!main&&checked)&&!focus?accent():0xffe1e3e6;
                 // Selection, label length and radio decoration never change
                 // the typeface, weight, size or baseline of a menu sibling.
                 float size=textSize;
@@ -523,7 +588,7 @@ public abstract class SharedTvUi implements TvUi {
         protected void onDraw(Canvas canvas){float d=dialogScale(),x=(getWidth()-960*d)/2,y=(getHeight()-540*d)/2;canvas.save();canvas.translate(x,y+contentOffsetY()*d);canvas.scale(d,d);
             if(theme()==4){box(canvas,161,82,799,464,0xcc202733,0);icon.setBounds(432,139,528,235);icon.draw(canvas);center(canvas,"网页电视",180,780,286,fontSize()*1.35f,0xffeeeeef);center(canvas,"感谢使用，精彩下次继续",180,780,326,fontSize(),0xffbac3cf);}
             else{box(canvas,178,105,782,437,panel(),theme()==2?18:8);center(canvas,"您确认现在退出吗？",210,750,223,fontSize(),0xffeeeeef);}
-            for(int i=0;i<2;i++){float l=buttonLeft(i),top=buttonTop(),width=buttonWidth(),height=theme()==4?54:60;if(i==selected){if(theme()==4)box(canvas,l,top,l+width,top+height,0xff008cff,3);else selected(canvas,l,top,l+width,top+height);}else box(canvas,l,top,l+width,top+height,theme()==2?0xff777777:0x663f3f3f,theme()==2?30:3);float size=fontSize();p.setTextSize(size);float baseline=top+(height-p.ascent()-p.descent())/2;center(canvas,i==0?"功能设置":"确认退出",l,l+width,baseline,size,theme()==5&&i==selected?0xff142438:0xffeeeeef);}canvas.restore();}
+            for(int i=0;i<2;i++){float l=buttonLeft(i),top=buttonTop(),width=buttonWidth(),height=theme()==4?54:60;if(i==selected){if(theme()==4)box(canvas,l,top,l+width,top+height,0xff008cff,3);else selected(canvas,l,top,l+width,top+height);}else box(canvas,l,top,l+width,top+height,theme()==2?0xff777777:0x663f3f3f,theme()==2?30:3);float size=fontSize();p.setTextSize(size);float baseline=top+(height-p.ascent()-p.descent())/2;center(canvas,i==0?"功能设置":"确认退出",l,l+width,baseline,size,(theme()==5||theme()==6)&&i==selected?0xff142438:0xffeeeeef);}canvas.restore();}
         public boolean onKeyDown(int key,KeyEvent e){if(key==KeyEvent.KEYCODE_DPAD_LEFT||key==KeyEvent.KEYCODE_DPAD_RIGHT){selected=key==KeyEvent.KEYCODE_DPAD_LEFT?0:1;invalidate();return true;}if(key==KeyEvent.KEYCODE_DPAD_CENTER||key==KeyEvent.KEYCODE_ENTER){events.action(-1,selected);return true;}if(key==KeyEvent.KEYCODE_BACK){if(e.getRepeatCount()==0)events.action(-1,1);return true;}return super.onKeyDown(key,e);}
         public boolean onTouchEvent(android.view.MotionEvent e){if(e.getAction()==android.view.MotionEvent.ACTION_UP){float d=dialogScale(),x=(e.getX()-(getWidth()-960*d)/2)/d,y=(e.getY()-(getHeight()-540*d)/2)/d-contentOffsetY();boolean hit=false;for(int i=0;i<2;i++)if(y>=buttonTop()&&y<=buttonTop()+60&&x>=buttonLeft(i)&&x<=buttonLeft(i)+buttonWidth()){selected=i;events.action(-1,selected);hit=true;break;}if(!hit&&(y<(theme()==4?82:105)||y>(theme()==4?464:437)))events.dismiss();performClick();}return true;}
         public boolean performClick(){super.performClick();return true;}

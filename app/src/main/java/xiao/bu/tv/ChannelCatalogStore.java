@@ -133,7 +133,23 @@ final class ChannelCatalogStore extends SQLiteOpenHelper {
                 group.add(channel);
                 groups.add(group.build());
             }
-            return groups.toArray(new ChannelCatalog.Group[groups.size()]);
+            ChannelCatalog.Group[] loaded = groups.toArray(new ChannelCatalog.Group[groups.size()]);
+            String savedWidth = metadataValue(ChannelNameWidth.META);
+            float width = -1;
+            try { if (savedWidth != null) width = Float.parseFloat(savedWidth); }
+            catch (NumberFormatException ignored) { }
+            if (Float.isNaN(width) || width < 0 || width > ChannelNameWidth.MAX_CHARS) {
+                width = ChannelNameWidth.measure(loaded);
+                // Migrate old snapshots once without reparsing their source files.
+                try {
+                    database.execSQL("INSERT OR REPLACE INTO catalog_meta(name,value) VALUES(?,?)",
+                            new Object[]{ChannelNameWidth.META, Float.toString(width)});
+                } catch (SQLiteException error) {
+                    Log.w(TAG, "Unable to cache channel name width", error);
+                }
+            }
+            ChannelNameWidth.restore(width);
+            return loaded;
         } catch (RuntimeException error) {
             Log.w(TAG, "Unable to read channel catalog", error);
             return null;
@@ -162,6 +178,8 @@ final class ChannelCatalogStore extends SQLiteOpenHelper {
     }
 
     boolean replace(ChannelCatalog.Group[] groups, String fingerprint) {
+        final float nameWidth = ChannelNameWidth.measure(groups);
+        ChannelNameWidth.restore(nameWidth);
         SQLiteDatabase database;
         try {
             database = getWritableDatabase();
@@ -234,6 +252,8 @@ final class ChannelCatalogStore extends SQLiteOpenHelper {
                 }
             }
             database.execSQL("INSERT INTO catalog_meta(name,value) VALUES('complete','1')");
+            database.execSQL("INSERT INTO catalog_meta(name,value) VALUES(?,?)",
+                    new Object[]{ChannelNameWidth.META, Float.toString(nameWidth)});
             if (fingerprint != null && fingerprint.length() > 0) {
                 SQLiteStatement metadata = database.compileStatement(
                         "INSERT INTO catalog_meta(name,value) VALUES('fingerprint',?)");

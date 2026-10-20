@@ -7,6 +7,12 @@ final class UiScalePolicy {
 
     private UiScalePolicy() { }
 
+    static boolean isCustomPercent(String mode) {
+        if (mode == null || !mode.matches("[1-9][0-9]{1,2}")) return false;
+        int percent = Integer.parseInt(mode);
+        return percent >= 10 && percent <= 300;
+    }
+
     static float resolve(int width, int height, String mode, float diagonalInches, float density) {
         float preset = 1f;
         if ("small".equals(mode)) preset = .80f;
@@ -14,6 +20,7 @@ final class UiScalePolicy {
         else if ("large".equals(mode)) preset = 1.25f;
         else if ("extra_large".equals(mode)) preset = 1.50f;
         else if ("extra_extra_large".equals(mode)) preset = 2f;
+        else if (isCustomPercent(mode)) preset = Integer.parseInt(mode) / 100f;
         float baseline = viewportScale(width, height, density);
         if (width <= 0 || height <= 0) return baseline * preset;
         // Manual enlargement can use more space, but keep at least three rows accessible.

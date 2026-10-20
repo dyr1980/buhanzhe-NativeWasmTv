@@ -1,4 +1,4 @@
-"""Six API14 entry JARs. Contract and shared renderer belong only to the host APK."""
+"""Five API14 entry JARs. Contract and shared renderer belong only to the host APK."""
 import argparse, hashlib, json, os, pathlib, shutil, subprocess, tempfile, zipfile
 root=pathlib.Path(__file__).resolve().parents[3]
 plugin=pathlib.Path(__file__).resolve().parents[1]
@@ -6,7 +6,7 @@ p=argparse.ArgumentParser();p.add_argument('--sdk',default=os.environ.get('ANDRO
 p.add_argument('--java-home',default=os.environ.get('JAVA_HOME',str(root/'.codex-tmp/jdk8/runtime/jdk8u504-b01')))
 a=p.parse_args();sdk=pathlib.Path(a.sdk);java=pathlib.Path(a.java_home)/'bin'
 out=root/'.codex-tmp/tv-ui-build';out.mkdir(parents=True,exist_ok=True)
-styles=['ui2','ui3','ui4','ui5','ui6']
+styles=['ui2','ui3','ui4','ui5']
 source=plugin/'src/xiao/bu/plugins/tvui';source.mkdir(parents=True,exist_ok=True)
 for id in styles:
  name='Theme'+id[-1]

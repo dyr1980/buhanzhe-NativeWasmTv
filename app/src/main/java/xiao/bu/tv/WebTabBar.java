@@ -55,7 +55,6 @@ final class WebTabBar extends LinearLayout {
         void onGlobalAdBlockChanged(boolean enabled);
         void onWebRtcChanged(boolean enabled);
         void onEnterFullscreen();
-        void onTogglePageCover();
     }
 
     static final class Tab {
@@ -106,7 +105,6 @@ final class WebTabBar extends LinearLayout {
     private final LinearLayout bookmarkRow;
     private final BrowserIconView addTabButton;
     private final BrowserIconView moreButton;
-    private final BrowserIconView coverButton;
     private final Callback callback;
     private final float density;
     private final Paint bookmarkTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -177,9 +175,6 @@ final class WebTabBar extends LinearLayout {
         LinearLayout.LayoutParams addTabParams = new LinearLayout.LayoutParams(dp(36), dp(TAB_CARD_HEIGHT_DP));
         addTabParams.setMargins(dp(2), 0, dp(2), 0);
         tabsRow.addView(addTabButton, addTabParams);
-        coverButton = iconAction(BrowserIconView.COVER, "开启网页遮罩",
-                v -> callback.onTogglePageCover());
-        tabsRow.addView(coverButton, new LayoutParams(dp(36), dp(TAB_CARD_HEIGHT_DP)));
         addView(tabsRow, new LayoutParams(LayoutParams.MATCH_PARENT, dp(TAB_ROW_HEIGHT_DP)));
 
         bookmarkRow = row();
@@ -205,10 +200,6 @@ final class WebTabBar extends LinearLayout {
 
     int heightPx() { return dp(heightDp()); }
 
-    void setPageCovered(boolean covered) {
-        coverButton.setIconColor(covered ? 0xff007aff : 0xff303134);
-        coverButton.setContentDescription(covered ? "关闭网页遮罩" : "开启网页遮罩");
-    }
 
     void setInterfaceScale(float scale) {
         float safeScale = Math.max(0.35f, Math.min(1.60f, scale));
@@ -228,7 +219,6 @@ final class WebTabBar extends LinearLayout {
         addParams.height = dp(TAB_CARD_HEIGHT_DP);
         addParams.setMargins(dp(2), 0, dp(2), 0);
         addTabButton.setLayoutParams(addParams);
-        coverButton.setLayoutParams(new LayoutParams(dp(36), dp(TAB_CARD_HEIGHT_DP)));
 
         ViewGroup.LayoutParams bookmarkParams = bookmarkRow.getLayoutParams();
         bookmarkParams.height = dp(28);

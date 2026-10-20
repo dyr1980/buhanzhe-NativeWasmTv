@@ -166,7 +166,7 @@
     <LinearLayout
         android:id="@+id/channel_bar"
         android:layout_width="match_parent"
-        android:layout_height="118dp"
+        android:layout_height="108dp"
         android:layout_gravity="bottom|center_horizontal"
         android:layout_marginBottom="18dp"
         android:background="@drawable/player_info_background"
@@ -179,12 +179,7 @@
         android:visibility="gone">
 
 
-        <xiao.bu.tv.LoadingSpinnerView
-            android:id="@+id/channel_progress"
-            android:layout_width="26dp"
-            android:layout_height="26dp"
-            android:layout_marginRight="10dp"
-            android:visibility="invisible" />
+
 
         <LinearLayout
             android:layout_width="0dp"
@@ -238,15 +233,27 @@
                 android:layout_marginBottom="3dp"
                 android:background="#40FFFFFF" />
 
-            <TextView
-                android:id="@+id/status_text"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="3dp"
-                android:ellipsize="end"
-                android:maxLines="1"
-                android:textColor="#B8FFFFFF"
-                android:textSize="12sp" />
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+                <TextView
+                    android:id="@+id/status_text"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:textColor="#B8FFFFFF"
+                    android:textSize="12sp" />
+                <xiao.bu.tv.LoadingSpinnerView
+                    android:id="@+id/channel_progress"
+                    android:layout_width="16dp"
+                    android:layout_height="16dp"
+                    android:layout_marginLeft="8dp"
+                    android:visibility="invisible" />
+            </LinearLayout>
 
             <TextView
                 android:id="@+id/channel_epg"
@@ -270,10 +277,10 @@
         android:layout_height="match_parent"
         android:background="@drawable/channel_panel_background"
         android:orientation="vertical"
-        android:paddingLeft="14dp"
-        android:paddingTop="4dp"
-        android:paddingRight="14dp"
-        android:paddingBottom="4dp"
+        android:paddingLeft="8dp"
+        android:paddingTop="8dp"
+        android:paddingRight="0dp"
+        android:paddingBottom="8dp"
         android:visibility="gone">
 
         <LinearLayout
@@ -290,11 +297,11 @@
                 android:choiceMode="singleChoice"
                 android:clipToPadding="false"
                 android:divider="@android:color/transparent"
-                android:dividerHeight="5dp"
+                android:dividerHeight="4dp"
                 android:focusableInTouchMode="true"
                 android:listSelector="@drawable/channel_group_item_background"
-                android:paddingTop="2dp"
-                android:paddingBottom="2dp" />
+                android:paddingTop="0dp"
+                android:paddingBottom="0dp" />
 
             <View
                 android:layout_width="1dp"
@@ -311,11 +318,11 @@
                 android:choiceMode="singleChoice"
                 android:clipToPadding="false"
                 android:divider="@android:color/transparent"
-                android:dividerHeight="3dp"
+                android:dividerHeight="4dp"
                 android:focusableInTouchMode="true"
                 android:listSelector="@drawable/channel_item_background"
-                android:paddingTop="2dp"
-                android:paddingBottom="2dp" />
+                android:paddingTop="0dp"
+                android:paddingBottom="0dp" />
 
             <TextView
                 android:id="@+id/epg_toggle"
@@ -344,6 +351,7 @@
                 android:id="@+id/epg_column"
                 android:layout_width="wrap_content"
                 android:layout_height="match_parent"
+                android:paddingRight="8dp"
                 android:orientation="vertical"
                 android:visibility="gone">
 
@@ -368,7 +376,7 @@
                     android:ellipsize="end"
                     android:maxLines="2"
                     android:paddingLeft="8dp"
-                    android:paddingTop="6dp"
+                    android:paddingTop="8dp"
                     android:paddingRight="8dp"
                     android:paddingBottom="8dp"
                     android:text="正在加载节目单"
@@ -388,8 +396,8 @@
                     android:dividerHeight="4dp"
                     android:focusableInTouchMode="true"
                     android:listSelector="@drawable/channel_item_background"
-                    android:paddingTop="2dp"
-                    android:paddingBottom="4dp" />
+                    android:paddingTop="0dp"
+                    android:paddingBottom="0dp" />
             </LinearLayout>
 
         </LinearLayout>

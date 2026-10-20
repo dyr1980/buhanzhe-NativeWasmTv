@@ -1120,6 +1120,29 @@ test('playback position switch rolls back on failed save', () => {
   const input=b.elements.get('showPlaybackPosition');input.checked=true;c.savePlaybackPosition();
   b.requests.find(r=>r.url==='/api/settings').respond({error:'failed'},500);assert.equal(input.checked,false);
 });
+test('UI scale presets and custom slider preserve choices and only save on release', () => {
+  const b=browser('playback'),c=b.context;
+  b.requests[0].respond({settings:{uiScaleMode:'slightly_small'}});
+  const select=b.elements.get('uiScaleMode'),slider=b.elements.get('uiScalePercent'),controls=b.elements.get('uiScaleCustomControls');
+  assert.equal(select.value,'slightly_small');assert.equal(controls.style.display,'none');
+  select.value='custom';c.uiScaleModeChanged();assert.equal(controls.style.display,'block');
+  b.requests.find(r=>r.url==='/api/settings').respond({ok:true});
+  const before=b.requests.length;slider.value='50';c.uiScalePreview();assert.equal(b.requests.length,before);
+  assert.equal(b.elements.get('uiScalePercentValue').textContent,'50%');
+  c.renderPageState();assert.equal(slider.value,'50');assert.equal(select.value,'custom');
+  c.saveDisplay();assert.equal(JSON.parse(b.requests[b.requests.length-1].body).uiScaleMode,'50');
+  b.requests[b.requests.length-1].respond({ok:true});c.state.settings.uiScaleMode='50';c.renderPageState();
+  assert.equal(select.value,'custom');assert.equal(slider.value,'50');
+  for(const mode of ['small','slightly_small','standard','large','extra_large','extra_extra_large']) {
+    select.value=mode;c.uiScaleModeChanged();assert.equal(controls.style.display,'none');
+    assert.equal(JSON.parse(b.requests[b.requests.length-1].body).uiScaleMode,mode);
+    b.requests[b.requests.length-1].respond({ok:true});
+  }
+  select.value='custom';
+  for(const value of ['', '0', '9', '301', '50.5', 'NaN']) {
+    const before=b.requests.length;slider.value=value;c.saveDisplay();assert.equal(b.requests.length,before,value);
+  }
+});
 test('fill mode saves and remains selected alongside existing aspect modes', () => {
   const html=fs.readFileSync(path.join(root,'pages/playback.html'),'utf8');
   for(const mode of ['fit','stretch','fill','16:9','4:3']) assert.ok(html.includes('value="'+mode+'"'));

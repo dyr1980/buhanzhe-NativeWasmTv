@@ -9,6 +9,15 @@ import android.webkit.ValueCallback;
 final class ChannelFilePicker {
     static final int REQUEST=39671;
     private ValueCallback<Uri[]> pending;
+    void openDirectory(Activity activity,ValueCallback<Uri[]> callback) {
+        cancel();pending=callback;
+        if(android.os.Build.VERSION.SDK_INT<21){cancel();return;}
+        Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        if(android.os.Build.VERSION.SDK_INT>=26)intent.putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI,
+                Uri.parse("content://com.android.externalstorage.documents/document/primary%3AMusic"));
+        try{activity.startActivityForResult(intent,REQUEST);}
+        catch(android.content.ActivityNotFoundException error){cancel();}
+    }
     void open(Activity activity,ValueCallback<Uri[]> callback,String type,boolean multiple) {
         cancel();pending=callback;
         Intent intent=new Intent(android.os.Build.VERSION.SDK_INT>=19?Intent.ACTION_OPEN_DOCUMENT:Intent.ACTION_GET_CONTENT);

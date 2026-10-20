@@ -14,6 +14,9 @@ public interface ChannelPlugin {
     interface BrowserHost extends Host {
         void chooseFiles(android.webkit.ValueCallback<android.net.Uri[]> callback,String accept,boolean multiple);
     }
+    interface DirectoryHost extends BrowserHost {
+        void chooseDirectory(android.webkit.ValueCallback<android.net.Uri[]> callback);
+    }
     View create(Context context, ClassLoader resources, JSONObject config, Host host) throws Exception;
     void update(long positionMs, boolean playing);
     void dispose();

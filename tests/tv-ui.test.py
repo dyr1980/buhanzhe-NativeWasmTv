@@ -6,6 +6,7 @@ root=Path(__file__).resolve().parent.parent
 assert not list((root/'app/src/main/assets/tv-ui').glob('*.jar'))
 loader=(root/'app/src/main/java/xiao/bu/tv/TvUiPlugin.java').read_text(encoding='utf-8')
 assert 'DexClassLoader' not in loader and 'new BuiltinTheme' in loader
+assert '银雾玻璃' in loader and '影院红黑' not in loader
 with tempfile.TemporaryDirectory() as folder:
     out=Path(folder)
     files={
@@ -63,7 +64,7 @@ with tempfile.TemporaryDirectory() as folder:
               h.state.putString("updateState","available");h.state.putString("updateVersion","1.9.0");ok(menu.options(7).getStringArray("items").length==2&&menu.options(7).getStringArray("items")[1].equals("更新至 1.9.0"));menu.action(7,1);ok(h.where.equals("install-update"));
               ok(menu.options(-1).getStringArray("items").length==0);menu.action(100,0);
             }
-            System.out.println("PASS 6 DEX JARs and 5 complete menu action models, ratio/decoder/source/timeout/settings");
+            System.out.println("PASS 6 built-in themes and 5 complete menu action models, ratio/decoder/source/timeout/settings");
           }
         }'''
     }
