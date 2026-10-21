@@ -17,7 +17,7 @@
 
     <!-- 首屏加载遮罩：内联样式，随 HTML 首帧一起绘制，不等 index.css 与 JS bundle。
          由 src/utils/appSplash.ts 在 React 挂载后淡出并移除。 -->
-    <style>html,body{background-color:#09090b}#app-splash{z-index:2147483000;background-color:#09090b;justify-content:center;align-items:center;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;transition:opacity .32s;display:flex;position:fixed;inset:0}#app-splash.is-hiding{opacity:0;pointer-events:none}#app-splash .app-splash-inner{opacity:0;flex-direction:column;align-items:center;gap:28px;animation:.42s .18s forwards app-splash-in;display:flex}#app-splash .app-splash-title{letter-spacing:.06em;text-indent:.06em;font-size:clamp(64px,17vw,200px);font-weight:600;line-height:1}#app-splash .app-splash-title span{text-align:center;color:#fff;text-shadow:0 0 8px rgba(255,255,255,.55),0 0 28px rgba(255,255,255,.3);transform-origin:50% 78%;font-family:inherit;display:inline-block}#app-splash .app-splash-wave{align-items:center;gap:clamp(6px,1.1vw,11px);height:clamp(42px,7.5vw,92px);display:flex}#app-splash .app-splash-wave span{width:var(--w,5px);height:100%;transform:scaleY(var(--floor,.18));background-color:rgba(255, 255, 255, var(--alpha,.85));box-shadow:0 0 var(--glow,14px) rgba(255,255,255,.35);animation:1.1s ease-in-out infinite app-splash-wave}#app-splash .app-splash-wave span:nth-child(2n){animation-delay:-550ms}@keyframes app-splash-in{to{opacity:1}}@keyframes app-splash-wave{0%,to{transform:scaleY(var(--floor,.18))}50%{transform:scaleY(var(--peak,1))}}@media (prefers-reduced-motion:reduce){#app-splash .app-splash-inner{opacity:1;animation:none}#app-splash .app-splash-wave span{transform:scaleY(calc(var(--peak,.5) * .7));opacity:.5;animation:none}}</style>
+    <style>html,body{background-color:#09090b}#app-splash{z-index:2147483000;background-color:#09090b;justify-content:center;align-items:center;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;transition:opacity .32s;display:flex;position:fixed;top:0;bottom:0;left:0;right:0}#app-splash.is-hiding{opacity:0;pointer-events:none}#app-splash .app-splash-inner{opacity:0;flex-direction:column;align-items:center;gap:28px;animation:.42s .18s forwards app-splash-in;display:flex}#app-splash .app-splash-title{letter-spacing:.06em;text-indent:.06em;font-size:max(64px,min(17vw,200px));font-weight:600;line-height:1}#app-splash .app-splash-title span{text-align:center;color:#fff;text-shadow:0 0 8px rgba(255,255,255,.55),0 0 28px rgba(255,255,255,.3);transform-origin:50% 78%;font-family:inherit;display:inline-block}#app-splash .app-splash-wave{align-items:center;gap:max(6px,min(1.1vw,11px));height:max(42px,min(7.5vw,92px));display:flex}#app-splash .app-splash-wave span{width:var(--w,5px);height:100%;transform:scaleY(var(--floor,.18));background-color:rgba(255, 255, 255, var(--alpha,.85));box-shadow:0 0 var(--glow,14px) rgba(255,255,255,.35);animation:1.1s ease-in-out infinite app-splash-wave}#app-splash .app-splash-wave span:nth-child(2n){animation-delay:-550ms}@keyframes app-splash-in{to{opacity:1}}@keyframes app-splash-wave{0%,to{transform:scaleY(var(--floor,.18))}50%{transform:scaleY(var(--peak,1))}}@media (prefers-reduced-motion:reduce){#app-splash .app-splash-inner{opacity:1;animation:none}#app-splash .app-splash-wave span{transform:scaleY(calc(var(--peak,.5) * .7));opacity:.5;animation:none}}</style>
   <script type="importmap">
 {
   "imports": {
@@ -33,10 +33,12 @@
   }
 }
 </script>
-  <script type="module" crossorigin src="/assets/main-DbzXYLKH.js"></script>
-  <link rel="modulepreload" crossorigin href="/assets/preload-helper-vuKwV25Y.js">
+  <script src="./ntv-system.js"></script><script data-ntv-entry="/assets/main-C-pLDI4E.js">document.addEventListener("DOMContentLoaded",function(){System.import("/assets/main-C-pLDI4E.js").catch(function(e){window.__NTV_FOLIA_STARTUP_ERROR__=String(e.stack||e);console.error("Folia startup: "+window.__NTV_FOLIA_STARTUP_ERROR__);});});</script>
+  <link rel="modulepreload" crossorigin href="/assets/preload-helper-CjjX_lzZ.js">
   <link rel="modulepreload" crossorigin href="/assets/modulepreload-polyfill-P2Xu9kJm.js">
-  <link rel="modulepreload" crossorigin href="/assets/frameRateLimiter-DYVxXwkE.js">
+  <link rel="modulepreload" crossorigin href="/assets/defineProperty-BbfpZ9Tg.js">
+  <link rel="modulepreload" crossorigin href="/assets/frameRateLimiter-B_IF2yIB.js">
+  <link rel="stylesheet" crossorigin href="/assets/main-Du0HiuWH.css">
 </head>
   <body>
     <div id="app-splash" role="status" aria-live="polite" aria-label="Loading Folia">

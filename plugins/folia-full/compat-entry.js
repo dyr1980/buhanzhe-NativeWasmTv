@@ -1,4 +1,18 @@
-// Polyfill APIs newer than the minimum WebView 111; native implementations stay in use.
+// Runtime APIs missing from WebView 61; native implementations stay in use.
+import 'core-js/stable/index.js';
+import 'core-js/actual/structured-clone.js';
+import '@formatjs/intl-locale/polyfill.js';
+import '@formatjs/intl-segmenter/polyfill.js';
+import 'focus-visible';
+import './compat-browser.js';
+import './compat-style.js';
+import {ResizeObserver as ResizeObserverFallback} from '@juggle/resize-observer';
+import {AbortController as AbortControllerFallback, AbortSignal as AbortSignalFallback} from 'abort-controller/dist/abort-controller.mjs';
+if (typeof globalThis.ResizeObserver === 'undefined') globalThis.ResizeObserver = ResizeObserverFallback;
+if (typeof globalThis.AbortController === 'undefined') {
+    globalThis.AbortController = AbortControllerFallback;
+    globalThis.AbortSignal = AbortSignalFallback;
+}
 import 'core-js/actual/promise/with-resolvers.js';
 import 'core-js/actual/object/group-by.js';
 import 'core-js/actual/map/group-by.js';

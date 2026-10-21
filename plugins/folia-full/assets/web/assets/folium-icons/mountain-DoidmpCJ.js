@@ -1,0 +1,1 @@
+System.register(["../lucide-icons-gYazRYpo.js"],function(_export,_context){"use strict";var e,t,n;return{setters:[function(_lucideIconsGYazRYpoJs){e=_lucideIconsGYazRYpoJs.Ns;}],execute:function(){_export("__iconData",t={name:`mountain`,size:24,node:[[`path`,{d:`m8 3 4 8 5-5 5 15H2L8 3z`,key:`otkl63`}]]});t.node;_export("default",n=e(t));}};});

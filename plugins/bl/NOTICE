@@ -1,0 +1,29 @@
+BL native channel
+
+UI reference and bundled images/icons:
+  Extracted from the user-supplied BBLL1.5.2.apk (com.xx.blbl, version 1.5.2).
+  APK SHA-256: 07dc8e12a5234ae4cb4556ff928b84be73f5378488d9bd34317b2f8c8b62f694
+  Original layouts are retained in reference/ for provenance; Android Views are rebuilt in Java.
+  BBLL assets remain the property of their respective authors. Their inclusion does not
+  imply that BBLL or its bundled artwork is covered by the newBV or ZXing licenses.
+
+API contract and WBI signing reference:
+  https://github.com/Frost819/newBV
+  Revision bc21a8a28d2b80fb9986c9cb5e9f4ab82f070a47
+  Copyright (c) 2022 aaa1115910 (BV), Copyright (c) 2026 Frost819 (newBV).
+  MIT license: LICENSE-newBV. Java compatibility adaptation in this directory.
+
+QR encoding:
+  ZXing core 3.3.0; only QRCodeWriter and its source dependency closure are compiled.
+  Copyright ZXing authors. Apache License, Version 2.0: LICENSE-ZXing.
+
+Host-provided libraries (not bundled in bl.jar):
+  OkHttp 3.12.13, Okio 1.15.0 and IJK Java/native player 0.8.8.
+  The host retains their existing distribution and license obligations.
+
+DASH video/audio merge (Android API 16 and later):
+  ExoPlayer core 2.9.6, https://github.com/google/ExoPlayer/tree/r2.9.6
+  Copyright (C) The Android Open Source Project.
+  Apache License, Version 2.0: LICENSE-ExoPlayer.
+  Core only; native channel controls are Java Views, without Exo UI/Activity modules.
+  Its DataSource uses the host's shared OkHttp client.

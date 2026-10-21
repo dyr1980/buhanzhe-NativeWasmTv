@@ -1182,4 +1182,31 @@ test('phone merge preserves DIYP catchup templates separately for each live line
   assert.equal(restored.entries[1].catchup.catchup,'append');
   assert.equal(restored.entries[1].catchup['catchup-source'],'?start={utc}');
 });
+
+
+
+test('group polling retains a clean open editor until the user closes it', () => {
+  const b=browser('groups'), c=b.context;
+  let closed=0, rendered=0;
+  c.closeGroupChannels=()=>{ closed++; c.channelEditor=null; };
+  c.renderPlaylistGroupSettings=()=>rendered++;
+  c.state={settings:{playlistGroups:[{id:'group:new',name:'Updated',channelCount:1}]}};
+  c.groupSignature='old'; c.channelEditor={dirty:false,fullscreen:false};
+  for(let i=0;i<50;i++) c.renderPageState();
+  assert.equal(closed,0); assert.equal(rendered,0);
+  c.channelEditor=null; c.renderPageState();
+  assert.equal(closed,1); assert.equal(rendered,1);
+  c.renderPageState(); assert.equal(rendered,1);
+});
+
+
+
+test('save and reload share one busy interval and restore enabled group controls', () => {
+  const b=browser('groups'), c=b.context;
+  const controls=[{disabled:false},{disabled:true}];
+  c.document.getElementById('playlistGroupSettings').querySelectorAll=()=>controls;
+  c.setGroupBusy(true); c.setGroupBusy(true); c.setGroupBusy(false);
+  assert.equal(controls[0].disabled,false); assert.equal(controls[1].disabled,true);
+  c.setGroupBusy(false); assert.equal(controls[0].disabled,false);
+});
 console.log('All ' + passed + ' control-page regression scenarios passed.');

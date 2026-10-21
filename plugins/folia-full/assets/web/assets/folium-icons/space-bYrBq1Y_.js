@@ -1,0 +1,1 @@
+System.register(["../lucide-icons-gYazRYpo.js"],function(_export,_context){"use strict";var e,t,n;return{setters:[function(_lucideIconsGYazRYpoJs){e=_lucideIconsGYazRYpoJs.Ns;}],execute:function(){_export("__iconData",t={name:`space`,size:24,node:[[`path`,{d:`M22 17v1c0 .5-.5 1-1 1H3c-.5 0-1-.5-1-1v-1`,key:`lt2kga`}]]});t.node;_export("default",n=e(t));}};});

@@ -17,6 +17,8 @@ args = parser.parse_args()
 manifest = json.loads((here/'assets/upstream-manifest.json').read_text(encoding='utf-8'))
 if manifest.get('revision') != '851af3478bfa98b68dbd21fbc89120cc11b7ea96':
     raise SystemExit('Run build-web.py to compile the pinned official source first')
+if manifest.get('target') != 'chrome61' or manifest.get('minimumWebView') != 61:
+    raise SystemExit('Run build-web.py to compile the Chrome 61 compatibility frontend first')
 for name, expected in manifest['files'].items():
     if hashlib.sha256((here/'assets/web'/name).read_bytes()).hexdigest() != expected:
         raise SystemExit('Generated frontend changed: '+name)
@@ -43,7 +45,7 @@ target.mkdir(exist_ok=True)
 jar = target / 'folia-full.jar'
 with zipfile.ZipFile(jar, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
     archive.write(dex/'classes.dex', 'classes.dex')
-    archive.writestr('channel-plugin.json', json.dumps(dict(api=1, version=5, minSdk=24, minWebView=111,
+    archive.writestr('channel-plugin.json', json.dumps(dict(api=1, version=7, minSdk=24, minWebView=61,
                      entry='xiao.bu.channel.FoliaFull', page='web/index.html')))
     for file in (here/'assets').rglob('*'):
         if file.is_file():

@@ -1,0 +1,36 @@
+{
+  "android14.jar": {
+    "url": "https://dl.google.com/android/repository/android-14_r04.zip",
+    "archiveSha256": "da1af15c77ba41d062eb6d0ef5921cc424ab6167587033b830609d65f04802b6",
+    "entry": "android-4.0.2/android.jar",
+    "sha256": "1fbb4b4e493389f99e27dff98dbfed1b134855f204948229f4f31cb66908205f"
+  },
+  "json.jar": {
+    "maven": "org/json/json/20090211/json-20090211.jar",
+    "sha256": "055be110a570f9cda3eba8d70a006ff46c77a048bc67868524879211c48b330a"
+  },
+  "xmlpull.jar": {
+    "maven": "xmlpull/xmlpull/1.1.3.1/xmlpull-1.1.3.1.jar",
+    "sha256": "34e08ee62116071cbb69c0ed70d15a7a5b208d62798c59f2120bb8929324cb63"
+  },
+  "zxing-sources.jar": {
+    "maven": "com/google/zxing/core/3.3.0/core-3.3.0-sources.jar",
+    "sha256": "8f73ff831c4fc843e4c6d6b9e22352ed7de4ea18aaf06e153ea8658e0e73a22f"
+  },
+  "okhttp.jar": {
+    "maven": "com/squareup/okhttp3/okhttp/3.12.13/okhttp-3.12.13.jar",
+    "sha256": "508234e024ef7e270ab1a6d5b356f5b98e786511239ca986d684fd1e2cf7bc82"
+  },
+  "okio.jar": {
+    "maven": "com/squareup/okio/okio/1.15.0/okio-1.15.0.jar",
+    "sha256": "693fa319a7e8843300602b204023b7674f106ebcb577f2dd5807212b66118bd2"
+  },
+  "ijkplayer-java.aar": {
+    "maven": "tv/danmaku/ijk/media/ijkplayer-java/0.8.8/ijkplayer-java-0.8.8.aar",
+    "sha256": "408d8bb7905ecd3cc3e427ec46dc74be0ce8cdaa0508267188ffcdcf0c29c68d"
+  },
+  "exoplayer-core.aar": {
+    "url": "https://maven.aliyun.com/repository/jcenter/com/google/android/exoplayer/exoplayer-core/2.9.6/exoplayer-core-2.9.6.aar",
+    "sha256": "92697fca8befb810164dc06d2d76e26cfa92235b2031f4ad1ed28f5ef4d5c095"
+  }
+}

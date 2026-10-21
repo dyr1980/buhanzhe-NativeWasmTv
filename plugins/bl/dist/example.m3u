@@ -1,0 +1,3 @@
+#EXTM3U
+#EXTINF:-1 group-title="视频",BL 哔哩哔哩
+https://raw.githubusercontent.com/buhanzhe/NativeWasmTv/afa3aec62c3c3b03dd8bb2cb70427e6a8a8b37fe/plugins/bl/dist/bl.jar?sha256=99423529ef66cbfb32a993d3dd62c661eae4a70127a50ec253dbe82775a37ecc

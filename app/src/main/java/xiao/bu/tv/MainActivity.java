@@ -418,6 +418,12 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
     private boolean channelPanelInitialized;
     private EpgManager epgManager;
     private EpgManager.Program catchupProgram;
+    private boolean catchupTimeVerified;
+    private String catchupValidationError="";
+    private CatchupPreloader catchupPreloader;
+    private int catchupLoadGeneration;
+    private HlsProxyServer preparedCatchupProxy;
+    private int preparedCatchupRequest=-1;
     private int catchupGroupIndex=-1,catchupChannelIndex=-1;
 
     private YangshipinWebResolver yangshipinResolver;
@@ -1204,7 +1210,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         epgFavorite = (TextView) findViewById(R.id.epg_favorite);
         epgToggle.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
-                if (!epgEnabled || !hasBrowsingEpg(browsingChannelPosition())) return;
+                if (!canOpenBrowsingEpg(browsingChannelPosition())) return;
                 epgExpanded = !epgExpanded;
                 showEpgForBrowsingChannel(browsingChannelPosition());
                 if(epgExpanded)focusEpgList();else{rememberEpgCursor();channelList.requestFocus();}
@@ -1694,6 +1700,9 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             videoView.setFrameCovered(false);
         }
         standbyVideoView.animate().cancel();
+        // Translated SurfaceViews retain their last buffer. Keep the retired
+        // output covered too, including while a later menu/layout is redrawn.
+        standbyVideoView.setFrameCovered(true);
         standbyVideoView.setTranslationX(-Math.max(1,root.getWidth()));
         standbyVideoView.setTranslationY(0f);
         retiringVideoView=null;
@@ -2340,7 +2349,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         Bundle b=new Bundle();b.putStringArray("categories",new String[]{"界面大小"});b.putBoolean("focusOptions",true);b.putBoolean("remoteInput",remoteInputMode);
         tvUiMenu.show(root,"menu",b,new xiao.bu.tv.skin.TvUi.Events(){
             public Bundle options(int category){
-                Bundle choices=new Bundle();choices.putStringArray("items",new String[]{"较小 80%","稍小 90%","标准 100%","较大 125%","特大 150%","特特大 200%"});
+                Bundle choices=new Bundle();choices.putStringArray("items",new String[]{"80%","90%","100%","125%","150%","200%"});
                 int index=-1;for(int i=0;i<modes.length;i++)if(modes[i].equals(uiScaleMode))index=i;
                 choices.putInt("selected",index);return choices;
             }
@@ -6115,7 +6124,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             Channel channel=currentChannel();int source=catchupSource(channel,catchupProgram,currentSourceIndex,1);
             if(source<0){hideLoading();showChannelBar(channel.name,"节目已超出回看期限，按返回键回到直播");return;}
             try{String url=channel.catchupFor(source).url(channel.sourceUrl(source),catchupProgram.startMillis,catchupProgram.stopMillis,System.currentTimeMillis(),catchupProgram.catchupId);
-                currentSourceIndex=source;startChannel(index,catchupProgram,url);
+                beginCatchupPlayback(currentGroupIndex,index,source,catchupProgram,url);
             }catch(IOException error){hideLoading();showChannelBar(channel.name,"回看重试失败："+error.getMessage());}
             return;
         }
@@ -6123,6 +6132,10 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
     }
 
     private void startChannel(int index,EpgManager.Program archive,String archiveUrl) {
+        cancelPendingCatchup();
+        if(preparedCatchupProxy!=null&&(archive==null||preparedCatchupRequest!=playRequestId+1)){
+            closePreparedCatchupProxy();
+        }
         if (pendingCjsInstallRetry != null) {
             root.removeCallbacks(pendingCjsInstallRetry);
             pendingCjsInstallRetry = null;
@@ -6136,6 +6149,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         if (multimediaSuspended) return;
         playbackCompleted = false; completionControlsPending = false;
         catchupProgram=archive;
+        catchupTimeVerified=false;catchupValidationError="";
         cancelChannelManifest();
         cancelHttpResolve();
         cancelCustomSourceTimeout();
@@ -7004,8 +7018,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             }
             try{
                 String url=channel.catchupFor(source).url(channel.sourceUrl(source),archive.startMillis,archive.stopMillis,System.currentTimeMillis(),archive.catchupId);
-                currentSourceIndex=source;if(automatic)triedCustomSources++;else triedCustomSources=1;
-                startChannel(currentChannelIndex,archive,url);return true;
+                beginCatchupPlayback(currentGroupIndex,currentChannelIndex,source,archive,url);return true;
             }catch(IOException error){hideLoading();showChannelBar(channel.name,"回看线路无效："+error.getMessage());return true;}
         }
         currentSourceIndex = (currentSourceIndex + offset) % count;
@@ -7236,13 +7249,32 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
 
     private void resetProxyForChannelSwitch() throws IOException {
         boolean statefulCmgSource=nextProxyUsesCmgSession();
-        HlsProxyServer next = new HlsProxyServer(
+        HlsProxyServer staged=catchupProgram!=null&&preparedCatchupRequest==playRequestId?preparedCatchupProxy:null;
+        preparedCatchupProxy=null;preparedCatchupRequest=-1;
+        final HlsProxyServer next = staged!=null?staged:new HlsProxyServer(
                 this, statefulCmgSource, lowResourceDevice,
                 h264SpsCompatibility, cctvLiveEdgeHoldBackSegments(),
                 true,
                 playbackResolutionMode(),
                 cctvStartupDownloadSegments(), cctvStartupDecryptSegments(),
                 genericStartupPrefetchSegments());
+        if(catchupProgram!=null){
+            catchupTimeVerified=next.catchupTimeVerified();
+            final int request=playRequestId;final Channel channel=currentChannel();
+            IptvCatchup spec=channel.catchupFor(currentSourceIndex);
+            next.setCatchupWindow(catchupProgram.startMillis,catchupProgram.stopMillis,spec!=null&&spec.inferred(),
+                    (state,actual,error)->runOnUiThread(()->{
+                        if(request!=playRequestId||proxy!=next||catchupProgram==null)return;
+                        if(!error.isEmpty()){
+                            catchupValidationError=error;cancelChannelManifest();releasePlayer(true);hideLoading();
+                            showChannelBar(channel.name,error+"，按返回键回到直播");
+                            Toast.makeText(this,error,Toast.LENGTH_LONG).show();
+                        }else{
+                            catchupTimeVerified=state==CatchupTimeline.VERIFIED;
+                            if(prepared)refreshChannelPlaybackStatus();
+                        }
+                    }));
+        }
         {
             final AdaptiveLiveBuffer budget = new AdaptiveLiveBuffer();
             final int adaptiveRequest = playRequestId;
@@ -7281,7 +7313,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                 });
             });
         }
-        next.start();
+        if(staged==null)next.start();
         proxy = next;
         next.setPlaybackSuspended(backgroundPlaybackSuspended);
         proxyStatefulCmgSource = statefulCmgSource;
@@ -7843,6 +7875,13 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             return;
         }
         if (deferBackgroundPlayer(channel,streamUrl,false,directHttpMedia,true)) return;
+        if(catchupProgram!=null&&directHttpMedia){
+            IptvCatchup spec=channel.catchupFor(currentSourceIndex);
+            if(spec!=null&&spec.inferred()){
+                catchupValidationError="回看未确认：此线路未提供可核验的节目时间";
+                hideLoading();showChannelBar(channel.name,catchupValidationError+"，按返回键回到直播");return;
+            }
+        }
         logChannelSwitchStage(playRequestId, "url-resolved");
         receiverCastTransport = sanitizeRtspTransport(castTransport);
         if (isNtVCastSource(streamUrl)) {
@@ -7855,6 +7894,10 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             return;
         }
 
+        if(catchupProgram!=null&&proxy!=null&&!directHttpMedia
+                &&(streamUrl.startsWith("http://")||streamUrl.startsWith("https://"))){
+            prepareResolvedManifest(channel,streamUrl,false);return;
+        }
         if (!directHttpMedia && proxy != null
                 && (HttpStreamResolver.isExplicitHlsUrl(streamUrl) || proxy.knowsHlsPlaylist(streamUrl))
                 && !HlsProxyServer.needsSpecialDecrypt(streamUrl)) {
@@ -7881,7 +7924,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
     }
 
     private boolean shouldTryDirectHttpHls(String url) {
-        return proxy != null && currentCatalogSource() == ChannelCatalog.SOURCE_CUSTOM
+        return catchupProgram==null&&proxy != null && currentCatalogSource() == ChannelCatalog.SOURCE_CUSTOM
                 && !activeEmbeddedCctvResolver && !activeEmbeddedYangshipinResolver
                 && !activeEmbeddedCjsResolver && webStreamHeaders == null
                 && isResolvedHlsSource(url) && !useAndroidHlsPlayer(Build.VERSION.SDK_INT,url)
@@ -7912,6 +7955,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                 runOnUiThread(()->{
                     if(channelManifestThread!=current||request!=playRequestId||proxy!=candidate||isFinishing())return;
                     channelManifestThread=null;
+                    if(!catchupValidationError.isEmpty())return;
                     handleUnavailableSource("清单加载失败",error.toString());
                     Log.w(TAG,"HLS manifest preparation failed: "+channel.name,error);
                 });
@@ -8034,10 +8078,14 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             updateLoadingStatus("等待系统解码器释放");
             return;
         }
-        boolean systemHls = !isNtVCastSource(streamUrl) && (useAndroidHlsPlayer(Build.VERSION.SDK_INT, streamUrl)
+        boolean systemHls = !isNtVCastSource(streamUrl) && (!DECODE_MODE_SOFTWARE.equals(decodeMode)
+                && useAndroidHlsPlayer(Build.VERSION.SDK_INT, streamUrl)
+                || !DECODE_MODE_SOFTWARE.equals(decodeMode) && !forceSoftwareDecode
+                && useAndroidMp4Player(Build.VERSION.SDK_INT, streamUrl)
                 || useSystemDolbyVisionPlayer() || !forceSoftwareDecode
                 && androidMp3FallbackRequestId != playRequestId && useSystemAtmosPlayer(streamUrl));
-        if (systemHls || !channel.radio && androidMp3FallbackRequestId != playRequestId
+        if (systemHls || !DECODE_MODE_SOFTWARE.equals(decodeMode) && !channel.radio
+                && androidMp3FallbackRequestId != playRequestId
                 && useAndroidMp3Player(Build.VERSION.SDK_INT, streamUrl)) {
             startAndroidMediaPlayer(channel, streamUrl, forceSoftwareDecode, systemHls);
         } else {
@@ -8070,6 +8118,17 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         String path = Uri.parse(value).getPath();
         return path != null && (path.endsWith(".mp3") || path.endsWith("-mp3")
                 || value.contains("format=mp3") || value.contains("type=mp3"));
+    }
+
+    private static boolean useAndroidMp4Player(int sdkInt, String streamUrl) {
+        // API 14-15 predates MediaCodec. Opening IJK's hardware path first falls
+        // back to a software GL renderer which is then immediately rejected;
+        // detaching it during its first frame can wedge old Adreno UI drivers.
+        // Use Stagefright directly for MP4; an explicit software choice stays IJK.
+        if (sdkInt > Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1 || streamUrl == null
+                || !(streamUrl.startsWith("http://") || streamUrl.startsWith("https://"))) return false;
+        String path = Uri.parse(streamUrl).getPath();
+        return path != null && path.toLowerCase(Locale.US).endsWith(".mp4");
     }
 
     /** Android 4.0's platform player avoids IJK's costly MP3 software pipeline. */
@@ -8422,9 +8481,12 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "ntv-mtk-avc-fields",
                 "mt6580".equalsIgnoreCase(Build.HARDWARE) ? 1 : 0);
         if (Build.VERSION.SDK_INT >= 17) NativeHdrOutput.initialize(this, videoView);
-        // Keep software YUV on the GPU too; mixing CPU and EGL producers on one
-        // Surface prevents old Android versions from reconnecting the output.
-        nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER,"overlay-format","fcc-_es2");
+        // Android 4.0 Adreno drivers can deadlock HWUI's tile renderer when IJK
+        // creates another EGL producer. Its software decoder uses NativeWindow
+        // RGB output instead. Newer systems keep the GPU YUV path.
+        nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER,"overlay-format",
+                Build.VERSION.SDK_INT <= Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1
+                        ? "fcc-rv32" : "fcc-_es2");
         nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER,"ntv-hdr-mode",
                 HdrMode.nativeValue(hdrMode));
         Log.i(TAG,"HDR mode=" + hdrMode + " softwareDecode=" + softwareDecode);
@@ -8670,7 +8732,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         }
         /* Start at the first segment exposed by the selected startup policy. Using a
          * negative index would discard already prepared data in the two-segment modes. */
-        int liveStartIndex = cctvSource || yangshipinSource ? 0
+        int liveStartIndex = catchupProgram!=null || cctvSource || yangshipinSource ? 0
                 : LIVE_DELAY_LOW.equals(liveDelayMode) || LIVE_DELAY_AUTO.equals(liveDelayMode) ? -2 : -3;
         if (proxy != null) {
             proxy.decoderHandoff.begin(liveStartIndex);
@@ -11024,6 +11086,14 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         final ChannelCatalog.Group selectedGroup = currentGroup();
         final int selectedIndex = currentChannelIndex;
         final int selectionRequest = ++playRequestId;
+        // The menu closes one draw before decoder replacement. Conceal its old
+        // Surface buffer now, rather than exposing it during that closing draw.
+        // A retained remote cast does not replace its decoder or emit a new
+        // first-frame event, so its existing output must remain visible.
+        if(remoteCatalogUrl.length()==0 && videoView!=null){
+            videoView.setFrameCovered(true);
+            concealedVideoRequestId=selectionRequest;
+        }
         closeChannelList(false);
         BrowseCursor cursor=channelCursors.get(groupNavigationKey(selectedGroup));
         if(cursor!=null){cursor.selected=selectedIndex;cursor.selectedKey=channelNavigationKey(selectedGroup.channels[selectedIndex]);}
@@ -11356,6 +11426,10 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
 
     private void openChannelList(boolean keepVisibleOnBlackScreen) {
         if(videoControlsOverlay!=null)videoControlsOverlay.hide();
+        abortChannelSwitchAnimation();
+        channelBar.removeCallbacks(finishGestureRebound);
+        gestureReboundAnimating=false;
+        resetPlaybackLayerImmediately();
         playbackGestureTracking=false;playbackGestureEdgeBlocked=false;
         cancelPendingChannelListSelection();
         ensureChannelPanelInitialized();
@@ -11656,7 +11730,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                     groupDesired + channelDesired + fixedWidth);
             int[] widths = fitTwoColumns(Math.max(2, panelWidth - fixedWidth),
                     groupDesired, channelDesired,
-                    Math.round(120f * density), Math.round(180f * density));
+                    groupDesired, Math.round(180f * density));
             setExactWidth(groupList, widths[0]);
             setExactWidth(channelList, widths[1]);
             setPanelWidth(panelWidth);
@@ -11668,7 +11742,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         int panelWidth = Math.min(maximumPanelWidth, desiredPanelWidth);
         int availableColumns = Math.max(3, panelWidth - fixedWidth);
 
-        int groupMinimum = Math.round(120f * density);
+        int groupMinimum = groupDesired;
         int channelMinimum = Math.round(180f * density);
         int epgMinimum = Math.round(220f * density);
         int[] widths = fitChannelColumns(availableColumns,
@@ -11704,13 +11778,16 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
     private int desiredGroupColumnWidth(float density) {
         // Some Android 4.0 vendor builds can stall in Paint.native_measureText while
         // the system font is initialized. This method runs synchronously from
-        // onCreate, so use the existing maximum width instead of risking an ANR.
+        // onCreate, so reserve five characters without measuring the legacy font.
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1) {
-            return Math.round((14f * effectiveUiScale * 8f + 88f) * density);
+            // Legacy fonts/minimums can keep their baseline size at small presets.
+            float textDensity = Math.max(getResources().getDisplayMetrics().scaledDensity,
+                    density * getResources().getConfiguration().fontScale);
+            return (int)Math.ceil(14f * textDensity * 5f + 101f * density);
         }
         Paint paint = columnPaint(14f);
         float titleCapacity = paint.measureText("频道分组八字名称");
-        float widest = 0f;
+        float widest = paint.measureText("频道分类名");
         int widestCount = 1;
         for (ChannelCatalog.Group group : ChannelCatalog.GROUPS) {
             widest = Math.max(widest, paint.measureText(group.title));
@@ -11720,7 +11797,8 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         int countWidth = Math.max(Math.round(28f * density),
                 (int) Math.ceil(countPaint.measureText(String.valueOf(widestCount)))
                         + Math.round(12f * density));
-        int chrome = Math.round(61f * density);
+        // Row insets round independently at small UI scales.
+        int chrome = (int)Math.ceil(65f * density);
         return clamp((int) Math.ceil(widest) + countWidth + chrome,
                 Math.round(120f * density),
                 (int) Math.ceil(titleCapacity) + countWidth + chrome);
@@ -11773,8 +11851,9 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         }
         int minimumTotal = minimumFirst + minimumSecond + minimumThird;
         if (minimumTotal >= available) {
-            int first = Math.max(1, Math.round(available * 0.26f));
-            int second = Math.max(1, Math.round(available * 0.36f));
+            int first = Math.min(minimumFirst, Math.max(1, available - 2));
+            int second = Math.max(1, Math.round((available-first)
+                    * (minimumSecond / (float)(minimumSecond+minimumThird))));
             return new int[] { first, second, Math.max(1, available - first - second) };
         }
         int extra = available - minimumTotal;
@@ -11795,8 +11874,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         }
         int minimumTotal = minimumFirst + minimumSecond;
         if (minimumTotal >= available) {
-            int first = Math.max(1, Math.round(available
-                    * (minimumFirst / (float) minimumTotal)));
+            int first = Math.min(minimumFirst, Math.max(1, available - 1));
             return new int[] { first, Math.max(1, available - first) };
         }
         int extra = available - minimumTotal;
@@ -11993,14 +12071,22 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         return !epgManager.programsFor(channels[safe]).isEmpty();
     }
 
+    private boolean canOpenBrowsingEpg(int position) {
+        if (!epgEnabled) return false;
+        if (hasBrowsingEpg(position)) return true;
+        Toast.makeText(this, "当前节目暂无节目单", Toast.LENGTH_SHORT).show();
+        return false;
+    }
+
     private void showEpgForBrowsingChannel(int position) {
-        if (!epgEnabled) { epgExpanded = false; setEpgColumnVisible(false); return; }
+        if (!epgEnabled) { epgExpanded = false; epgToggle.setVisibility(View.GONE); setEpgColumnVisible(false); return; }
         if (epgManager == null || epgAdapter == null
                 || browsingGroupIndex < 0 || browsingGroupIndex >= ChannelCatalog.GROUPS.length) {
             return;
         }
         boolean available=hasBrowsingEpg(position);
-        epgToggle.setEnabled(available);
+        epgToggle.setVisibility(View.VISIBLE);
+        epgToggle.setEnabled(true);
         if(!available)epgExpanded=false;
         boolean horizontalGuide=TvUiPlugin.current()!=null&&"ui6".equals(TvUiPlugin.current().id);
         epgToggle.setText(horizontalGuide?(epgExpanded?"节目单  ‹":"节目单  ›"):
@@ -12070,12 +12156,47 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         if(source<0){Toast.makeText(this,channel.catchupDays()>0?"节目已超出回看期限":"此频道源未配置回看",Toast.LENGTH_LONG).show();return;}
         try{
             String url=channel.catchupFor(source).url(channel.sourceUrl(source),program.startMillis,program.stopMillis,now,program.catchupId);
-            currentGroupIndex=browsingGroupIndex;currentSourceIndex=source;triedCustomSources=1;
-            closeChannelList();if(videoControlsOverlay!=null)videoControlsOverlay.hide();
-            resetPlaybackRecoveryState();startChannel(index,program,url);
-            showChannelBar(channel.name,"回看 · "+program.title);
-            Toast.makeText(this,"正在加载回看，按返回键回到直播",Toast.LENGTH_SHORT).show();
+            beginCatchupPlayback(browsingGroupIndex,index,source,program,url);
         }catch(IOException error){Toast.makeText(this,error.getMessage(),Toast.LENGTH_LONG).show();}
+    }
+
+    private void cancelPendingCatchup(){
+        catchupLoadGeneration++;
+        CatchupPreloader pending=catchupPreloader;catchupPreloader=null;
+        if(pending!=null)pending.close();
+    }
+    private void closePreparedCatchupProxy(){
+        HlsProxyServer pending=preparedCatchupProxy;preparedCatchupProxy=null;preparedCatchupRequest=-1;
+        if(pending!=null)new Thread(pending::close,"catchup-proxy-release").start();
+    }
+    private void beginCatchupPlayback(final int group,final int index,final int source,
+            final EpgManager.Program programme,final String url){
+        cancelPendingCatchup();closePreparedCatchupProxy();
+        final int generation=catchupLoadGeneration,playingRequest=playRequestId;
+        final Channel channel=ChannelCatalog.GROUPS[group].channels[index];
+        final IptvCatchup spec=channel.catchupFor(source);
+        final String quality=playbackResolutionMode();
+        closeChannelList();
+        showChannelBar(currentChannel().name,"正在加载回看，当前节目继续播放");
+        CatchupPreloader pending=new CatchupPreloader(
+                ()->new HlsProxyServer(this,false,lowResourceDevice,h264SpsCompatibility,0,true,quality,0,0,0),
+                url,programme.startMillis,programme.stopMillis,spec!=null&&spec.inferred(),isDirectHttpMediaSource(url),
+                new CatchupPreloader.Listener(){
+                    public void ready(CatchupPreloader load){
+                        if(generation!=catchupLoadGeneration||playingRequest!=playRequestId||isFinishing()){load.close();return;}
+                        catchupPreloader=null;preparedCatchupProxy=load.takeProxy();preparedCatchupRequest=playRequestId+1;
+                        currentGroupIndex=group;currentSourceIndex=source;triedCustomSources=1;
+                        if(videoControlsOverlay!=null)videoControlsOverlay.hide();
+                        resetPlaybackRecoveryState();startChannel(index,programme,url);
+                    }
+                    public void failed(String reason){
+                        if(generation!=catchupLoadGeneration||playingRequest!=playRequestId||isFinishing())return;
+                        catchupPreloader=null;
+                        showChannelBar(currentChannel().name,"回看未加载："+reason+"，继续播放当前节目");
+                        Toast.makeText(MainActivity.this,"回看未加载："+reason,Toast.LENGTH_LONG).show();
+                    }
+                });
+        catchupPreloader=pending;pending.start();
     }
 
     private int catchupSource(Channel channel,EpgManager.Program program,int preferred,int direction){
@@ -12155,7 +12276,9 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
     }
 
     private String displayedPlaybackStatus() {
-        return channelPlaybackWaiting() ? "缓冲中" : channelPlaybackStatus;
+        if(channelPlaybackWaiting())return "缓冲中";
+        if(catchupProgram!=null)return (catchupTimeVerified?"回看播放中 · ":"回看时间未核验 · ")+catchupProgram.title;
+        return channelPlaybackStatus;
     }
 
     /** Update only a playback status, leaving errors, pause and other notices intact. */
@@ -12186,7 +12309,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                         && (status.startsWith("系统播放器播放中") || status.startsWith("直播播放中")
                                 || status.startsWith("视频播放中") || status.startsWith("音乐播放中")
                                 || status.startsWith("电台直播中"));
-                String playbackLabel=playbackStatus&&catchupProgram!=null?"回看播放中 · "+catchupProgram.title:status;
+                String playbackLabel=playbackStatus&&catchupProgram!=null?(catchupTimeVerified?"回看播放中 · ":"回看时间未核验 · ")+catchupProgram.title:status;
                 channelPlaybackStatus = playbackStatus ? playbackLabel : "";
                 channelPlaybackStatusRequestId = playbackStatus ? playRequestId : -1;
                 setCardText(statusText, withSourceLineStatus(channel,
@@ -12250,7 +12373,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         }
         if(catchupProgram!=null){
             java.text.SimpleDateFormat date=new java.text.SimpleDateFormat("MM-dd HH:mm",Locale.getDefault());
-            setCardText(channelEpg,"回看："+date.format(new Date(catchupProgram.startMillis))+"  "+catchupProgram.title);
+            setCardText(channelEpg,(catchupTimeVerified?"回看：":"请求回看：")+date.format(new Date(catchupProgram.startMillis))+"  "+catchupProgram.title);
             channelEpg.setVisibility(View.VISIBLE);statusText.setVisibility(View.VISIBLE);return;
         }
         long now = System.currentTimeMillis();
@@ -14891,11 +15014,14 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                         if (ChannelCatalog.GROUPS[browsingGroupIndex].channels.length > 0) {
                             enterChannelColumn();
                         }
-                    } else if (favoriteActionFocused && hasBrowsingEpg(channelList.getSelectedItemPosition())) {
-                        epgExpanded = true;
-                        showEpgForBrowsingChannel(channelList.getSelectedItemPosition());
-                        focusEpgList();
+                    } else if (favoriteActionFocused) {
+                        if (canOpenBrowsingEpg(channelList.getSelectedItemPosition())) {
+                            epgExpanded = true;
+                            showEpgForBrowsingChannel(channelList.getSelectedItemPosition());
+                            focusEpgList();
+                        }
                     } else if (channelList.hasFocus()) {
+                        canOpenBrowsingEpg(channelList.getSelectedItemPosition());
                         setFavoriteActionFocused(true);
                     }
                     return true;
@@ -15242,6 +15368,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
 
     @Override
     protected void onStop() {
+        cancelPendingCatchup();closePreparedCatchupProxy();
         setWindowContentActive(false);
         super.onStop();
     }
@@ -15350,6 +15477,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
 
     @Override
     protected void onDestroy() {
+        cancelPendingCatchup();closePreparedCatchupProxy();
         if (jarChannelRuntime != null) jarChannelRuntime.destroy();
         if (pendingCjsInstallRetry != null) {
             root.removeCallbacks(pendingCjsInstallRetry);

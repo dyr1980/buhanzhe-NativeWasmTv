@@ -669,7 +669,10 @@ public final class WebSourceView extends FrameLayout {
         settings.setSupportZoom(false);
         settings.setGeolocationEnabled(false);
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.JELLY_BEAN_MR2) {
-            settings.setAppCacheEnabled(true);
+            // Removed from modern SDK stubs, but still needed by the API 14-18 WebView.
+            try {
+                WebSettings.class.getMethod("setAppCacheEnabled", boolean.class).invoke(settings, true);
+            } catch (Exception ignored) { }
         }
         // Let WebView own normal HTTP traffic and honor each site's cache headers.
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);

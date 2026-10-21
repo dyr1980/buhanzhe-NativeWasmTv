@@ -17,9 +17,9 @@ class ChannelSourceFailureCheck {
  static class IptvCatchup {String url(String u,long s,long e,long n,String id)throws IOException{return u;}}
  EpgManager.Program catchupProgram;
  int catchupSource(Channel c,EpgManager.Program p,int preferred,int direction){throw new AssertionError("Live regression entered catchup path");}
- void startChannel(int index,EpgManager.Program p,String url){throw new AssertionError("Live regression entered catchup path");}
+ void beginCatchupPlayback(int group,int index,int source,EpgManager.Program p,String url){throw new AssertionError("Live regression entered catchup path");}
  boolean autoSwitchSource,offline,released;
- Channel channel;int currentChannelIndex=7,currentSourceIndex,triedCustomSources=1,starts;String status="";
+ Channel channel;int currentGroupIndex,currentChannelIndex=7,currentSourceIndex,triedCustomSources=1,starts;String status="";
  ChannelSourceFailureCheck(int count){channel=new Channel(count);}
  Channel currentChannel(){return channel;}
  boolean isDeviceNetworkDisconnected(){return offline;}

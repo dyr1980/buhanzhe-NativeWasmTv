@@ -54,15 +54,15 @@ import {Features} from 'lightningcss';
 import {traditionalLocalePlugin} from './dev/i18n/traditionalLocalePlugin.mjs';
 import {commandPinyinPlugin} from './dev/pinyin/commandPinyinPlugin.mjs';
 import {icuFoliaDataPlugin} from './dev/icuFolia/icuFoliaDataPlugin.mjs';
+import {ntvCompat} from __NTV_COMPAT_PLUGIN__;
 const compatEntry=__NTV_COMPAT_ENTRY__;
-const ntvCompat=()=>({name:'ntv-runtime-compat',enforce:'pre' as const,transform(code:string,id:string){const file=id.split('?')[0];if(file.endsWith('/services/localLibraryAvailability.ts')){const token="if (window.electron) return { supported: true, reason: null };";if(!code.includes(token))throw new Error('Local library availability contract changed');return {code:code.replace(token,token+" if ((window as any).__NTV_FOLIA_FILES__?.supported) return { supported: true, reason: null };"),map:null};} if(file.endsWith('/src/index.tsx')||file.endsWith('.worker.ts'))return {code:'import '+JSON.stringify(compatEntry)+';'+String.fromCharCode(10)+code,map:null};}});
 export default async (env:any)=>{const base=await upstream(env);base.plugins=base.plugins.flat(Infinity).filter((p:any)=>p&&!String(p.name).includes('pwa'));return mergeConfig(base,{
- build:{target:'chrome111',cssTarget:'chrome111',cssMinify:'lightningcss'},
- plugins:[ntvCompat()],
- css:{lightningcss:{targets:{chrome:111<<16},include:Features.HexAlphaColors|Features.SpaceSeparatedColorNotation}},
- worker:{plugins:()=>[ntvCompat(),traditionalLocalePlugin(),commandPinyinPlugin(),icuFoliaDataPlugin()]}
+ build:{target:'chrome61',cssTarget:'chrome61',cssMinify:'lightningcss'},
+ plugins:[ntvCompat(compatEntry)],
+ css:{lightningcss:{targets:{chrome:61<<16},include:Features.HexAlphaColors|Features.SpaceSeparatedColorNotation}},
+ worker:{format:'iife',plugins:()=>[ntvCompat(compatEntry),traditionalLocalePlugin(),commandPinyinPlugin(),icuFoliaDataPlugin()]}
 });};
-""".replace("__NTV_COMPAT_ENTRY__", json.dumps((HERE/"compat-entry.js").as_posix())), encoding='utf-8')
+""".replace("__NTV_COMPAT_ENTRY__", json.dumps((HERE/"compat-entry.js").as_posix())).replace("__NTV_COMPAT_PLUGIN__", json.dumps((HERE/"vite-compat.mjs").as_posix())), encoding='utf-8')
 env = {k:v for k,v in os.environ.items() if not k.startswith(('VITE_', 'GEMINI_', 'OPENAI_'))}
 env.pop('GITHUB_ACTIONS', None)
 env.update(FOLIA_BUILD_REPO='chthollyphile/folia-major', VERCEL_GIT_COMMIT_SHA=REV, VERCEL_GIT_COMMIT_REF='main', VITE_NETEASE_API_BASE='/ncm-api', VITE_KUGOU_API_BASE='/kugou-api', VITE_QQ_API_BASE='/qq-api')
@@ -72,11 +72,45 @@ web = HERE / 'assets/web'
 if web.resolve() != (ROOT/'plugins/folia-full/assets/web').resolve(): raise SystemExit('Invalid output directory')
 if web.exists(): shutil.rmtree(web)
 shutil.copytree(source / 'dist', web)
+subprocess.run([shutil.which('node'), str(HERE/'compat-css.mjs'), str(web)], check=True)
 subprocess.run([shutil.which('node'), str(HERE/'compat-assets.mjs'), str(web)], check=True)
+# Chromium 61 has static modules but cannot parse dynamic import()/import.meta.
+# Preserve split chunks with SystemJS rather than loading the whole application in one bundle.
+shutil.copyfile(HERE/'node_modules/systemjs/dist/s.min.js', web/'ntv-system.js')
+# Vite expects the synchronous native import.meta.resolve contract. SystemJS 6's
+# default context returns a Promise, which breaks its CSS dependency preloader.
+with (web/'ntv-system.js').open('a', encoding='utf-8') as loader:
+    loader.write('\nSystem.constructor.prototype.createContext=function(url){var loader=this;return {url:url,resolve:function(id,parent){return loader.resolve(id,parent||url);}};};\n')
+import re
+def system_entry(match):
+    entry = match.group(1)
+    return '<script src="./ntv-system.js"></script><script data-ntv-entry="'+entry+'">document.addEventListener("DOMContentLoaded",function(){System.import('+json.dumps(entry)+').catch(function(e){window.__NTV_FOLIA_STARTUP_ERROR__=String(e.stack||e);console.error("Folia startup: "+window.__NTV_FOLIA_STARTUP_ERROR__);});});</script>'
+for html_file in web.glob('*.html'):
+    html = html_file.read_text(encoding='utf-8')
+    html, entry_count = re.subn(r'<script\s+type="module"\s+crossorigin\s+src="([^"]+)"\s*></script>', system_entry, html)
+    if entry_count != 1: raise SystemExit('Frontend module entry contract changed: '+html_file.name)
+    html_file.write_text(html, encoding='utf-8')
+# Include the notices of the locked compatibility libraries and their dependencies.
+compat_licenses = HERE/'assets/licenses/compat'
+compat_licenses.mkdir(parents=True, exist_ok=True)
+lock = json.loads((HERE/'package-lock.json').read_text(encoding='utf-8'))
+notices = {}
+for package_path, package in lock['packages'].items():
+    if not package_path.startswith('node_modules/'): continue
+    package_dir = HERE/package_path
+    name = package_path.removeprefix('node_modules/').replace('/', '__')
+    license_files = [f for f in package_dir.glob('*') if f.is_file() and f.name.lower().startswith(('license', 'licence', 'copying'))]
+    if not license_files: continue
+    notices[name] = dict(version=package.get('version'), license=package.get('license'))
+    for file in license_files:
+        shutil.copyfile(file, compat_licenses/(name+'-'+file.name))
+(compat_licenses/'packages.json').write_text(json.dumps(notices, indent=2)+'\n', encoding='utf-8')
 files = {f.relative_to(web).as_posix():hashlib.sha256(f.read_bytes()).hexdigest() for f in web.rglob('*') if f.is_file()}
 manifest = dict(repository='https://github.com/chthollyphile/folia-major', revision=REV,
     archive=url, archiveSha256=hashlib.sha256(archive.read_bytes()).hexdigest(),
-    build='npm ci --ignore-scripts; vite build --config vite.ntv.config.ts', target='chrome111', minimumWebView=111, cssCompatibility='Lightning CSS: no hex alpha; legacy comma rgba; AST-lowered inline CSS strings' , files=files)
+    build='npm ci --ignore-scripts; vite build --config vite.ntv.config.ts', target='chrome61', minimumWebView=61,
+    runtimeCompatibility='core-js; FormatJS Intl.Locale/Segmenter; Unicode literal/constant regex lowering; generator-based async/await; SystemJS with synchronous resolve; classic workers; JSBI metadata arithmetic; Blob/ResizeObserver/AbortController/toggleAttribute/focus-visible bridges',
+    cssCompatibility='Lightning CSS + PostCSS Preset Env: shared cross-chunk cascade; runtime shader CSS; legacy colors/selectors; Tailwind property defaults; viewport bounds; square cover fallback; AST-lowered inline CSS strings', files=files)
 (HERE/'assets/upstream-manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2)+'\n', encoding='utf-8')
 shutil.copyfile(source/'LICENSE', HERE/'LICENSE')
 print(f'Compiled official Folia {REV}: {len(files)} static files')

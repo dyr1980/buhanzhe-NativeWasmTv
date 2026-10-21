@@ -45,6 +45,7 @@ final class ChannelListAdapter extends BaseAdapter implements xiao.bu.tv.skin.Sh
     void refreshVisibleSelection(android.widget.ListView list) {
         for(int i=0;i<list.getChildCount();i++) {
             int position=list.getFirstVisiblePosition()+i;
+            if(position<0)continue;
             if(position>=getCount())break;
             View row=list.getChildAt(i);
             getView(position,row,list);
@@ -161,6 +162,7 @@ final class ChannelListAdapter extends BaseAdapter implements xiao.bu.tv.skin.Sh
 
     @Override
     public Object getItem(int position) {
+        if (position < 0 || position >= getCount()) return null;
         return showingGroups ? groups[position] : channels[position];
     }
 
@@ -181,20 +183,31 @@ final class ChannelListAdapter extends BaseAdapter implements xiao.bu.tv.skin.Sh
 
     @Override
     public View getView(int position, View convertView, ViewGroup parent) {
-        if(TvUiPlugin.current()!=null){try{return pluginRow(position,convertView);}catch(RuntimeException|LinkageError failure){TvUiPlugin.rejectRenderer(inflater.getContext(),failure);convertView=null;}}
+        final Object item = getItem(position);
+        // A queued ListView bind can outlive a catalog or column switch.
+        // Stale positions must not index the replacement array or reject its theme.
+        if (item == null) {
+            View empty = new View(inflater.getContext());
+            empty.setLayoutParams(new android.widget.AbsListView.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 1));
+            empty.setEnabled(false);
+            return empty;
+        }
+        final boolean groupRow = item instanceof ChannelCatalog.Group;
+        if(TvUiPlugin.current()!=null){try{return pluginRow(position,convertView,item);}catch(RuntimeException|LinkageError failure){TvUiPlugin.rejectRenderer(inflater.getContext(),failure);convertView=null;}}
         ViewHolder holder;
-        boolean favoriteFocused = !showingGroups && parent.hasFocus() && position == favoriteFocusIndex;
+        boolean favoriteFocused = !groupRow && parent.hasFocus() && position == favoriteFocusIndex;
         // A recycled row can survive an adapter or group/channel mode change.
         // Never bind a group holder (without program/favorite views) as a channel.
         ViewHolder recycled = convertView != null && convertView.getTag() instanceof ViewHolder
                 ? (ViewHolder) convertView.getTag() : null;
-        if (recycled == null || recycled.groupRow != showingGroups
+        if (recycled == null || recycled.groupRow != groupRow
                 || recycled.themeRevision != TvUiPlugin.revision()) {
             xiao.bu.tv.skin.TvUi renderer=TvUiPlugin.provider();
-            convertView = renderer==null?inflater.inflate(showingGroups?R.layout.item_channel_group:R.layout.item_channel,parent,false)
-                    :renderer.create(parent.getContext(),showingGroups?"group-row":"channel-row",new android.os.Bundle(),new View[]{parent},null);
+            convertView = renderer==null?inflater.inflate(groupRow?R.layout.item_channel_group:R.layout.item_channel,parent,false)
+                    :renderer.create(parent.getContext(),groupRow?"group-row":"channel-row",new android.os.Bundle(),new View[]{parent},null);
             holder = new ViewHolder();
-            holder.groupRow = showingGroups;
+            holder.groupRow = groupRow;
             holder.themeRevision = TvUiPlugin.revision();
             holder.number = (TextView) convertView.findViewById(R.id.channel_number);
             holder.name = (TextView) convertView.findViewById(R.id.channel_item_name);
@@ -222,8 +235,8 @@ final class ChannelListAdapter extends BaseAdapter implements xiao.bu.tv.skin.Sh
             convertView.getLayoutParams().height=Math.max(1,pitch-divider);
         }
 
-        if (showingGroups) {
-            ChannelCatalog.Group group = groups[position];
+        if (groupRow) {
+            ChannelCatalog.Group group = (ChannelCatalog.Group) item;
             boolean favoritesGroup = group.source == ChannelCatalog.SOURCE_FAVORITES;
             holder.number.setVisibility(favoritesGroup ? View.GONE : View.VISIBLE);
             holder.number.setText(favoritesGroup ? "" : String.valueOf(position));
@@ -234,7 +247,7 @@ final class ChannelListAdapter extends BaseAdapter implements xiao.bu.tv.skin.Sh
             holder.name.setText(group.title);
             holder.count.setText(String.valueOf(group.channels.length));
         } else {
-            Channel channel = channels[position];
+            Channel channel = (Channel) item;
             holder.number.setText(ChannelCatalog.displayNumber(
                     channelGroupIndex, position));
             holder.name.setText(channel.name);
@@ -271,25 +284,26 @@ final class ChannelListAdapter extends BaseAdapter implements xiao.bu.tv.skin.Sh
         // ListView reapplies activated flags during layout. Inactive columns need
         // a transparent drawable as well, otherwise they retain a second fill.
         convertView.setBackgroundResource(focused
-                ? showingGroups ? R.drawable.channel_group_selected_background : R.drawable.channel_selected_background
+                ? groupRow ? R.drawable.channel_group_selected_background : R.drawable.channel_selected_background
                 : android.R.color.transparent);
         convertView.setActivated(focused);
-        holder.name.setTextColor((showingGroups?position==selectedIndex&&!parent.hasFocus():position==playingIndex&&!focused)
+        holder.name.setTextColor((groupRow?position==selectedIndex&&!parent.hasFocus():position==playingIndex&&!focused)
                 ? parent.getResources().getColor(R.color.accent)
                 : focused ? android.graphics.Color.WHITE
                 : parent.getResources().getColorStateList(R.color.channel_item_text).getDefaultColor());
         return convertView;
     }
 
-    private View pluginRow(int position,View old){
+    private View pluginRow(int position,View old,Object item){
+        boolean groupRow=item instanceof ChannelCatalog.Group;
         float rowScale=inflater.getContext() instanceof xiao.bu.tv.skin.SharedTvUi.Viewport
                 ?((xiao.bu.tv.skin.SharedTvUi.Viewport)inflater.getContext()).themeScale():uiScale;
         UiRow holder=old!=null&&old.getTag() instanceof UiRow?(UiRow)old.getTag():null;
-        if(holder==null||holder.revision!=TvUiPlugin.revision()||holder.group!=showingGroups||Math.abs(holder.scale-rowScale)>.001f){holder=new UiRow();holder.scale=rowScale;holder.revision=TvUiPlugin.revision();holder.group=showingGroups;holder.state.putBoolean("group",showingGroups);old=TvUiPlugin.provider().create(inflater.getContext(),showingGroups?"group-row":"channel-row",holder.state,null,null);old.setTag(holder);}
+        if(holder==null||holder.revision!=TvUiPlugin.revision()||holder.group!=groupRow||Math.abs(holder.scale-rowScale)>.001f){holder=new UiRow();holder.scale=rowScale;holder.revision=TvUiPlugin.revision();holder.group=groupRow;holder.state.putBoolean("group",groupRow);old=TvUiPlugin.provider().create(inflater.getContext(),groupRow?"group-row":"channel-row",holder.state,null,null);old.setTag(holder);}
         android.os.Bundle b=holder.state;
-        b.putBoolean("selected",position==selectedIndex);b.putBoolean("favoriteFocused",position==favoriteFocusIndex);b.putBoolean("playing",!showingGroups&&position==playingIndex);
-        if(showingGroups){b.putString("title",groups[position].title);b.putString("number",String.valueOf(position+1));b.putInt("count",groups[position].channels.length);b.putBoolean("favoriteGroup",groups[position].source==ChannelCatalog.SOURCE_FAVORITES);}
-        else{Channel channel=channels[position];b.putString("title",channel.name);b.putString("number",ChannelCatalog.displayNumber(channelGroupIndex,position));
+        b.putBoolean("selected",position==selectedIndex);b.putBoolean("favoriteFocused",position==favoriteFocusIndex);b.putBoolean("playing",!groupRow&&position==playingIndex);
+        if(groupRow){ChannelCatalog.Group group=(ChannelCatalog.Group)item;b.putString("title",group.title);b.putString("number",String.valueOf(position+1));b.putInt("count",group.channels.length);b.putBoolean("favoriteGroup",group.source==ChannelCatalog.SOURCE_FAVORITES);}
+        else{Channel channel=(Channel)item;b.putString("title",channel.name);b.putString("number",ChannelCatalog.displayNumber(channelGroupIndex,position));
             String title=holder.currentProgram.titleFor(epgManager,channel,System.currentTimeMillis());
             b.putInt("sources",channel.urls.length);b.putInt("source",playingSourceIndex);b.putString("program",title);b.putBoolean("favorite",favoriteListener!=null&&favoriteListener.isFavorite(position));
         }

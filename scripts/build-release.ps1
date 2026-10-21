@@ -33,21 +33,21 @@ function Test-CompatibleJava([string]$candidate) {
     $process = [System.Diagnostics.Process]::Start($startInfo)
     $versionText = $process.StandardOutput.ReadToEnd() + $process.StandardError.ReadToEnd()
     $process.WaitForExit()
-    return $versionText -match 'version\s+"1\.8\.'
+    return $versionText -match 'version\s+"17[."]'
 }
 
-function Install-Java8 {
-    $cacheRoot = Join-Path $repoRoot '.codex-tmp\jdk8'
+function Install-Java17 {
+    $cacheRoot = Join-Path $repoRoot '.codex-tmp\jdk17'
     New-Item -ItemType Directory -Path $cacheRoot -Force | Out-Null
     $cachedJava = Get-ChildItem -LiteralPath $cacheRoot -Recurse -Filter java.exe -ErrorAction SilentlyContinue |
         Where-Object { $_.FullName -match '\\bin\\java\.exe$' } |
         Select-Object -First 1
     if ($cachedJava) { return (Split-Path -Parent (Split-Path -Parent $cachedJava.FullName)) }
 
-    $archive = Join-Path $cacheRoot 'temurin8-jdk.zip'
+    $archive = Join-Path $cacheRoot 'temurin17-jdk.zip'
     $extractDirectory = Join-Path $cacheRoot 'runtime'
-    Write-Host 'Compatible JDK 8 was not found; downloading a cached Temurin JDK 8 runtime...'
-    Invoke-WebRequest -UseBasicParsing -Uri 'https://api.adoptium.net/v3/binary/latest/8/ga/windows/x64/jdk/hotspot/normal/eclipse' -OutFile $archive
+    Write-Host 'Compatible JDK 17 was not found; downloading a cached Temurin JDK 17 runtime...'
+    Invoke-WebRequest -UseBasicParsing -Uri 'https://api.adoptium.net/v3/binary/latest/17/ga/windows/x64/jdk/hotspot/normal/eclipse' -OutFile $archive
     New-Item -ItemType Directory -Path $extractDirectory -Force | Out-Null
     Expand-Archive -LiteralPath $archive -DestinationPath $extractDirectory -Force
     $downloadedJava = Get-ChildItem -LiteralPath $extractDirectory -Recurse -Filter java.exe |
@@ -63,10 +63,11 @@ function Find-JavaHome {
     if ($env:JAVA_HOME) { $candidates += $env:JAVA_HOME }
     if ($env:ANDROID_STUDIO_JDK) { $candidates += $env:ANDROID_STUDIO_JDK }
     $candidates += @(
-        (Join-Path $repoRoot '.codex-tmp\jdk8\runtime'),
+        (Join-Path $repoRoot '.codex-tmp\jdk17\runtime'),
         'C:\Program Files\Android\Android Studio\jbr',
         'C:\Program Files\Android\Android Studio\jre',
-        (Join-Path $env:LOCALAPPDATA 'Programs\Android Studio\jbr')
+        (Join-Path $env:LOCALAPPDATA 'Programs\Android Studio\jbr'),
+        (Join-Path $env:USERPROFILE '.jdks')
     )
     foreach ($candidate in $candidates) {
         if (Test-CompatibleJava $candidate) {
@@ -87,7 +88,7 @@ function Find-JavaHome {
         $commandHome = Split-Path -Parent (Split-Path -Parent $java.Source)
         if (Test-CompatibleJava $commandHome) { return $commandHome }
     }
-    return Install-Java8
+    return Install-Java17
 }
 
 function Read-SdkDirectory {
@@ -188,18 +189,21 @@ try {
 $artifacts = @(
     [pscustomobject]@{
         Name = 'nTv.apk'
+        Flavor = 'arm32'
         CopyAs = '网页电视32位.apk'
         Source = Join-Path $repoRoot 'app\build\outputs\apk\arm32\release\app-arm32-release.apk'
         ExpectedAbi = 'armeabi-v7a'
     },
     [pscustomobject]@{
         Name = 'nTv64.apk'
+        Flavor = 'arm64'
         CopyAs = '网页电视64位.apk'
         Source = Join-Path $repoRoot 'app\build\outputs\apk\arm64\release\app-arm64-release.apk'
         ExpectedAbi = 'arm64-v8a'
     },
     [pscustomobject]@{
         Name = 'nTvX86.apk'
+        Flavor = 'x86'
         CopyAs = '网页电视x86.apk'
         Source = Join-Path $repoRoot 'app\build\outputs\apk\x86\release\app-x86-release.apk'
         ExpectedAbi = 'x86'
@@ -211,17 +215,22 @@ $results = foreach ($artifact in $artifacts) {
     if (-not (Test-Path -LiteralPath $artifact.Source)) {
         throw "Expected APK was not generated: $($artifact.Source)"
     }
-    # Inspect the current APK, never a stale mapping.txt from an older build.
+    $mappingSource = Join-Path $repoRoot "app/build/outputs/mapping/$($artifact.Flavor)Release/mapping.txt"
+    if (-not (Test-Path -LiteralPath $mappingSource -PathType Leaf) -or
+        (Get-Item -LiteralPath $mappingSource).Length -eq 0) {
+        throw "R8 mapping is missing or empty: $mappingSource"
+    }
+    # Validate an ABI entry point that must retain its name even in an obfuscated APK.
     $archive = [System.IO.Compression.ZipFile]::OpenRead($artifact.Source)
     try {
-        $readableClasses = $false
+        $nativeBridge = $false
         foreach ($entry in $archive.Entries) {
             if ($entry.FullName -notmatch '^classes\d*\.dex$') { continue }
             $reader = New-Object System.IO.StreamReader($entry.Open(), [System.Text.Encoding]::ASCII)
             try { $dex = $reader.ReadToEnd() } finally { $reader.Dispose() }
-            if ($dex.Contains('Lxiao/bu/tv/WebSourceView;')) { $readableClasses = $true; break }
+            if ($dex.Contains('Lxiao/bu/tv/NativeQuickJs;')) { $nativeBridge = $true; break }
         }
-        if (-not $readableClasses) { throw "Release APK is missing readable application classes: $($artifact.Source)" }
+        if (-not $nativeBridge) { throw "Release APK is missing its JNI bridge: $($artifact.Source)" }
     } finally { $archive.Dispose() }
     $destination = Join-Path $OutputDirectory $artifact.Name
     Copy-Item -LiteralPath $artifact.Source -Destination $destination -Force
@@ -245,15 +254,22 @@ $results = foreach ($artifact in $artifacts) {
         throw "Unable to read APK metadata: $destination"
     }
     $hash = Get-Sha256 $destination
+    # Hash-specific paths retain the right mapping for every shipped APK.
+    $mappingDirectory = Join-Path $OutputDirectory "mapping/$hash"
+    New-Item -ItemType Directory -Path $mappingDirectory -Force | Out-Null
+    $mappingDestination = Join-Path $mappingDirectory 'mapping.txt'
+    Copy-Item -LiteralPath $mappingSource -Destination $mappingDestination -Force
     $file = Get-Item -LiteralPath $destination
     $aliasPath = Join-Path $OutputDirectory $artifact.CopyAs
     Copy-Item -LiteralPath $destination -Destination $aliasPath -Force
     [pscustomobject]@{
         APK = $artifact.Name
+        Flavor = $artifact.Flavor
         ABI = $architectures[0]
         SizeMB = [math]::Round($file.Length / 1MB, 2)
         SHA256 = $hash
-        Obfuscation = 'disabled'
+        Obfuscation = 'R8 enabled'
+        Mapping = $mappingDestination
         Metadata = $badging
         Path = $file.FullName
         AliasPath = $aliasPath
@@ -266,6 +282,45 @@ $x86Result = $results | Where-Object { $_.ABI -eq 'x86' } | Select-Object -First
 if (-not $arm32Result -or -not $arm64Result -or -not $x86Result) {
     throw 'ARM32, ARM64 and x86 artifacts are required to generate update metadata.'
 }
+
+# Package only this build's mappings; retain the hash archives across releases.
+$mappingZip = Join-Path $OutputDirectory 'mapping.zip'
+$mappingZipTemp = Join-Path $OutputDirectory ('.mapping-' + [guid]::NewGuid().ToString('N') + '.zip')
+try {
+    $zip = [System.IO.Compression.ZipFile]::Open($mappingZipTemp, [System.IO.Compression.ZipArchiveMode]::Create)
+    try {
+        $mappingIndex = @(foreach ($result in $results) {
+            $entryName = "$($result.Flavor)/mapping.txt"
+            [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                $zip, $result.Mapping, $entryName, [System.IO.Compression.CompressionLevel]::Optimal)
+            [ordered]@{
+                apk = $result.APK
+                abi = $result.ABI
+                apkSha256 = $result.SHA256
+                mapping = $entryName
+                mappingSha256 = Get-Sha256 $result.Mapping
+            }
+        })
+        $indexEntry = $zip.CreateEntry('manifest.json')
+        $writer = New-Object System.IO.StreamWriter($indexEntry.Open(), (New-Object System.Text.UTF8Encoding($false)))
+        try { $writer.WriteLine((ConvertTo-Json -InputObject $mappingIndex -Depth 3)) }
+        finally { $writer.Dispose() }
+    } finally { $zip.Dispose() }
+    Move-Item -LiteralPath $mappingZipTemp -Destination $mappingZip -Force
+} finally {
+    if (Test-Path -LiteralPath $mappingZipTemp) {
+        Remove-Item -LiteralPath $mappingZipTemp -Force
+    }
+}
+# Remove the previous loose-file aliases after the ZIP has been saved successfully.
+foreach ($artifact in $artifacts) {
+    $mappingAlias = Join-Path $OutputDirectory (
+        [System.IO.Path]::GetFileNameWithoutExtension($artifact.Name) + '-mapping.txt')
+    if (Test-Path -LiteralPath $mappingAlias -PathType Leaf) {
+        Remove-Item -LiteralPath $mappingAlias -Force
+    }
+}
+
 $manifestTasks = @(
     ':app:generateVersionFile',
     "-PupdateApk32=$($arm32Result.Path)",
@@ -312,5 +367,6 @@ if ($ImportantUpdate) {
 Write-Host ''
 Write-Host 'Release artifacts:'
 $results | Format-List APK, ABI, SizeMB, SHA256, Obfuscation, Metadata, Path, AliasPath
+Write-Host "R8 mappings (all architectures): $mappingZip"
 Write-Host "Lightweight metadata: $liteVersionPath"
 Write-Host ($(if ($ImportantUpdate) { "Important metadata updated: $versionPath" } else { 'Important metadata not included (use -ImportantUpdate when required).' }))

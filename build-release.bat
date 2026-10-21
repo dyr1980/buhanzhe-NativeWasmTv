@@ -13,7 +13,7 @@ set "ntvReleaseExit=%errorlevel%"
 if not "%ntvReleaseExit%"=="0" goto build_failed
 
 echo.
-echo Release build completed. See the APK paths above.
+echo Release build completed. See the APK and mapping file paths above.
 goto finish
 
 :missing_script

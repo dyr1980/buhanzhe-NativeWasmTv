@@ -3,13 +3,18 @@
   'use strict';
   if(typeof window==='undefined'||typeof window.NTVFoliaExport==='undefined')return;
   var marker='ntv-selected-files-v1',pending=false,cancelPending=null;
+  if(!Symbol.asyncIterator)Object.defineProperty(Symbol,'asyncIterator',{value:Symbol('Symbol.asyncIterator')});
+  function iterate(children,kind){
+    var index=0,iterator={next:function(){if(index>=children.length)return Promise.resolve({done:true});var child=revive(children[index++]);return Promise.resolve({done:false,value:kind==='entries'?[child.name,child]:kind==='keys'?child.name:child});}};
+    iterator[Symbol.asyncIterator]=function(){return this;};return iterator;
+  }
   function permission(options){return Promise.resolve(options&&options.mode==='readwrite'?'denied':'granted');}
   var common={queryPermission:permission,requestPermission:permission,isSameEntry:function(other){return Promise.resolve(!!other&&other.__ntvHandle===marker&&other.kind===this.kind&&other.identity===this.identity);}};
   var fileProto=Object.assign(Object.create(null),common,{getFile:function(){return Promise.resolve(this.file);}});
   var dirProto=Object.assign(Object.create(null),common,{
-    values:async function*(){for(var child of this.children)yield revive(child);},
-    entries:async function*(){for(var child of this.children)yield [child.name,revive(child)];},
-    keys:async function*(){for(var child of this.children)yield child.name;},
+    values:function(){return iterate(this.children,'values');},
+    entries:function(){return iterate(this.children,'entries');},
+    keys:function(){return iterate(this.children,'keys');},
     getFileHandle:async function(name){var child=this.children.find(function(c){return c.name===name&&c.kind==='file';});if(!child)throw new DOMException('File not found','NotFoundError');return revive(child);},
     getDirectoryHandle:async function(name){var child=this.children.find(function(c){return c.name===name&&c.kind==='directory';});if(!child)throw new DOMException('Directory not found','NotFoundError');return revive(child);}
   });

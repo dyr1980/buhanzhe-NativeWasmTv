@@ -42,6 +42,7 @@ function renderPlaylistGroupSettings() {
   list.appendChild(fragment);
 }
 function setGroupBusy(busy) {
+  if (groupBusy === busy) return;
   groupBusy = busy;
   var controls = document.getElementById('playlistGroupSettings').querySelectorAll('button, .source-toggle');
   for (var i = 0; i < controls.length; i++) {
@@ -465,7 +466,9 @@ function endChannelDrag(cancel) {
   markChannelDropTarget(); updateChannelEditor();
 }
 function renderPageState() {
-  if (groupBusy || groupDrag || (channelEditor && (channelEditor.dirty || channelEditor.drag || channelEditor.fullscreen))) return;
+  // Keep even a clean inline editor alive while state polling catches up after a save.
+  // The latest group snapshot is applied on the first poll after the editor closes.
+  if (groupBusy || groupDrag || channelEditor) return;
   var groups = state.settings.playlistGroups || [], signature = JSON.stringify(groups);
   if (signature === groupSignature) return;
   closeGroupChannels(); groupSignature = signature; playlistGroups = groups; renderPlaylistGroupSettings();

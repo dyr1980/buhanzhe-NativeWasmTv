@@ -11,7 +11,9 @@ final class NativeVideoFrame {
             System.loadLibrary("ijkffmpeg");
             System.loadLibrary("ntvframe");
             ready = initialize();
-        } catch (LinkageError ignored) { }
+        } catch (LinkageError error) {
+            android.util.Log.w("NativeVideoFrame", "Native frame decoder unavailable", error);
+        }
         AVAILABLE = ready;
     }
     private static native boolean initialize();

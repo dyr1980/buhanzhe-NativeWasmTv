@@ -26,9 +26,30 @@ public final class FoliaFullInstrumentation extends Instrumentation {
         long time=SystemClock.uptimeMillis();android.view.MotionEvent down=android.view.MotionEvent.obtain(time,time,0,x,y,0),up=android.view.MotionEvent.obtain(time,time+60,1,x,y,0);sendPointerSync(down);SystemClock.sleep(60);sendPointerSync(up);down.recycle();up.recycle();
     }
     void tapPlay(WebView web)throws Exception {
-        String result=js(web,"(function(){var e=document.querySelector('button[title=\"播放\"]')||document.querySelector('button:has(svg.lucide-play)');if(!e)return null;var r=e.getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2,innerWidth]})()");
+        String result=js(web,"(function(){var icon=document.querySelector('button svg.lucide-play');var e=document.querySelector('button[title=\"播放\"]')||(icon&&icon.closest('button'));if(!e)return null;var r=e.getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2,innerWidth]})()");
         if("null".equals(result))return;JSONArray p=new JSONArray(result);int[] location=new int[2];runOnMainSync(()->web.getLocationOnScreen(location));float scale=web.getWidth()/(float)p.getDouble(2),x=location[0]+(float)p.getDouble(0)*scale,y=location[1]+(float)p.getDouble(1)*scale;
         long now=SystemClock.uptimeMillis();android.view.MotionEvent down=android.view.MotionEvent.obtain(now,now,0,x,y,0),up=android.view.MotionEvent.obtain(now,now+60,1,x,y,0);sendPointerSync(down);SystemClock.sleep(60);sendPointerSync(up);down.recycle();up.recycle();
+    }
+    private void capture(WebView web,String name)throws Exception {
+        SystemClock.sleep(700);
+        android.graphics.Bitmap screen=getUiAutomation().takeScreenshot();
+        if(screen!=null)try(FileOutputStream out=new FileOutputStream(new File(getTargetContext().getExternalFilesDir(null),name+".png"))){screen.compress(android.graphics.Bitmap.CompressFormat.PNG,100,out);}finally{screen.recycle();}
+        runOnMainSync(()->{try(FileOutputStream out=new FileOutputStream(new File(getTargetContext().getExternalFilesDir(null),name+"-views.txt"))){StringBuilder tree=new StringBuilder();dumpView(activity.getWindow().getDecorView(),tree,0);out.write(tree.toString().getBytes("UTF-8"));}catch(IOException e){throw new RuntimeException(e);}});
+        if("true".equals(args.getString("drawView")))runOnMainSync(()->{android.graphics.Bitmap bitmap=android.graphics.Bitmap.createBitmap(web.getWidth(),web.getHeight(),android.graphics.Bitmap.Config.ARGB_8888);try(FileOutputStream out=new FileOutputStream(new File(getTargetContext().getExternalFilesDir(null),name+"-view.png"))){web.draw(new android.graphics.Canvas(bitmap));bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,out);}catch(IOException e){throw new RuntimeException(e);}finally{bitmap.recycle();}});
+    }
+    private void dumpView(android.view.View view,StringBuilder text,int depth){
+        if(depth>5)return;
+        for(int i=0;i<depth;i++)text.append(' ');
+        text.append(view.getClass().getSimpleName()).append(" id=").append(view.getId()).append(" vis=").append(view.getVisibility()).append(" alpha=").append(view.getAlpha()).append(" size=").append(view.getWidth()).append('x').append(view.getHeight()).append(" pos=").append(view.getX()).append(',').append(view.getY()).append(" elevation=").append(view.getElevation()).append(" background=").append(view.getBackground()).append(" layer=").append(view.getLayerType()).append(" hardware=").append(view.isHardwareAccelerated()).append('\n');
+        if(view instanceof android.view.ViewGroup){android.view.ViewGroup group=(android.view.ViewGroup)view;for(int i=0;i<group.getChildCount();i++)dumpView(group.getChildAt(i),text,depth+1);}
+    }
+    private String verifyHomeLayout(WebView web)throws Exception {
+        String state=js(web,"(function(){var canvases=Array.from(document.querySelectorAll('[data-paper-shader] canvas')).map(function(c){var a=c.getBoundingClientRect(),b=c.parentElement.getBoundingClientRect();return {width:a.width,height:a.height,parentWidth:b.width,parentHeight:b.height,ok:Math.abs(a.width-b.width)<2&&Math.abs(a.height-b.height)<2};});var slider=document.querySelector('[data-grid3d-slider]'),r=slider&&slider.getBoundingClientRect(),cards=slider?Array.from(slider.querySelectorAll('[data-grid3d-index]')):[],distance=cards.length?Math.min.apply(Math,cards.map(function(c){var a=c.getBoundingClientRect();return Math.abs(a.left+a.width/2-r.left-r.width/2);})):0;var covers=Array.from(document.querySelectorAll('.theme-polaroid-card>.aspect-square')).map(function(c){return {width:c.offsetWidth,height:c.offsetHeight,ok:Math.abs(c.offsetWidth-c.offsetHeight)<2};});return {viewport:[innerWidth,innerHeight],canvases:canvases,covers:covers,centerDistance:distance,centered:distance<3};})()");
+        JSONObject metrics=new JSONObject(state);
+        for(String key:new String[]{"canvases","covers"}){JSONArray values=metrics.getJSONArray(key);for(int i=0;i<values.length();i++)check(values.getJSONObject(i).getBoolean("ok"),"Home "+key+" size mismatch: "+state);}
+        check(metrics.getBoolean("centered"),"Home carousel did not center its focused card: "+state);
+        Bundle evidence=new Bundle();evidence.putString("stream","\nHome layout: "+state+"\n");sendStatus(0,evidence);
+        return state;
     }
     private void tapNativeText(String text)throws Exception {
         for(int attempt=0;attempt<8;attempt++){
@@ -100,13 +121,13 @@ public final class FoliaFullInstrumentation extends Instrumentation {
         long until=SystemClock.elapsedRealtime()+10000;
         while(js(browser,"window.__pickResult").contains("pending")&&SystemClock.elapsedRealtime()<until)SystemClock.sleep(100);
         check(js(browser,"window.__pickResult").contains("selected"),"Selection failed: "+js(browser,"window.__pickResult"));
-        js(browser,"window.__persist='pending';(async()=>{var files=[];for await(var h of __pickedDirectory.values())files.push([h.name,(await h.getFile()).size]);window.__chosenFiles=JSON.stringify(files);var r=indexedDB.open('ntv-file-test',1);r.onupgradeneeded=()=>r.result.createObjectStore('handles');r.onsuccess=()=>{var db=r.result,t=db.transaction('handles','readwrite');t.objectStore('handles').put(__pickedDirectory,'selected');t.oncomplete=()=>{db.close();window.__persist='saved'};t.onerror=()=>window.__persist=String(t.error)};})().catch(e=>window.__persist=String(e))");
+        js(browser,"window.__persist='pending';(async()=>{var files=[];for(var h of await Array.fromAsync(__pickedDirectory.values()))files.push([h.name,(await h.getFile()).size]);window.__chosenFiles=JSON.stringify(files);var r=indexedDB.open('ntv-file-test',1);r.onupgradeneeded=()=>r.result.createObjectStore('handles');r.onsuccess=()=>{var db=r.result,t=db.transaction('handles','readwrite');t.objectStore('handles').put(__pickedDirectory,'selected');t.oncomplete=()=>{db.close();window.__persist='saved'};t.onerror=()=>window.__persist=String(t.error)};})().catch(e=>window.__persist=String(e))");
         until=SystemClock.elapsedRealtime()+8000;while(js(browser,"window.__persist").contains("pending")&&SystemClock.elapsedRealtime()<until)SystemClock.sleep(100);
         check(js(browser,"window.__persist").contains("saved"),"Handles were not persisted: "+js(browser,"window.__persist"));
         check(js(browser,"window.__chosenFiles").contains("NativeSelected.lrc"),"Lyrics file was filtered out");
         js(browser,"window.__testReloadSentinel='old'");runOnMainSync(browser::reload);until=SystemClock.elapsedRealtime()+20000;
-        while(SystemClock.elapsedRealtime()<until){if(js(browser,"!!window.__NTV_FOLIA_FILES__&&typeof window.__testReloadSentinel==='undefined'").equals("true"))break;SystemClock.sleep(100);}
-        js(browser,"window.__restored='pending';var r=indexedDB.open('ntv-file-test',1);r.onsuccess=()=>{var db=r.result,g=db.transaction('handles').objectStore('handles').get('selected');g.onsuccess=async()=>{try{var d=g.result,names=[];window.__restoredDirectory=d;for await(var h of d.values()){var f=await h.getFile();names.push(f.name+':'+f.size);if(f.name.endsWith('.lrc'))window.__restoredLyric=await f.text()}window.__restored=JSON.stringify(names);db.close()}catch(e){window.__restored=String(e)}}}");
+        while(SystemClock.elapsedRealtime()<until){if(js(browser,"!!window.__NTV_FOLIA_FILES__&&typeof Array.fromAsync==='function'&&typeof window.__testReloadSentinel==='undefined'").equals("true"))break;SystemClock.sleep(100);}
+        js(browser,"window.__restored='pending';var r=indexedDB.open('ntv-file-test',1);r.onsuccess=()=>{var db=r.result,g=db.transaction('handles').objectStore('handles').get('selected');g.onsuccess=async()=>{try{var d=g.result,names=[];window.__restoredDirectory=d;for(var h of await Array.fromAsync(d.values())){var f=await h.getFile();names.push(f.name+':'+f.size);if(f.name.endsWith('.lrc'))window.__restoredLyric=await f.text()}window.__restored=JSON.stringify(names);db.close()}catch(e){window.__restored=String(e)}}}");
         until=SystemClock.elapsedRealtime()+8000;while(js(browser,"window.__restored").contains("pending")&&SystemClock.elapsedRealtime()<until)SystemClock.sleep(100);
         check(js(browser,"window.__restored").contains("NativeSelected.wav"),"Persisted file handles failed after reload: "+js(browser,"window.__restored"));
         check(js(browser,"window.__restoredLyric").contains("Native selection fixture"),"Persisted lyric bytes differ");
@@ -138,22 +159,66 @@ public final class FoliaFullInstrumentation extends Instrumentation {
             }catch(Exception e){throw new RuntimeException(e);}});
             JarChannelRuntime runtime=(JarChannelRuntime)field(activity,"jarChannelRuntime");
             WebView web=null;until=SystemClock.elapsedRealtime()+60000;
-            while(SystemClock.elapsedRealtime()<until){web=(WebView)field(runtime,"browser");if(web!=null&&js(web,"!!document.querySelector('#root')&&document.querySelector('#root').innerText.length>30").equals("true"))break;SystemClock.sleep(250);}
+            while(SystemClock.elapsedRealtime()<until){web=(WebView)field(runtime,"browser");if(web!=null){check(js(web,"typeof window.__NTV_FOLIA_STARTUP_ERROR__==='undefined'").equals("true"),"Frontend startup error: "+js(web,"window.__NTV_FOLIA_STARTUP_ERROR__"));if(js(web,"!!document.querySelector('#root')&&document.querySelector('#root').innerText.length>30&&!!getComputedStyle(document.documentElement).getPropertyValue('--spacing').trim()").equals("true"))break;}SystemClock.sleep(250);}
             check(web!=null,"No full application WebView");final WebView browser=web;
+            Bundle engineEvidence=new Bundle();engineEvidence.putString("stream","\nActual WebView UA: "+js(browser,"navigator.userAgent")+"\n");sendStatus(0,engineEvidence);
             check(js(browser,"location.origin").contains("127.0.0.1"),"Frontend loaded from remote website");
             check(js(browser,"!!window.__NTV_FOLIA_FULL__").equals("true"),"Java transport bridge missing");
+            String spacing=js(browser,"getComputedStyle(document.documentElement).getPropertyValue('--spacing').trim()");
+            check(!"\"\"".equals(spacing),"Tailwind root tokens were discarded by the old CSS parser: "+spacing);
             mediaAndFiles(browser);
             long remount=SystemClock.elapsedRealtime()+30000;while(SystemClock.elapsedRealtime()<remount&&!js(browser,"document.querySelector('#root')&&document.querySelector('#root').innerText.length>30").equals("true"))SystemClock.sleep(100);
             String body=js(browser,"document.body.innerText");check(body.length()>30,"Upstream app did not mount: "+body);
 
             SystemClock.sleep(1500);
-            String closePoint=js(browser,"(function(){var e=document.querySelector('[data-testid=release-notes-close]');if(!e)return null;var r=e.getBoundingClientRect();return JSON.stringify({r:[r.x,r.y,r.width,r.height],inner:[innerWidth,innerHeight],hit:document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.outerHTML})})()");
+            String closePoint=js(browser,"(function(){var e=document.querySelector('[data-testid=release-notes-close]');if(!e)return null;var r=e.getBoundingClientRect();var hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return JSON.stringify({r:[r.x,r.y,r.width,r.height],inner:[innerWidth,innerHeight],hit:hit&&hit.outerHTML})})()");
             tapText(browser,"关闭");SystemClock.sleep(1000);
             check(!js(browser,"document.body.innerText").contains("Sabbat-of-the-witch Update"),"Original release dialog close button did not respond: "+closePoint+" web="+browser.getWidth()+"x"+browser.getHeight());
             if(js(browser,"!!document.querySelector('[data-testid=ponder-onboarding]')").equals("true")) {
                 tapText(browser,"思索当前页面");SystemClock.sleep(800);
                 check(js(browser,"!document.querySelector('[data-testid=ponder-onboarding]')").equals("true"),"Original onboarding button did not respond");
                 sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_ESCAPE);SystemClock.sleep(700);
+            }
+            // Finish both original first-run choice pages using their real pointer targets.
+            for(int step=0;step<3;step++) {
+                String label=js(browser,"(function(){var e=document.querySelector('[data-testid=playback-entry-view-prompt-next],[data-testid=playback-entry-view-prompt-confirm]');return e?e.textContent.trim():null})()");
+                if("null".equals(label))break;
+                tapText(browser,new org.json.JSONTokener(label).nextValue().toString());SystemClock.sleep(700);
+            }
+            check(js(browser,"!document.querySelector('[data-testid=playback-entry-view-prompt]')").equals("true"),"First-run library choice did not respond");
+            // Slower engines can mount the pondering prompt only AFTER the library-choice prompt.
+            // Wait through both real prompt sequences before claiming that we exercised the home.
+            for(int step=0;step<12;step++) {
+                SystemClock.sleep(500);
+                if(js(browser,"!!document.querySelector('[data-testid=ponder-onboarding]')").equals("true")) {
+                    tapText(browser,"思索当前页面");SystemClock.sleep(800);
+                    check(js(browser,"!document.querySelector('[data-testid=ponder-onboarding]')").equals("true"),"Late pondering prompt did not respond");
+                    sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_ESCAPE);SystemClock.sleep(500);
+                }
+                String label=js(browser,"(function(){var e=document.querySelector('[data-testid=playback-entry-view-prompt-next],[data-testid=playback-entry-view-prompt-confirm]');return e?e.textContent.trim():null})()");
+                if(!"null".equals(label))tapText(browser,new org.json.JSONTokener(label).nextValue().toString());
+            }
+            if(js(browser,"!CSS.supports('container-type','inline-size')||!CSS.supports('color','color-mix(in srgb,red,blue)')").equals("true")) {
+                check(js(browser,"!document.querySelector('.bravais-root')").equals("true"),"Unsupported Bravais home remained active");
+                check(js(browser,"(function(){var h=document.querySelector('h1');return !!h&&h.parentElement.parentElement.getBoundingClientRect().width>innerWidth*.8})()").equals("true"),"Classic home header collapsed to a narrow column");
+                tapText(browser,"本地");
+                until=SystemClock.elapsedRealtime()+10000;
+                while(SystemClock.elapsedRealtime()<until&&!js(browser,"!!document.querySelector('[data-grid3d-slider]')").equals("true"))SystemClock.sleep(150);
+                check(js(browser,"!!document.querySelector('[data-grid3d-slider]')&&!!document.querySelector('.theme-polaroid-card>.aspect-square')").equals("true"),"Local home carousel was not visible after first-run prompts");
+            }
+            capture(browser,"folia-home");
+            result.putString("homeLayout",verifyHomeLayout(browser));
+            if("true".equals(args.getString("holdScreenshots"))){Bundle ready=new Bundle();ready.putString("stream","SCREENSHOT_READY_HOME");sendStatus(0,ready);SystemClock.sleep(12000);}
+            if(js(browser,"!!document.querySelector('[data-grid3d-slider]')").equals("true")) {
+                tapText(browser,"全部歌曲");
+                until=SystemClock.elapsedRealtime()+10000;
+                while(SystemClock.elapsedRealtime()<until&&!js(browser,"!!document.querySelector('[data-library-surface=collection]')").equals("true"))SystemClock.sleep(100);
+                check(js(browser,"!!document.querySelector('[data-library-surface=collection]')").equals("true"),"Home card did not open its collection");
+                SystemClock.sleep(1500); // Wait for the original collection's enter transition before Escape.
+                sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_ESCAPE);
+                until=SystemClock.elapsedRealtime()+10000;
+                while(SystemClock.elapsedRealtime()<until&&!js(browser,"!document.querySelector('[data-library-surface=collection]')").equals("true"))SystemClock.sleep(100);
+                check(js(browser,"!document.querySelector('[data-library-surface=collection]')").equals("true"),"Collection did not return to home");
             }
             // Real pointer delivery must survive both browser zoom and inert host overlays.
             runOnMainSync(()->{try{
@@ -163,6 +228,7 @@ public final class FoliaFullInstrumentation extends Instrumentation {
             }catch(Exception e){throw new RuntimeException(e);}});
             for(float zoom:new float[]{1f,1.5f}) {
                 runOnMainSync(()->runtime.configure("1080p",zoom));SystemClock.sleep(600);
+                verifyHomeLayout(browser);
                 js(browser,"window.__trustedClicks=0;var b=document.createElement('button');b.id='ntv-click-fixture';b.innerHTML='<span>NativeTouchFixture</span>';b.style.cssText='position:fixed;left:100px;top:100px;width:240px;height:80px;z-index:2147483647';b.onclick=e=>{if(e.isTrusted)window.__trustedClicks++};document.body.appendChild(b)");
                 tapText(browser,"NativeTouchFixture");SystemClock.sleep(300);
                 check(js(browser,"window.__trustedClicks").equals("1"),"Touch swallowed at zoom "+zoom);
@@ -190,8 +256,10 @@ public final class FoliaFullInstrumentation extends Instrumentation {
             check(!colors.equals("\"[]\"")&&!colors.equals("[]"),"Settings sidebar was not opened: "+js(browser,"JSON.stringify(Array.from(document.querySelectorAll('button')).map(b=>({label:b.getAttribute('aria-label'),title:b.title,text:b.textContent.slice(0,20)})))"));
             check(!colors.contains("rgb(239, 239, 239)")&&!colors.contains("rgb(255, 255, 255)"),"Native white control backgrounds returned: "+colors);
             result.putString("sidebarColors",colors);
+            result.putString("pageGeometry",js(browser,"JSON.stringify({viewport:[innerWidth,innerHeight],root:document.querySelector('#root').getBoundingClientRect().toJSON(),bodyOpacity:getComputedStyle(document.body).opacity,windowRect:document.querySelector('.st-window').getBoundingClientRect().toJSON()})"));
             check(js(browser,"typeof Promise.withResolvers==='function'&&typeof Object.groupBy==='function'").equals("true"),"Compatibility polyfills missing");
             android.graphics.Bitmap image=getUiAutomation().takeScreenshot();if(image!=null)try(FileOutputStream out=new FileOutputStream(new File(getTargetContext().getExternalFilesDir(null),"folia-full.png"))){image.compress(android.graphics.Bitmap.CompressFormat.PNG,100,out);}finally{image.recycle();}
+            capture(browser,"folia-help");
             sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_ESCAPE);SystemClock.sleep(400);
             // Consume each real WebView history entry before arming the root-page exit prompt.
             String originalLocation=js(browser,"location.href");

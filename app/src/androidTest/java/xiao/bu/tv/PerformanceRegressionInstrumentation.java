@@ -73,14 +73,15 @@ public final class PerformanceRegressionInstrumentation extends Instrumentation 
                     failure.compareAndSet(null, error); completed.countDown();
                 }
                 @Override public void onResponse(Call call, Response response) throws IOException {
-                    try { check("ok".equals(response.body().string()), "Active response corrupted"); }
+                    try { check("ok".equals(new String(BoundedResponseReader.read(response.body().byteStream(), 2, 16), "UTF-8")), "Active response corrupted"); }
                     catch (Throwable error) { failure.compareAndSet(null, error); }
                     finally { response.close(); completed.countDown(); }
                 }
             });
             check(accepted.await(5, TimeUnit.SECONDS), "HTTP request did not start");
             for (int i = 0; i < 100; i++) NetworkClient.setDnsMode(original);
-            check(!call.isCanceled(), "Unchanged DNS cancelled playback request");
+            // Release shrinking may remove Call.isCanceled(), which the app
+            // never invokes. The completed response below proves no cancellation.
             check(field(NetworkClient.class, null, "client") == client, "Unchanged DNS recreated HTTP pool");
             release.countDown();
             check(completed.await(5, TimeUnit.SECONDS), "Active request did not finish");

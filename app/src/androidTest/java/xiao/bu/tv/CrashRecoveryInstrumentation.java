@@ -56,13 +56,20 @@ public final class CrashRecoveryInstrumentation extends Instrumentation {
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
             main(() -> {
                 ChannelCatalog.Group[] saved = ChannelCatalog.GROUPS;
+                Field groupIndex = MainActivity.class.getDeclaredField("currentGroupIndex");
+                groupIndex.setAccessible(true);
+                int savedIndex = groupIndex.getInt(activity);
                 try {
+                    groupIndex.setInt(activity, -1);
+                    check(call(activity, "currentChannel") != null, "Negative group index recovery failed");
+                    groupIndex.setInt(activity, Integer.MAX_VALUE);
+                    check(call(activity, "currentChannel") != null, "Stale group index recovery failed");
                     ChannelCatalog.GROUPS = new ChannelCatalog.Group[0];
                     check(call(activity, "currentChannel") != null, "Empty catalog recovery failed");
                     ChannelCatalog.GROUPS = new ChannelCatalog.Group[] {
                             new ChannelCatalog.Group("empty", 3, null)};
                     check(call(activity, "currentChannel") != null, "Empty group recovery failed");
-                } finally { ChannelCatalog.GROUPS = saved; }
+                } finally { ChannelCatalog.GROUPS = saved; groupIndex.setInt(activity, savedIndex); }
                 WebSourceView browser = new WebSourceView(activity, null);
                 browser.open(77, "https://example.com/");
                 browser.destroyPage();

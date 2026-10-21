@@ -1,0 +1,1 @@
+System.register(["../lucide-icons-gYazRYpo.js"],function(_export,_context){"use strict";var e,t,n;return{setters:[function(_lucideIconsGYazRYpoJs){e=_lucideIconsGYazRYpoJs.Ns;}],execute:function(){_export("__iconData",t={name:`phi`,size:24,node:[[`path`,{d:`M12 2v20`,key:`t6zp3m`}],[`circle`,{cx:`12`,cy:`12`,r:`7`,key:`fim9np`}]]});t.node;_export("default",n=e(t));}};});

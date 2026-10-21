@@ -63,6 +63,38 @@ import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
 final class HlsProxyServer implements Closeable {
+    interface CatchupListener { void onTimeline(int state,long actual,String error); }
+    private long catchupStart=-1,catchupStop;
+    private boolean requireCatchupTime;
+    private volatile boolean catchupVerified;
+    private volatile String catchupTimeError="";
+    private CatchupListener catchupListener;
+    private final java.util.Set<String> checkedCatchupPlaylists=new java.util.LinkedHashSet<>();
+    void setCatchupWindow(long start,long stop,boolean strict,CatchupListener listener){
+        catchupStart=start;catchupStop=stop;requireCatchupTime=strict;catchupListener=listener;
+    }
+    boolean catchupTimeVerified(){return catchupVerified;}
+    private synchronized void verifyCatchupTimeline(String url,String body)throws IOException{
+        if(catchupStart<0||body.contains("#EXT-X-STREAM-INF")||!body.contains("#EXTINF:"))return;
+        if(!catchupTimeError.isEmpty())throw new IOException(catchupTimeError);
+        CatchupTimeline.Result result=CatchupTimeline.inspect(body,catchupStart,catchupStop,!checkedCatchupPlaylists.contains(url));
+        String error="";
+        if(result.state==CatchupTimeline.MISMATCH){
+            java.text.SimpleDateFormat format=new java.text.SimpleDateFormat("MM-dd HH:mm:ss",Locale.US);
+            error="回看时间不符：请求 "+format.format(new java.util.Date(catchupStart))+"，返回 "+format.format(new java.util.Date(result.actual));
+        }else if(result.state==CatchupTimeline.UNKNOWN&&requireCatchupTime&&!catchupVerified){
+            error="回看未确认：服务器未提供可核验的节目时间";
+        }
+        if(!error.isEmpty()){
+            catchupTimeError=error;if(catchupListener!=null)catchupListener.onTimeline(CatchupTimeline.MISMATCH,result.actual,error);
+            throw new IOException(error);
+        }
+        if(result.state==CatchupTimeline.VERIFIED){
+            if(checkedCatchupPlaylists.size()>=64)checkedCatchupPlaylists.remove(checkedCatchupPlaylists.iterator().next());
+            checkedCatchupPlaylists.add(url);
+            if(!catchupVerified){catchupVerified=true;if(catchupListener!=null)catchupListener.onTimeline(result.state,result.actual,"");}
+        }
+    }
     interface SegmentCostListener { void onSegmentCost(long durationMs, long downloadMs, long decryptMs, boolean encrypted); }
     private volatile SegmentCostListener segmentCostListener;
     interface StartupCostListener { void onCost(String stage, long durationMs, long now); }
@@ -184,6 +216,7 @@ final class HlsProxyServer implements Closeable {
     }
     String playerHlsUrl(String url) {return systemPlayerHlsUrl(url);}
     boolean canUseDirectHttpHlsUrl(String url) {
+        if(catchupStart>=0)return false;
         // The native ARM profile has neither HTTPS nor the crypto protocol.
         return url != null && url.startsWith("http://")
                 && !carrierIptvSession && webReferer == null && webCookies == null && webUserAgent == null
@@ -1134,9 +1167,17 @@ final class HlsProxyServer implements Closeable {
 
     private String rewritePlaylistContent(String policyUrl, String responseUrl, String body)
             throws IOException {
+        verifyCatchupTimeline(responseUrl,body);
         synchronized(knownHlsPlaylists){knownHlsPlaylists.put(policyUrl,true);knownHlsPlaylists.put(responseUrl,true);}
         URI base = URI.create(responseUrl);
         body = body.replace("\r", "");
+        if(catchupStart>=0&&!body.contains("#EXT-X-STREAM-INF")){
+            // A requested, completed programme starts at its first returned segment.
+            // Live-edge defaults and EXT-X-START must not move playback to the end.
+            body=body.replaceAll("(?m)^#EXT-X-START:[^\\n]*(?:\\n|$)","");
+            body=body.replaceFirst("#EXTM3U","#EXTM3U\n#EXT-X-START:TIME-OFFSET=0,PRECISE=YES");
+            finiteMedia=true;
+        }
         String[] lines = body.split("\n", -1);
         if (!body.contains("#EXT-X-STREAM-INF")) segmentBitrate.register(responseUrl, lines);
         /* Generic third-party HLS may still use the proxy when a WebView supplied
@@ -1158,7 +1199,7 @@ final class HlsProxyServer implements Closeable {
                 if (nativePlaylist != null) return nativePlaylist;
             }
             return rewriteGenericMediaPlaylist(policyUrl, base, lines, body.length(),
-                    !isFiniteMediaPlaylist(body));
+                    catchupStart<0&&!isFiniteMediaPlaylist(body));
         }
         if (body.contains("#EXT-X-STREAM-INF")) {
             return rewriteMasterPlaylist(base, lines);
@@ -1169,7 +1210,7 @@ final class HlsProxyServer implements Closeable {
          * CCTV programme pages start on a grey frame or expose a broken duration. Keep a
          * finite playlist intact and only rewrite its resource URLs through this proxy.
          */
-        finiteMedia = isFiniteMediaPlaylist(body);
+        finiteMedia = catchupStart>=0||isFiniteMediaPlaylist(body);
         if (!finiteMedia) {
             String buffered = rewriteBufferedMediaPlaylist(policyUrl, base, lines);
             if (buffered != null) {

@@ -1,0 +1,42 @@
+{
+  "apk": "BBLL1.5.2.apk",
+  "package": "com.xx.blbl",
+  "sha256": "07dc8e12a5234ae4cb4556ff928b84be73f5378488d9bd34317b2f8c8b62f694",
+  "upstream": "https://github.com/Frost819/newBV",
+  "revision": "bc21a8a28d2b80fb9986c9cb5e9f4ab82f070a47",
+  "layouts": [
+    "activity_main",
+    "view_tab_bar",
+    "cell_video",
+    "fragment_video_player",
+    "my_player_control_view",
+    "fragment_search",
+    "fragment_sign_in",
+    "cell_player_setting",
+    "dialog_choose_episode"
+  ],
+  "icons": [
+    "icon_home",
+    "icon_search",
+    "icon_user",
+    "icon_setting",
+    "icon_favorite",
+    "icon_play",
+    "icon_pause",
+    "icon_list",
+    "icon_fast_forward",
+    "icon_dm_enable",
+    "icon_video_up",
+    "icon_close",
+    "icon_previous",
+    "icon_next",
+    "icon_rewind",
+    "icon_more",
+    "icon_subtitles",
+    "icon_order_all_play",
+    "icon_order",
+    "player_icon_setting",
+    "arrow_down",
+    "icon_dm_disable"
+  ]
+}

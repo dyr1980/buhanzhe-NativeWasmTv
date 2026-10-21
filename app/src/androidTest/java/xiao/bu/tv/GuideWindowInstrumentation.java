@@ -26,9 +26,9 @@ public final class GuideWindowInstrumentation extends Instrumentation {
     private void open()throws Exception{
         main(()->{Method m=MainActivity.class.getDeclaredMethod("openTvUiMenu");m.setAccessible(true);m.invoke(activity);});settle();
         main(()->{ListView cats=(ListView)field(content(),"categories");cats.setSelection(5);cats.performItemClick(null,5,5);});settle();
-        main(()->((ListView)field(content(),"options")).performItemClick(null,5,5));settle();
+        main(()->((ListView)field(content(),"options")).performItemClick(null,6,6));settle();
     }
-    public void onStart(){Bundle status=new Bundle();int code=1;String saved="builtin";
+    public void onStart(){Bundle status=new Bundle();int code=1;String saved="builtin";String savedScale=getTargetContext().getSharedPreferences(MainActivity.PREFERENCES,0).getString("ui_scale_mode","standard");getTargetContext().getSharedPreferences(MainActivity.PREFERENCES,0).edit().putString("ui_scale_mode","standard").commit();
         try{
             Context c=getTargetContext();out=new File(c.getExternalFilesDir(null),"guide-fullscreen");out.mkdirs();saved=new JSONObject(TvUiPlugin.status(c)).getString("selected");
             c.startActivity(new Intent(c,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));long end=SystemClock.elapsedRealtime()+15000;while(activity==null&&SystemClock.elapsedRealtime()<end)SystemClock.sleep(50);check(activity!=null,"No Activity");SystemClock.sleep(800);
@@ -42,15 +42,16 @@ public final class GuideWindowInstrumentation extends Instrumentation {
                         row.put("x",g[0]).put("y",g[1]).put("width",guide.getWidth()).put("height",guide.getHeight());
                         if(Build.VERSION.SDK_INT>=28){WindowManager.LayoutParams p=(WindowManager.LayoutParams)guide.getRootView().getLayoutParams();check(p.layoutInDisplayCutoutMode==activity.getWindow().getAttributes().layoutInDisplayCutoutMode,"Cutout policy not inherited");row.put("cutoutMode",p.layoutInDisplayCutoutMode);}
                     });
-                    Bitmap shot=getUiAutomation().takeScreenshot();int left=shot.getPixel(0,shot.getHeight()/2),right=shot.getPixel(shot.getWidth()-1,shot.getHeight()/2);check(left==right&&left!=0xffff4040,"Uncovered guide edge "+theme+" "+Integer.toHexString(left)+" / "+Integer.toHexString(right));row.put("edgeColor",Integer.toHexString(left));
+                    Bitmap shot; if(Build.VERSION.SDK_INT>=18)shot=getUiAutomation().takeScreenshot();else{final Bitmap[] drawn={null};main(()->{View v=content();drawn[0]=Bitmap.createBitmap(v.getWidth(),v.getHeight(),Bitmap.Config.ARGB_8888);v.draw(new android.graphics.Canvas(drawn[0]));});shot=drawn[0];}int left=shot.getPixel(0,shot.getHeight()/2),right=shot.getPixel(shot.getWidth()-1,shot.getHeight()/2);check(left==right&&left!=0xffff4040,"Uncovered guide edge "+theme+" "+Integer.toHexString(left)+" / "+Integer.toHexString(right));row.put("edgeColor",Integer.toHexString(left));
                     if(close==0)try(FileOutputStream f=new FileOutputStream(new File(out,theme+".png"))){shot.compress(Bitmap.CompressFormat.PNG,100,f);}finally{shot.recycle();}else shot.recycle();
-                    if(close==0)sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);else if(close==1)sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);else{long now=SystemClock.uptimeMillis();MotionEvent down=MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,300,300,0),up=MotionEvent.obtain(now,now+40,MotionEvent.ACTION_UP,300,300,0);sendPointerSync(down);sendPointerSync(up);down.recycle();up.recycle();}
+                    if(close<2){int key=close==0?KeyEvent.KEYCODE_BACK:KeyEvent.KEYCODE_DPAD_CENTER;if(Build.VERSION.SDK_INT<18)main(()->{View target=content();target.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN,key));target.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP,key));});else sendKeyDownUpSync(key);}else{long now=SystemClock.uptimeMillis();MotionEvent down=MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,content().getWidth()/2,content().getHeight()/2,0),up=MotionEvent.obtain(now,now+40,MotionEvent.ACTION_UP,content().getWidth()/2,content().getHeight()/2,0);if(Build.VERSION.SDK_INT<18)main(()->{View target=content();target.dispatchTouchEvent(down);target.dispatchTouchEvent(up);});else{sendPointerSync(down);sendPointerSync(up);}down.recycle();up.recycle();}
                     settle();check(!menu().visible(),"Guide did not dismiss "+theme+" "+close);rows.put(row.put("passed",true));
                 }
             }
             status.putString("stream","PASS: 15 guide-window cases, five themes x BACK/OK/touch; full host bounds, both edge pixels covered\n");code=-1;
         }catch(Throwable error){status.putString("stream",android.util.Log.getStackTraceString(error));}
         finally{try{if(out!=null)try(FileOutputStream f=new FileOutputStream(new File(out,"results.json"))){f.write(rows.toString(2).getBytes("UTF-8"));}if(activity!=null)main(()->{menu().dismiss();if(backdrop!=null&&backdrop.getParent()!=null)((ViewGroup)backdrop.getParent()).removeView(backdrop);activity.finish();});TvUiPlugin.select(getTargetContext(),saved);}catch(Exception ignored){}}
+        getTargetContext().getSharedPreferences(MainActivity.PREFERENCES,0).edit().putString("ui_scale_mode",savedScale).commit();
         finish(code,status);
     }
 }

@@ -33,6 +33,11 @@ public final class VideoMetadataInstrumentation extends Instrumentation {
                                     Math.min(block.length, 384 * 1024 - sample.size()))) > 0) sample.write(block, 0, n);
                         }
                         cached.submit(sample.toByteArray());
+                        if(android.os.Build.VERSION.SDK_INT<=15){
+                            java.lang.reflect.Field task=CachedVideoMetadataProbe.class.getDeclaredField("task");task.setAccessible(true);
+                            if(task.get(cached)!=null||cached.description()!=VideoStreamDescription.UNKNOWN)throw new AssertionError("API 14/15 advisory probe bypassed safety gate");
+                            report.put(new JSONObject().put("name",fixture.getString("name")).put("legacySafetyGate",true));continue;
+                        }
                         long deadline = android.os.SystemClock.elapsedRealtime() + 6000;
                         while (cached.description().bitDepth == 0 && android.os.SystemClock.elapsedRealtime() < deadline)
                             android.os.SystemClock.sleep(50);

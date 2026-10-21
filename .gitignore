@@ -105,6 +105,10 @@ tools/
 !/tests/legacy-metadata-probe.test.py
 !/tests/tv-ui.test.py
 !/tests/channel-name-width.test.py
+!/tests/catchup-timeline.test.py
+!/tests/catchup-preload.test.py
+!/tests/channel-frame-handoff.test.py
+!/tests/epg-channel-matching.test.py
 !/tests/tv-ui-pages.test.js
 !/tests/update-assets.test.py
 !/app/src/androidTest/java/xiao/bu/tv/TvUiChecks.java

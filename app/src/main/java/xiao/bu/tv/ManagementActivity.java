@@ -884,7 +884,11 @@ public final class ManagementActivity extends Activity {
             final String script = String.format(Locale.US,
                     "window.__ntvNativeGyroscope&&window.__ntvNativeGyroscope(%.7f,%.7f,%.7f)",
                     event.values[0], event.values[1], event.values[2]);
-            webView.evaluateJavascript(script, null);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                webView.evaluateJavascript(script, null);
+            } else {
+                webView.loadUrl("javascript:" + script);
+            }
         }
 
         @Override

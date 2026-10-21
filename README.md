@@ -137,6 +137,8 @@ http://your-iptv-server/channel/index.m3u8
 
 默认采用增量构建，避免 Windows 文件占用导致 `:app:clean` 失败；需要完整清理时可执行 `build-release.bat -Clean`。命令行也可继续传递 `-SkipClean` 等原脚本参数。
 
+构建使用 JDK 17、Gradle 8.11.1 和 Android Gradle Plugin 8.9.1，需要安装 Android SDK Platform 34、Build Tools 35.0.0；应用最低系统版本与 targetSdk 保持不变。正式包启用 R8 代码优化、混淆和资源裁剪，旧系统的电视横幅只生成一张 PNG 兼容图。打包时在 APK 旁导出一个 `output/mapping.zip`，内含 `arm32/mapping.txt`、`arm64/mapping.txt`、`x86/mapping.txt` 及记录 APK、映射 SHA256 的 `manifest.json`。每个 APK 的映射仍按哈希归档为 `output/mapping/<APK 的 SHA256>/mapping.txt`，保留历史版本。映射缺失或为空时打包会报错；发布时请保留对应 ZIP，用于还原该版本的崩溃堆栈。
+
 日常打包只在输出目录生成 `version-lite.json`，设备信息页优先使用它检查应用版本；若返回 HTTP 404，则读取同一发布目录的 `version.json`，兼容未提供轻量清单的旧版本。其他网络错误保留失败提示。只有解码器等重要更新才使用 `build-release.bat -ImportantUpdate`，额外生成启动检查使用的 `version.json` 和兼容旧版的 `version-iptv.json`。
 
 ## 说明

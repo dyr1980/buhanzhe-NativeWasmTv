@@ -14,7 +14,7 @@ if (releaseKeystore.exists() != releaseSigningInfo.exists()) {
 def releaseSigningProperties = new Properties()
 def configuredTargetSdk = 25
 def configuredVersionCode = project.hasProperty('versionCodeOverride')
-        ? Integer.parseInt(project.property('versionCodeOverride').toString()) : 22
+        ? Integer.parseInt(project.property('versionCodeOverride').toString()) : 23
 if (releaseSigningAvailable) {
     releaseSigningInfo.withInputStream { releaseSigningProperties.load(it) }
     ['alias', 'storePassword', 'keyPassword'].each { propertyName ->
@@ -26,11 +26,18 @@ if (releaseSigningAvailable) {
 }
 
 android {
+    namespace 'xiao.bu.tv'
+    buildFeatures { buildConfig true }
+
+    // The prebuilt native libraries are already stripped; preserve the audited binaries.
+    packagingOptions { jniLibs { keepDebugSymbols += ['**/*.so'] } }
+
     if (project.hasProperty('cjsV5Assets')) {
         sourceSets.androidTest.assets.srcDir project.property('cjsV5Assets')
     }
-    compileSdkVersion 30
-    buildToolsVersion '27.0.3'
+
+    compileSdkVersion 34
+    buildToolsVersion '35.0.0'
     testBuildType project.findProperty('testBuildType') ?: 'debug'
 
     signingConfigs {
@@ -48,11 +55,13 @@ android {
         applicationId project.hasProperty('applicationIdOverride')
                 ? project.property('applicationIdOverride').toString() : 'xiao.bu.tv'
         minSdkVersion 14
+        // One 320x180 fallback for API 14-20; API 21+ keeps the original vector.
+        vectorDrawables.generatedDensities = ['xhdpi']
         // API 25 keeps the legacy package-installer flow without declaring
         // REQUEST_INSTALL_PACKAGES, while remaining installable on Android 15.
         targetSdkVersion configuredTargetSdk
         versionCode configuredVersionCode
-        versionName '3.3.0'
+        versionName '3.3.1'
         buildConfigField 'boolean', 'CAST_LATENCY_TRACE',
                 project.findProperty('castLatencyTrace') == 'true' ? 'true' : 'false'
         testInstrumentationRunner project.hasProperty('testRunner')
@@ -110,10 +119,10 @@ android {
             buildConfigField 'String', 'MP4_FINALIZER_SOURCE_URL', '""'
         }
         release {
-            // Remove unreachable Java code but preserve class names for old-device
-            // reflection, readable crash traces and release APK validation.
+            // R8 removes unused code, optimizes bytecode and shortens internal names.
+            // JNI, JavaScript and downloaded plugin entry points stay in the keep rules.
             minifyEnabled true
-            shrinkResources false
+            shrinkResources true
             if (releaseSigningAvailable) {
                 signingConfig signingConfigs.iptvRelease
             }
@@ -132,7 +141,7 @@ android {
                     '"https://raw.githubusercontent.com/dyr1980/buhanzhe-NativeWasmTv/gh-pages/video-recorder.html"'
             buildConfigField 'String', 'MP4_FINALIZER_SOURCE_URL',
                     '"https://raw.githubusercontent.com/dyr1980/buhanzhe-NativeWasmTv/gh-pages/mp4-finalizer.js"'
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             testProguardFile 'proguard-test-rules.pro'
             if (project.findProperty('testRunner') == 'xiao.bu.tv.CjsV5Instrumentation') {
                 proguardFile 'proguard-cjs-test.pro'
@@ -140,7 +149,7 @@ android {
         }
     }
 
-    // 固定三种架构的 APK 输出文件名，方便 GitHub Actions 复制与发布。
+    // 固定三种架构的 APK 输出文件名，确保构建产物就是 XCZ 系列。
     applicationVariants.all { variant ->
         variant.outputs.all { output ->
             if (variant.flavorName == 'arm32') {
@@ -155,7 +164,6 @@ android {
 
     sourceSets {
         main {
-            java.srcDirs += [rootProject.file("third_party/android-transcoder/src")]
             jni.srcDirs = []
             jniLibs.srcDirs = ['src/main/libs']
         }
@@ -172,15 +180,9 @@ android {
     }
 
     aaptOptions {
-        // Keep AAPT's default exclusions and omit management-site authoring docs.
-        ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~:README.md'
-    }
-}
-
-// 供 GitHub Actions 读取版本号使用
-task printVersionName {
-    doLast {
-        println android.defaultConfig.versionName
+        // Keep AAPT's defaults. Debug pages need HTML/JS, not authoring reports
+        // or the device-matrix CSV/screenshots; release pages stay remote.
+        ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~:!*.md:!ku9-device-matrix-*'
     }
 }
 
@@ -197,8 +199,8 @@ task packageWebkitCorePair(type: Jar) {
             'androidx/core/util/ObjectsCompat.class']
     inputs.property 'retainedClasses', retainedClasses
     inputs.files configurations.webkitCorePair
-    archiveName = 'webkit-core-pair.jar'
-    destinationDir = file("$buildDir/generated/webkit")
+    archiveFileName.set('webkit-core-pair.jar')
+    destinationDirectory.set(file("$buildDir/generated/webkit"))
     from({
         File classes = zipTree(configurations.webkitCorePair.singleFile)
                 .matching { include 'classes.jar' }.singleFile
@@ -210,8 +212,7 @@ task packageWebkitCorePair(type: Jar) {
 
 dependencies {
     implementation 'tv.danmaku.ijk.media:ijkplayer-java:0.8.8'
-    // ARM builds use the locally patched IJK libraries; x86 uses upstream 0.8.8.
-    x86Implementation 'tv.danmaku.ijk.media:ijkplayer-x86:0.8.8'
+    // All ABIs use the patched local libraries, including Dolby audio and metrics.
     implementation('androidx.webkit:webkit:1.9.0') {
         exclude group: 'androidx.core', module: 'core'
     }
@@ -254,15 +255,19 @@ task generateVersionFile {
             throw new GradleException('-PupdateApk32, -PupdateApk64 and -PupdateApkX86 are required')
         }
         String releaseBase = 'https://github.com/dyr1980/buhanzhe-NativeWasmTv/releases/latest/download/'
+        // Keep the release asset names compatible with the XCZ updater.
+        String apk32Asset = 'XCZ.apk'
+        String apk64Asset = 'XCZ64.apk'
+        String apkX86Asset = 'XCZX86.apk'
 
         def manifest = [
                 versionCode : android.defaultConfig.versionCode,
                 versionName : android.defaultConfig.versionName,
                 // apkUrl/sha256 keep every released 32-bit updater backward compatible.
-                apkUrl      : releaseBase + 'XCZ.apk',
-                apk32Url    : releaseBase + 'XCZ.apk',
-                apk64Url    : releaseBase + 'XCZ64.apk',
-                apkX86Url   : releaseBase + 'XCZX86.apk',
+                apkUrl      : releaseBase + apk32Asset,
+                apk32Url    : releaseBase + apk32Asset,
+                apk64Url    : releaseBase + apk64Asset,
+                apkX86Url   : releaseBase + apkX86Asset,
                 sha256      : sha25632,
                 sha25632    : sha25632,
                 sha25664    : sha25664,

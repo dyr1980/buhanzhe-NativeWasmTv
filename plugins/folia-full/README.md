@@ -6,11 +6,11 @@
 
 ## 安装和交互
 
-需要本次更新的宿主 APK：新 JAR 约 10.4 MiB，旧宿主的 8 MiB 上限无法加载。
-要求 Android 7.0+、**Android System WebView 111 或以上**。推荐 WebView 119+。
-已在 Android 7.1.1 / WebView 119 真机验证，并使用 Chromium 111.0.5563.33 验证前端。
-系统版本与 WebView 内核版本是两回事，Android 7 自带的旧内核不满足要求。
-插件启动时检查原始内核 UA，低于 111 会明确提示更新，不受宿主伪装 UA 的设置影响。
+需要支持 32 MiB JAR 的宿主 APK：新 JAR 约 12.5 MiB，旧宿主的 8 MiB 上限无法加载。
+要求 Android 7.0+、**Android System WebView / Chrome 61 或以上**。推荐较新的内核。
+兼容构建在 Android 7.1.1 / 出厂 WebView 61.0.3163.98 真机和 Android 9 / WebView 68.0.3440.70 模拟器测试。
+系统版本与 WebView 内核版本是两回事，Android 7 自带的旧内核仍可能不满足要求。
+插件启动时检查原始内核 UA，低于 61 会明确提示更新，不受宿主伪装 UA 的设置影响。
 
 将 `dist/folia-full.jar` 上传到 HTTPS 服务，在 M3U 中使用：
 
@@ -60,9 +60,10 @@ python plugins/folia-full/build.py
 `--source 路径` 可以复用已有源码，但会逐文件校验它与固定归档一致；
 `--skip-install` 仅适用于该目录已经成功运行 npm ci 的情况。
 
-构建适配全部写在脚本中：目标 Chrome 111、为 worker 提供上游虚拟模块插件、
+构建适配全部写在脚本中：目标 Chrome 61、使用 classic worker 并提供上游虚拟模块插件、
 禁用替换内置页面的 PWA 插件、使用相对 API 地址。酷狗依赖使用同一固定版本的
-GitHub codeload 下载地址，未替换依赖实现。官方源码文件保持原样；Vite 适配仅为本地库可用性检查增加 Android 文件多选桥接入口。
+GitHub codeload 下载地址，未替换依赖实现。官方源码文件保持原样；Vite 适配增加 Android 文件夹桥接入口，
+并按内核能力选择原版书库布局、转换旧内核不支持的轮播内联样式。
 
 样式使用 Lightning CSS 1.32.0，将 4/8 位十六进制透明色降级为传统 rgba()，
 同时处理颜色语法和 CSS 嵌套。宿主 targetSdk 25 下，即使内核 119 也会禁用
@@ -71,9 +72,29 @@ compat-assets.mjs 使用 Babel parser 处理生成 JS 中的完整颜色字符�
 避免对整个脚本直接替换。core-js 3.51.0 为页面和 worker 补齐 Promise.withResolvers、
 Object/Map.groupBy 等较新 API。兼容依赖只在构建时打包，不在手机启动时下载。
 
-111 是当前支持下限，依据上游 Tailwind 4 的 color-mix 等基础功能及旧内核验证设定，
-并不承诺低于 111 的 WebView 可完整运行。WebGPU、GPU 模型分析和部分高级特效仍取决于
-内核与设备能力，转译库不能提供硬件功能。
+Chrome 61 兼容构建还包含：
+
+- Babel 将 async/await 和异步迭代降为 generator，避免旧 Chromium 中 Dexie 事务提前提交。
+- regexpu-core 展开 Unicode 属性正则，避免旧引擎不认识 Extended_Pictographic 等属性。
+- FormatJS 补齐 Intl.Locale/Segmenter，保留歌词分词能力；core-js 补齐其余标准库 API。
+- PostCSS Preset Env 降级 CSS 层和选择器，补齐 Tailwind 的属性初始值、弹窗高度和旧式颜色。
+  根变量和 reset 的选择器单独输出普通文档分支，避免旧解析器丢弃含 :host/::backdrop 的整组规则。
+  所有 CSS 分包统一计算层级优先级，避免 reset 压过其他分包的组件规则。
+- 同样转换 JS 中运行时注入的 shader CSS，保证背景画布填满容器；为封面补齐正方形比例，
+  将轮播的 paddingInline 改为左右 padding，保持首张卡片居中。
+- 不支持容器查询或 color-mix 的内核使用上游原有 Grid 书库，隐藏依赖这些能力的 Bravais 布局。
+  不覆盖保存的布局偏好，升级内核后仍可使用 Bravais。
+- 小型 DOM 适配补齐 Blob.text/arrayBuffer、ResizeObserver 尺寸和 focus-visible。
+  旧内核上的内联主题 color-mix 在样式变化时解析为 rgba；不在每个动画帧扫描页面。
+- SystemJS 保留分包与动态加载，转换 import()/import.meta；其 resolve 适配遵循 Vite 所需的同步约定。
+  页面样式只进入主线程，classic worker 不包含 DOM 样式注入器。
+- ResizeObserver、AbortController 和 toggleAttribute 提供旧内核缺少的实现。
+- 音频元数据模块使用受限的源码转换和 JSBI，补齐 BigInt 运算与 DataView 的 64 位读写；
+  有原生 BigInt 的内核继续使用原生实现。没有将 64 位值直接转为可能丢失精度的 Number。
+
+最低版本是实际 WebView 61，不是把 UA 改成 61。低于此版本未承诺兼容。
+旧内核上的渐变使用 sRGB 近似；部分新式布局与动效可能有差异。WebGPU、GPU 模型分析、
+高级特效和桌面专属功能不会由这些补丁提供；在线服务及登录仍取决于外部服务。
 
 `assets/upstream-manifest.json` 记录官方提交、源码归档 SHA-256 和每个生成文件的哈希。
 `build.py` 会验证来源和文件哈希后再打包。Java 编译需要 Java 8、Android 30 和
@@ -120,3 +141,19 @@ HTTPS JAR 校验加载、官方源码前端挂载、100% / 150% 下真实触摸�
 另外保留无需额外播放手势的 HTTP 代理音频播放检查。只使用测试自建文件，
 不读取用户音乐，也不改变系统选择器的禁用状态。
 测试代码见 `FoliaFullInstrumentation` 和 `app/src/androidTest/assets/folia-native-import.js`。本次没有宣称逐项验证所有账号、主题和在线服务。
+
+2026-10-21 Chrome 68 兼容回归包含：原版页面启动、原版更新与首次引导按钮、
+100%/150% 的真实触摸和飞鼠点击、深色设置页、HTTP 音频自动播放、文件夹取消/再次打开、
+遥控器选择/进入/返回/导入、文件数量、本地 WAV 与 LRC 导入、IndexedDB 重载恢复、
+本地音频播放时间推进，以及网页历史优先返回、根页双返回退到频道主页。
+设备系统 WebView 未升级，测试使用独立包 `xiao.bu.tv.channeltest`。
+首页额外检查背景画布与容器尺寸一致、轮播当前卡片居中、封面保持正方形；
+在 Android 9 / WebView 68 和 Android 7.1.1 / WebView 119 上通过。
+构建侧回归可运行 `node plugins/folia-full/tests/css-compat.mjs`，检查运行时 shader 样式和跨分包层级。
+
+同日将 Android 7.1.1 真机恢复为出厂 WebView 61.0.3163.98 后，使用独立包复测：
+真实元数据 worker 解析 WAV 时长、本地 WAV/LRC 导入与重载恢复、本地播放、HTTP 自动播放、
+首页背景铺满、正方形封面、轮播居中、歌单进入/返回、100%/150% 触摸及飞鼠点击、
+文件夹遥控器操作、深色设置、网页历史及双返回均通过。未升级或切换系统 WebView。
+`node plugins/folia-full/tests/metadata-bigint.mjs` 检查无原生 BigInt 时的精确 64 位读写与运算。
+在线账号登录、全部音频格式和高级 GPU 特效未逐项验证。

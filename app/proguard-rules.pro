@@ -3,6 +3,8 @@
 # may be shrunk normally; keeping the entire dependency prevented their removal.
 -keep class tv.danmaku.ijk.media.player.IjkMediaPlayer { *; }
 -keep class tv.danmaku.ijk.media.player.IjkMediaPlayer$* { *; }
+# Downloaded JARs call loadLibrariesOnce(IjkLibLoader); its parameter is part of the ABI.
+-keep interface tv.danmaku.ijk.media.player.IjkLibLoader { *; }
 -keep class tv.danmaku.ijk.media.player.exceptions.IjkMediaException { *; }
 -keep class tv.danmaku.ijk.media.player.ffmpeg.FFmpegApi { *; }
 -keep interface tv.danmaku.ijk.media.player.misc.IAndroidIO { *; }
@@ -16,9 +18,7 @@
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
 
-# Release only shrinks unreachable code. Keep names and disable bytecode
-# optimization so old TV reflection and readable crash traces remain stable.
--dontobfuscate
+# Internal names may be shortened; preserve dynamically invoked entry points below.
 -keep class xiao.bu.tv.PlayerRootLayout { public <init>(...); }
 -keep interface xiao.bu.tv.radio.RadioUi { *; }
 
@@ -31,11 +31,6 @@
 -keepclassmembers class * extends android.webkit.WebChromeClient {
     public void openFileChooser(...);
 }
-
-# WebKit's API 33 helper is SDK-gated internally; this project compiles against 30.
-# Do not suppress warnings for the rest of AndroidX or our application code.
--dontwarn androidx.webkit.internal.ApiHelperForTiramisu
--dontwarn androidx.webkit.internal.StartupApiFeature
 
 -keep class xiao.bu.tv.NativeQuickJs { *; }
 -keep class xiao.bu.tv.LegacyTlsSocket { *; }
@@ -59,4 +54,20 @@
 -keep interface xiao.bu.tv.jar.ChannelPlugin { *; }
 -keep interface xiao.bu.tv.jar.ChannelPlugin$Host { *; }
 -keep interface xiao.bu.tv.jar.ChannelPlugin$BrowserHost { *; }
+-keep interface xiao.bu.tv.jar.ChannelPlugin$DirectoryHost { *; }
+-keep interface xiao.bu.tv.jar.ChannelPlugin$NativeHost { *; }
+-keep interface xiao.bu.tv.jar.ChannelPlugin$NativePage { *; }
 -keepclassmembers class * implements xiao.bu.tv.jar.ChannelPlugin$Host { public *; }
+
+# Downloaded native channels call these public APIs outside the host's reachability graph.
+-keep class okhttp3.** { public protected *; }
+-keep interface okhttp3.** { *; }
+-keep class okio.** { public protected *; }
+-keep interface okio.** { *; }
+-keep class tv.danmaku.ijk.media.player.AbstractMediaPlayer { *; }
+-keep interface tv.danmaku.ijk.media.player.IMediaPlayer { *; }
+-keep interface tv.danmaku.ijk.media.player.IMediaPlayer$* { *; }
+-keep class tv.danmaku.ijk.media.player.MediaInfo { *; }
+-keep class tv.danmaku.ijk.media.player.IjkTimedText { *; }
+-keep interface tv.danmaku.ijk.media.player.misc.ITrackInfo { *; }
+-keep interface tv.danmaku.ijk.media.player.misc.IMediaFormat { *; }

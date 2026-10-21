@@ -1,3 +1,3 @@
 #EXTM3U
 #EXTINF:-1 group-title="音乐",Folia 源码版
-https://raw.githubusercontent.com/buhanzhe/NativeWasmTv/00e63ac7206d2de85aab5a1ffc03c8888b178872/plugins/folia-full/dist/folia-full.jar?sha256=261cc6735d806bb32282b1be587d1ac8750249707edb072bf3f77ae324ca4c21
+https://raw.githubusercontent.com/buhanzhe/NativeWasmTv/f832a5ca4e14260412dfcf45f91d1664e7badfe7/plugins/folia-full/dist/folia-full.jar?sha256=e468889775459a57952ee5ce3e6e5aa690c83c1a05ec7a42627f3eff458c3d67

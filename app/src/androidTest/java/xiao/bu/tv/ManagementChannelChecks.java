@@ -52,7 +52,9 @@ final class ManagementChannelChecks {
     }
     private void dragToEdge() throws Exception {
         js("window.channelTouchLog=[];['pointerdown','touchstart','mousedown','pointercancel','pointerup'].forEach(function(type){document.addEventListener(type,function(e){channelTouchLog.push([type,e.clientX,e.clientY,e.target.className]);},true);})");
-        JSONArray coords=new JSONArray(js("JSON.stringify((function(){var h=document.querySelector('.channel-drag-handle').getBoundingClientRect(),v=channelEditor.viewport.getBoundingClientRect();return [h.left+h.width/2,h.top+h.height/2,v.bottom-10,window.innerWidth];})())").replaceAll("^\"|\"$", ""));
+        await("channelEditor.first===0&&channelEditor.viewport.scrollTop===0");
+        js("window.__dragReady=false;requestAnimationFrame(function(){requestAnimationFrame(function(){window.__dragReady=true;});})");await("window.__dragReady");
+        JSONArray coords=new JSONArray(js("JSON.stringify((function(){var h=channelEditor.space.children[Math.max(0,Math.ceil(channelEditor.viewport.scrollTop/60)-channelEditor.first)].querySelector('.channel-drag-handle').getBoundingClientRect(),v=channelEditor.viewport.getBoundingClientRect();return [h.left+h.width/2,h.top+h.height/2,v.bottom-10,window.innerWidth];})())").replaceAll("^\"|\"$", ""));
         // JSON.stringify's numeric array is returned as a quoted string by evaluateJavascript.
         int[] location=new int[2];test.runOnMainSync(()->web.getLocationOnScreen(location));
         float scale=web.getWidth()/(float)coords.getDouble(3),x=location[0]+(float)coords.getDouble(0)*scale,

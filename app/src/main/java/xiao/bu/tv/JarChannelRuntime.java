@@ -78,7 +78,8 @@ final class JarChannelRuntime {
                     ChannelPlugin incoming=null;
                     try {
                         incoming=type.getConstructor().newInstance();
-                        View content=incoming.create(context,loader,spec.config,new ChannelPlugin.DirectoryHost(){
+                        View content=incoming.create(context,loader,spec.config,new ChannelPlugin.NativeHost(){
+                            public okhttp3.OkHttpClient httpClient(){return NetworkClient.sharedClient();}
                             public void chooseDirectory(android.webkit.ValueCallback<android.net.Uri[]> selected){
                                 if(token!=generation||!callbackCurrent()){selected.onReceiveValue(null);return;}
                                 if(context instanceof android.app.Activity)filePicker.openDirectory((android.app.Activity)context,selected);
@@ -146,10 +147,18 @@ final class JarChannelRuntime {
     }
     boolean visible(){return view!=null&&view.isShown();}
     boolean goBackIfPossible(){
+        if(visible()&&plugin instanceof ChannelPlugin.NativePage) {
+            try { if(((ChannelPlugin.NativePage)plugin).onBack())return true; }
+            catch(RuntimeException|LinkageError error){failNativePage("back",error);return true;}
+        }
         if(!visible()||browser==null||!browser.canGoBack())return false;
         browser.goBack();return true;
     }
     boolean dispatchMedia(android.view.KeyEvent event){
+        if(visible()&&plugin instanceof ChannelPlugin.NativePage){
+            try{return view.dispatchKeyEvent(event);}
+            catch(RuntimeException|LinkageError error){failNativePage("key",error);return true;}
+        }
         if(!visible()||browser==null||!"ntv-channel-media".equals(browser.getTag()))return false;
         String action;
         switch(event.getKeyCode()){
@@ -185,10 +194,24 @@ final class JarChannelRuntime {
                 view.dispatchTouchEvent(event);
             else view.dispatchGenericMotionEvent(event);
             return true;
+        } catch(RuntimeException|LinkageError error) {
+            failNativePage("pointer",error);return true;
         } finally { event.recycle(); }
     }
-    boolean dispatchKey(android.view.KeyEvent event){if(browser==null)return false;browser.requestFocus();return browser.dispatchKeyEvent(event);}
-    void setActive(boolean active){if(browser!=null){if(active)browser.onResume();else{update(0,false);browser.onPause();}}}
+    boolean dispatchKey(android.view.KeyEvent event){if(!visible())return false;if(browser!=null){browser.requestFocus();return browser.dispatchKeyEvent(event);}return view.dispatchKeyEvent(event);}
+    void setActive(boolean active){
+        if(plugin instanceof ChannelPlugin.NativePage){
+            try{((ChannelPlugin.NativePage)plugin).setActive(active);}
+            catch(RuntimeException|LinkageError error){failNativePage("active",error);return;}
+        }
+        if(browser!=null){if(active)browser.onResume();else{update(0,false);browser.onPause();}}
+    }
+    private void failNativePage(String action,Throwable error){
+        android.util.Log.w("JarChannel","Plugin "+action,error);
+        Callback owner=callback;
+        close();
+        if(owner!=null&&owner.current())owner.status("频道页面运行失败，请重新进入");
+    }
     private static String sha(byte[] bytes)throws Exception {
         StringBuilder result=new StringBuilder();
         for(byte b:java.security.MessageDigest.getInstance("SHA-256").digest(bytes))

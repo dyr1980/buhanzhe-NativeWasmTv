@@ -1,0 +1,25 @@
+// Explicit opt-in for devices that allow updating an existing package but reject a new test APK.
+// This APK is only for device testing. Rebuild WITHOUT this init script and reinstall afterwards.
+allprojects { p ->
+    p.afterEvaluate {
+        if (p.plugins.hasPlugin('com.android.application')) {
+            // Keep explicitly copied test sources separate from normal production inputs.
+            def generated = rootProject.file('.codex-tmp/bl/embedded-runner-generated')
+            def javaDir = new File(generated, 'java/xiao/bu/tv')
+            javaDir.mkdirs()
+            new File(javaDir, 'BlPluginInstrumentation.java').text =
+                    rootProject.file('app/src/androidTest/java/xiao/bu/tv/BlPluginInstrumentation.java').getText('UTF-8')
+            def manifest = new File(generated, 'AndroidManifest.xml')
+            manifest.setText(rootProject.file('app/src/main/AndroidManifest.xml').getText('UTF-8')
+                    .replace('</manifest>', '<instrumentation android:name="xiao.bu.tv.BlPluginInstrumentation" '
+                            + 'android:targetPackage="' + p.android.defaultConfig.applicationId
+                            + '" android:functionalTest="false" /></manifest>'), 'UTF-8')
+            def rules = new File(generated, 'reflection.pro')
+            rules.text = ['MainActivity', 'JarChannelRuntime', 'NetworkClient']
+                    .collect { '-keep class xiao.bu.tv.' + it + ' { *; }' }.join('\n')
+            p.android.sourceSets.main.java.srcDir(new File(generated, 'java'))
+            p.android.sourceSets.main.manifest.srcFile(manifest)
+            p.android.buildTypes.release.proguardFile(rules)
+        }
+    }
+}

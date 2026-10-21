@@ -23,8 +23,8 @@ public final class FoliaFull implements ChannelPlugin {
         browser.setOverScrollMode(View.OVER_SCROLL_NEVER);
         WebSettings settings=browser.getSettings();
         java.util.regex.Matcher engine=java.util.regex.Pattern.compile("Chrome/([0-9]+)").matcher(settings.getUserAgentString());
-        if(!engine.find()||Integer.parseInt(engine.group(1))<111)
-            throw new java.io.IOException("Folia 需要 WebView 111 或更新版本，请更新系统 WebView");
+        if(!engine.find()||Integer.parseInt(engine.group(1))<61)
+            throw new java.io.IOException("Folia 需要 WebView 61 或更新版本，请更新系统 WebView");
         settings.setJavaScriptEnabled(true);settings.setDomStorageEnabled(true);settings.setDatabaseEnabled(true);
         settings.setAllowFileAccess(false);settings.setAllowContentAccess(true);
         settings.setAllowFileAccessFromFileURLs(false);settings.setAllowUniversalAccessFromFileURLs(false);

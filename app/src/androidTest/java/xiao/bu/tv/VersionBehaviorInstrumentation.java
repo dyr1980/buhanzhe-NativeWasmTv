@@ -160,10 +160,11 @@ public final class VersionBehaviorInstrumentation extends Instrumentation {
     }
     @Override public void onCreate(Bundle args) {super.onCreate(args);arguments=args;start();}
     @Override public void onStart() {
-        Bundle result=new Bundle();int status=-1;
+        Bundle result=new Bundle();int status=-1;LegacyFullInstrumentation.Fixture local=null;
         try {
             activity=(MainActivity)startActivitySync(new Intent(getTargetContext(),MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
             SystemClock.sleep(1500);
+            local=new LegacyFullInstrumentation.Fixture(new java.io.File(android.os.Environment.getExternalStorageDirectory(),"ntv-legacy-audit"));final String fixtureBase=local.base();
             ui(() -> {
                 ((java.util.concurrent.atomic.AtomicInteger)get(activity,"catalogLoadGeneration")).incrementAndGet();
                 set("pendingCjsChannelIndex",-1);set("playRequestId",((Integer)get(activity,"playRequestId"))+1);
@@ -172,7 +173,7 @@ public final class VersionBehaviorInstrumentation extends Instrumentation {
                 try {call(activity,"cancelHttpResolve",new Class<?>[0]);} catch(NoSuchMethodException baseline) { }
                 call(activity,"releasePlayer",new Class<?>[0]);call(activity,"closeWebSource",new Class<?>[0]);
                 original=ChannelCatalog.GROUPS;
-                String base="http://127.0.0.1:29981/";
+                String base=fixtureBase;
                 Channel[] channels=new Channel[]{new Channel("1","MP4","",base+"video.mp4",null,null),
                     new Channel("2","HLS VOD","",base+"vod.m3u8",null,null),new Channel("3","MP3","",base+"audio.mp3",null,null)};
                 ChannelCatalog.GROUPS=new ChannelCatalog.Group[]{new ChannelCatalog.Group("Regression",ChannelCatalog.SOURCE_CUSTOM,channels)};
@@ -181,6 +182,7 @@ public final class VersionBehaviorInstrumentation extends Instrumentation {
             play(0,false);play(1,false);play(2,true);play(0,false);overlay();
         } catch(Throwable error) {status=0;report.append(android.util.Log.getStackTraceString(error));}
         finally {if(activity!=null) try {ui(() -> {call(activity,"releasePlayer",new Class<?>[0]);if(original!=null) ChannelCatalog.GROUPS=original;activity.finish();});}catch(Exception error){status=0;report.append(error);}}
+        if(local!=null)local.close();
         result.putString("stream",report.toString());finish(status,result);
     }
 }

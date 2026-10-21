@@ -1,0 +1,1 @@
+System.register(["./lib-Cj6sOhjQ.js"],function(_export,_context){"use strict";var e;return{setters:[function(_libCj6sOhjQJs){e=_libCj6sOhjQJs.BitmapFont;}],execute:function(){_export("BitmapFont",e);}};});

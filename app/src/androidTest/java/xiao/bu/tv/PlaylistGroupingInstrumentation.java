@@ -106,7 +106,7 @@ public final class PlaylistGroupingInstrumentation extends Instrumentation {
             equal(appended,new PlaylistManager(isolated).loadCached(),"failed group update rollback");
             verifyCctvOrder(isolated);
             result.putString("stream","PASS merged same-title groups, cross-source dedup/order/hide, legacy migration, new channel append, device/phone refresh, DB/raw cache recovery, stale revision and rollback\n"
-                    +ManagementChannelChecks.run(this,isolated,manager));
+                    +(android.os.Build.VERSION.SDK_INT>=19?ManagementChannelChecks.run(this,isolated,manager):"SKIP modern WebView drag checks on API <19; LegacyFull control phase covers legacy pages"));
         } catch(Throwable error) { code=1;result.putString("stream",android.util.Log.getStackTraceString(error)); }
         finish(code,result);
     }

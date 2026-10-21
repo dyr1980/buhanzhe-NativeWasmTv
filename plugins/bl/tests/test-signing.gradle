@@ -1,0 +1,9 @@
+// Explicitly opt into debug signing for isolated plugin test APKs only.
+allprojects { project ->
+    project.afterEvaluate {
+        if (project.plugins.hasPlugin('com.android.application')) {
+            project.android.buildTypes.debug.signingConfig = project.android.signingConfigs.debug
+            project.android.buildTypes.release.signingConfig = project.android.signingConfigs.debug
+        }
+    }
+}

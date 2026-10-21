@@ -19,6 +19,56 @@ public final class OnlineCrashRegressionInstrumentation extends Instrumentation 
     private static void check(boolean value, String message) {
         if (!value) throw new AssertionError(message);
     }
+    private static final class FailingPage extends View implements xiao.bu.tv.jar.ChannelPlugin,
+            xiao.bu.tv.jar.ChannelPlugin.NativePage {
+        int disposed;
+        FailingPage(android.content.Context context) { super(context); }
+        @Override public boolean isShown() { return true; }
+        public View create(android.content.Context context, ClassLoader loader, org.json.JSONObject config,
+                xiao.bu.tv.jar.ChannelPlugin.Host host) { return this; }
+        public void update(long position, boolean playing) { }
+        public void dispose() { disposed++; }
+        public boolean onBack() { throw new android.os.NetworkOnMainThreadException(); }
+        public void setActive(boolean active) { throw new android.os.NetworkOnMainThreadException(); }
+        @Override public boolean dispatchKeyEvent(android.view.KeyEvent event) {
+            throw new NoSuchMethodError("old plugin ABI");
+        }
+        @Override public boolean onTouchEvent(android.view.MotionEvent event) {
+            throw new IllegalStateException("plugin pointer callback");
+        }
+    }
+    private void pluginCallbacks() throws Exception {
+        FrameLayout parent = new FrameLayout(getTargetContext());
+        for (int operation = 0; operation < 4; operation++) {
+            JarChannelRuntime runtime = new JarChannelRuntime(getTargetContext(), parent);
+            FailingPage page = new FailingPage(getTargetContext());parent.addView(page);
+            final int[] messages = {0};
+            JarChannelRuntime.Callback owner = new JarChannelRuntime.Callback() {
+                public boolean current() { return true; }
+                public void play(String url) { throw new AssertionError("Unexpected playback"); }
+                public void status(String message) { messages[0]++; }
+                public void configureBrowser(android.webkit.WebView view) { }
+            };
+            for (String name : new String[]{"plugin", "view", "callback"}) {
+                Field field = JarChannelRuntime.class.getDeclaredField(name);field.setAccessible(true);
+                field.set(runtime, "callback".equals(name) ? owner : page);
+            }
+            try {
+                if (operation == 0) check(runtime.goBackIfPossible(), "Failed back not consumed");
+                if (operation == 1) runtime.setActive(false);
+                if (operation == 2) check(runtime.dispatchMedia(new android.view.KeyEvent(
+                        android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_MEDIA_PLAY)), "Failed key not consumed");
+                if (operation == 3) {
+                    android.view.MotionEvent event = android.view.MotionEvent.obtain(1, 1,
+                            android.view.MotionEvent.ACTION_DOWN, 0, 0, 0);
+                    try { check(runtime.dispatchPointer(event, true), "Failed touch not consumed"); }
+                    finally { event.recycle(); }
+                }
+                check(!runtime.visible() && page.disposed == 1 && messages[0] == 1,
+                        "Plugin failure did not detach and dispose exactly once: " + operation);
+            } finally { runtime.destroy(); }
+        }
+    }
     @Override public void onStart() {
         Bundle result = new Bundle();
         try {
@@ -55,6 +105,30 @@ public final class OnlineCrashRegressionInstrumentation extends Instrumentation 
                 check(replacement != channel, "Channel reused as group");
                 replacement.setTag("foreign holder");
                 channels.getView(0, replacement, parent);
+                String selected = getTargetContext().getSharedPreferences("tv_ui", 0)
+                        .getString("selected", "builtin");
+                try {
+                    for (String theme : TvUiPlugin.IDS) {
+                        TvUiPlugin.select(getTargetContext(), theme);
+                        ChannelListAdapter adapter = new ChannelListAdapter(getTargetContext(), scale);
+                        adapter.showChannels(0, ChannelCatalog.CCTV_CHANNELS, 0, 0, 0);
+                        View valid = adapter.getView(0, null, parent);
+                        for (int position : new int[]{-1, adapter.getCount(), Integer.MAX_VALUE}) {
+                            check(adapter.getItem(position) == null, "Stale item survived: " + theme);
+                            check(!adapter.getView(position, valid, parent).isEnabled(),
+                                    "Stale channel retained an active row: " + theme);
+                        }
+                        adapter.showGroups(new ChannelCatalog.Group[0], 0);
+                        check(!adapter.getView(0, valid, parent).isEnabled(),
+                                "Cleared group list accepted a queued bind: " + theme);
+                        check(theme.equals(new org.json.JSONObject(TvUiPlugin.status(getTargetContext()))
+                                .getString("selected")), "Stale bind reset the selected theme: " + theme);
+                        adapter.showChannels(0, ChannelCatalog.CCTV_CHANNELS, 0, 0, 0);
+                        check(adapter.getView(0, valid, parent).isEnabled(),
+                                "Valid channel did not recover: " + theme);
+                    }
+                } finally { TvUiPlugin.select(getTargetContext(), selected); }
+                pluginCallbacks();
                 } catch (Throwable error) { uiFailure[0] = error; }
             });
             if (uiFailure[0] != null) throw uiFailure[0];
@@ -109,7 +183,7 @@ public final class OnlineCrashRegressionInstrumentation extends Instrumentation 
                     check(expected.getCause() instanceof java.io.IOException, "Missing plugin escaped as fatal Error: " + expected.getCause());
                 }
             } finally { proxy.close(); }
-            result.putString("stream", "PASS recycled EPG/channel rows, stale/empty EPG positions, refresh recovery and nonblocking TLS finalizer\n");
+            result.putString("stream", "PASS recycled EPG/channel rows, six-theme stale/empty channel binds, plugin back/lifecycle/key/touch exception containment, refresh recovery and nonblocking TLS finalizer\n");
             finish(-1, result);
         } catch (Throwable error) {
             result.putString("stream", "FAIL " + android.util.Log.getStackTraceString(error));

@@ -1,4 +1,4 @@
-var e=`
+System.register([],function(_export,_context){"use strict";var e;return{setters:[],execute:function(){_export("t",e=`
 in vec2 aPosition;
 out vec2 vTextureCoord;
 
@@ -13,4 +13,4 @@ void main(void) {
     gl_Position = vec4(position, 0.0, 1.0);
     vTextureCoord = aPosition * (uOutputFrame.zw * uInputSize.zw);
 }
-`;export{e as t};
+`);}};});

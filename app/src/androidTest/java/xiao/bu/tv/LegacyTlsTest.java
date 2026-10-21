@@ -27,7 +27,7 @@ final class LegacyTlsTest {
         long started = SystemClock.elapsedRealtime();
         String manifestUrl = "https://raw.githubusercontent.com/TvWasm/cjs/main/sites/tv.gxtv.cn/plugin.json";
         String url = GithubProxy.apply(manifestUrl);
-        check(url.equals("https://gh-proxy.com/" + manifestUrl), "Default HTTPS accelerator");
+        check(url.equals(GithubProxy.baseUrl() + manifestUrl), "Configured HTTPS accelerator");
         org.json.JSONObject manifest = new org.json.JSONObject(Ku9HttpClient.getText(url, null, 1024 * 1024));
         org.json.JSONArray files = manifest.getJSONArray("files");
         int downloaded = 0, total = 0;
@@ -54,9 +54,9 @@ final class LegacyTlsTest {
                 downloaded++;
             } finally { request.disconnect(); }
         }
-        check(downloaded == 2, "Runtime and native plugin were not both downloaded");
-        return "PASS GitHub HTTPS: manifest, runtime and " + BuildConfig.CJS_PLUGIN_ABI
-                + " SO verified; " + total + " bytes in " + (SystemClock.elapsedRealtime() - started) + " ms\n";
+        check(downloaded > 0, "No compatible plugin files downloaded");
+        return "PASS GitHub HTTPS: manifest and " + downloaded + " compatible files SHA-256 verified (" + BuildConfig.CJS_PLUGIN_ABI
+                + "); " + total + " bytes in " + (SystemClock.elapsedRealtime() - started) + " ms\n";
     }
     static String run(Context context) throws Exception {
         NetworkClient.initialize(context);

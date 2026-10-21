@@ -17,6 +17,16 @@ public interface ChannelPlugin {
     interface DirectoryHost extends BrowserHost {
         void chooseDirectory(android.webkit.ValueCallback<android.net.Uri[]> callback);
     }
+    /** Native View plugins share the application's TLS, DNS and connection pool. */
+    interface NativeHost extends DirectoryHost {
+        // The value is the host's okhttp3.OkHttpClient; keep baseline API-1 builds transport-free.
+        Object httpClient();
+    }
+    /** Optional native navigation and foreground lifecycle, independent of Activities. */
+    interface NativePage {
+        boolean onBack();
+        void setActive(boolean active);
+    }
     View create(Context context, ClassLoader resources, JSONObject config, Host host) throws Exception;
     void update(long positionMs, boolean playing);
     void dispose();

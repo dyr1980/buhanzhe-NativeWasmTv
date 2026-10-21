@@ -41,6 +41,9 @@ public final class LegacyVideoScreenshotInstrumentation extends Instrumentation 
             VideoScreenshot.Source source=()->new VideoScreenshot.Target(null,session[0],width,height,
                     segments[0],getTargetContext().getCacheDir());
             VideoScreenshot screenshots=new VideoScreenshot();
+            java.lang.reflect.Field available=NativeVideoFrame.class.getDeclaredField("AVAILABLE");available.setAccessible(true);
+            Bundle diagnostic=new Bundle();diagnostic.putString("stream","Frame decoder nativeAvailable="+available.getBoolean(null)
+                    +" avcPid="+HlsProxyServer.findAvcVideoPid(segment)+" segmentBytes="+segment.length+"\n");sendStatus(0,diagnostic);
             long start=SystemClock.elapsedRealtime();
             boolean preview="true".equals(args.getString("preview"));
             byte[] image=capture(screenshots,source,preview);

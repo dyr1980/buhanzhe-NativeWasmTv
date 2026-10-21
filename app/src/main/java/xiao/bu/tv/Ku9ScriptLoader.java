@@ -16,7 +16,6 @@ import java.util.regex.Pattern;
 final class Ku9ScriptLoader {
     private static final String TAG = "Ku9ScriptLoader";
     private static final String SCRIPT_MARKER = "/ku9/js/";
-    private static final String NETWORK_MARKER = "/k-web/";
     private static final String HNYX_SCRIPT = "hnyx.js";
     private static final String SCRIPT_DIRECTORY = "js";
     private static final int MAX_SCRIPT_BYTES = 2 * 1024 * 1024;
@@ -138,13 +137,12 @@ final class Ku9ScriptLoader {
         }
 
         String script;
-        // Ku9 treats every /ku9/js/ address without /k-web/ as a local script.
-        // The host is only a placeholder (usually "A") and time-shift sources may
-        // insert another path segment between /k-web/ and /ku9/js/.
+        // Placeholder hosts (usually "A") use local scripts; real hosts load online
+        // scripts regardless of the path prefix before /ku9/js/.
         String host = uri.getHost();
         boolean localPlaceholder = host != null && host.indexOf('.') < 0
                 && host.indexOf(':') < 0;
-        if (localPlaceholder || !lowerPath.contains(NETWORK_MARKER)) {
+        if (localPlaceholder) {
             script = readLocal(fileName);
         } else {
             String scriptUrl = GithubProxy.apply(activity, withoutQuery(uri));

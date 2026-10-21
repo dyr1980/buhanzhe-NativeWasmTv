@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
-    package="xiao.bu.tv">
+    xmlns:tools="http://schemas.android.com/tools">
     <!-- DesktopWebProfile guards all AndroidX WebKit calls on API 19+. Native
          playback and the legacy WebView path keep supporting API 14-18. -->
     <!-- Bugly requires API 15; CrashReporting never loads it on API 14. -->

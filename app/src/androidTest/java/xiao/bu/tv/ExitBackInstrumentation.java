@@ -19,7 +19,7 @@ public final class ExitBackInstrumentation extends Instrumentation {
     private interface Task{void run()throws Exception;}
     private void main(Task task)throws Exception{final Throwable[] error={null};runOnMainSync(()->{try{task.run();}catch(Throwable e){error[0]=e;}});waitForIdleSync();if(error[0]!=null)throw new AssertionError(error[0]);}
     private static void check(boolean value,String message){if(!value)throw new AssertionError(message);}
-    private void key(int code){long now=SystemClock.uptimeMillis();check(getUiAutomation().injectInputEvent(new KeyEvent(now,now,KeyEvent.ACTION_DOWN,code,0),true),"Key down injection failed");check(getUiAutomation().injectInputEvent(new KeyEvent(now,now+30,KeyEvent.ACTION_UP,code,0),true),"Key up injection failed");waitForIdleSync();}
+    private void key(int code){if(Build.VERSION.SDK_INT<18){try{main(()->{TvUiMenu menu=(TvUiMenu)field(activity,"tvUiMenu");View target=menu.visible()&&field(menu,"exitEvents")==null?menu.contentView():null;if(target!=null){target.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN,code));target.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP,code));}else{activity.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN,code));activity.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP,code));}});}catch(Exception e){throw new AssertionError(e);}return;}long now=SystemClock.uptimeMillis();check(getUiAutomation().injectInputEvent(new KeyEvent(now,now,KeyEvent.ACTION_DOWN,code,0),true),"Key down injection failed");check(getUiAutomation().injectInputEvent(new KeyEvent(now,now+30,KeyEvent.ACTION_UP,code,0),true),"Key up injection failed");waitForIdleSync();}
     private void back(){key(KeyEvent.KEYCODE_BACK);SystemClock.sleep(150);}
     @Override public void onStart(){Bundle result=new Bundle();JSONArray rows=new JSONArray();int code=1;
         Context c=getTargetContext();String saved=c.getSharedPreferences("tv_ui",0).getString("selected","builtin");
@@ -59,9 +59,9 @@ public final class ExitBackInstrumentation extends Instrumentation {
                 main(()->a.dispatchKeyEvent(new KeyEvent(0,SystemClock.uptimeMillis(),KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BACK,3)));
                 check(!a.isFinishing(),"Held BACK repeat confirmed exit "+id);
                 if(bridge)main(a::onBackPressed);else back();
-                until=SystemClock.elapsedRealtime()+8000;while(!a.isDestroyed()&&SystemClock.elapsedRealtime()<until)SystemClock.sleep(40);
-                check(a.isFinishing()&&a.isDestroyed(),"Second BACK failed to exit "+id);
-                check(field(a,"player")==null,"Player retained after exit "+id);
+                until=SystemClock.elapsedRealtime()+8000;while(!(Build.VERSION.SDK_INT>=17?a.isDestroyed():a.isFinishing())&&SystemClock.elapsedRealtime()<until)SystemClock.sleep(40);
+                check(a.isFinishing()&&(Build.VERSION.SDK_INT<17||a.isDestroyed()),"Second BACK failed to exit "+id);
+                long released=SystemClock.elapsedRealtime()+3000;while(field(a,"player")!=null&&SystemClock.elapsedRealtime()<released)SystemClock.sleep(25);check(field(a,"player")==null,"Player retained after exit "+id);
                 rows.put(new JSONObject().put("theme",id).put("bridgeBack",bridge).put("firstBackShowsConfirmation",true).put("heldBackIgnored",true).put("secondBackExits",true).put("playerReleased",true).put("classicRemoteQr",id.equals("builtin")));
             }
             result.putString("stream","PASS: classic BACK+OK and MENU keep native QR; six themes, real first/second BACK, held-key repeat, DPAD settings, ordinary menu BACK and web-control BACK\n");code=-1;
