@@ -164,6 +164,9 @@ android {
 
     sourceSets {
         main {
+            // 【已修改】加上这一行，引入缺失的 transcoder 源码
+            java.srcDirs += [rootProject.file("third_party/android-transcoder/src")]
+            
             jni.srcDirs = []
             jniLibs.srcDirs = ['src/main/libs']
         }
