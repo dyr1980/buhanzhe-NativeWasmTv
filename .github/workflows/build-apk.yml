@@ -18,11 +18,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up JDK 8
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "8"
+          java-version: "17"
           cache: gradle
 
       - name: Manually install Android SDK cmdline-tools 4.0
@@ -37,7 +37,7 @@ jobs:
           export PATH=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH
           echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> $GITHUB_PATH
           yes | sdkmanager --licenses
-          sdkmanager "platform-tools" "platforms;android-30" "build-tools;30.0.3"
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;35.0.0"
 
       - name: 赋予 gradlew 执行权限
         run: chmod +x ./gradlew
@@ -79,7 +79,7 @@ jobs:
             -PupdateApk64=dist/XCZ64.apk \
             -PupdateApkX86=dist/XCZX86.apk \
             -PimportantUpdate=true \
-            -PreleaseNotes="小橙子电视 GitHub Actions 自动构建"
+            -PreleaseNotes="固定 BL v5 只读验收版订阅与校验值"
 
       - name: 上传产物
         uses: actions/upload-artifact@v4
@@ -104,7 +104,7 @@ jobs:
             gh release create "$TAG" \
               --target "$GITHUB_SHA" \
               --title "XCZTV ${TAG}" \
-              --notes "小橙子电视 GitHub Actions 自动构建" \
+              --notes "固定 BL v5 只读验收版订阅与校验值" \
               dist/XCZ.apk dist/XCZ64.apk dist/XCZX86.apk \
               version.json version-iptv.json version-lite.json
           fi
