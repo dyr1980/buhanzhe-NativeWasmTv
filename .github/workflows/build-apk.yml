@@ -27,15 +27,24 @@ jobs:
 
       - name: Manually install Android SDK cmdline-tools 4.0
         run: |
+          # 清除可能冲突的系统默认 ANDROID_HOME
+          unset ANDROID_HOME
+          
           export ANDROID_SDK_ROOT=${{ github.workspace }}/android-sdk
+          export ANDROID_HOME=${{ github.workspace }}/android-sdk
+          
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          
           mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-6858069_latest.zip -O cmdline.zip
           unzip -q cmdline.zip -d $ANDROID_SDK_ROOT/cmdline-tools
           mv $ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
           rm cmdline.zip
+          
           export PATH=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH
           echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          
           yes | sdkmanager --licenses
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;35.0.0"
 
