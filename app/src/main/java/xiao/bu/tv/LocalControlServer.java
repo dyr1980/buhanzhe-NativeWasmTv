@@ -830,7 +830,7 @@ final class LocalControlServer implements Closeable {
             }
             output.write(headers.append("\r\n").toString().getBytes("ISO-8859-1"));
             output.flush(); // Commit the download response even if the upstream fails on its first read.
-            LiteChunkedOutputStream chunks = download.length < 0 ? new LiteChunkedOutputStream(output) : null;
+            ChunkedOutputStream chunks = download.length < 0 ? new ChunkedOutputStream(output) : null;
             OutputStream mediaOutput = chunks != null ? chunks : output;
             byte[] buffer = transferBuffer.get(); int count;
             long received = 0;
@@ -862,7 +862,7 @@ final class LocalControlServer implements Closeable {
             output.write(responseHeaders(200, resource.contentType, resource.length,
                     "no-store", chunked ? "Transfer-Encoding: chunked\r\n" : "").getBytes("ISO-8859-1"));
             output.flush();
-            LiteChunkedOutputStream chunks = chunked ? new LiteChunkedOutputStream(output) : null;
+            ChunkedOutputStream chunks = chunked ? new ChunkedOutputStream(output) : null;
             OutputStream mediaOutput = chunked ? chunks : output;
             byte[] buffer = transferBuffer.get();
             long received = 0; int count;
@@ -1004,5 +1004,77 @@ final class LocalControlServer implements Closeable {
             serverSocket = null;
         }
         clientWorkers.shutdownNow();
+    }
+
+    // ======= 新增：标准 HTTP 分块输出流，替代原私有 LiteChunkedOutputStream =======
+    private static final class ChunkedOutputStream extends OutputStream {
+        private final OutputStream out;
+        private final byte[] buffer = new byte[8192];
+        private int count;
+        private boolean closed;
+
+        ChunkedOutputStream(OutputStream out) {
+            this.out = out;
+        }
+
+        @Override
+        public void write(int b) throws IOException {
+            if (closed) throw new IOException("Stream closed");
+            if (count == buffer.length) {
+                flushChunk();
+            }
+            buffer[count++] = (byte) b;
+        }
+
+        @Override
+        public void write(byte[] b, int off, int len) throws IOException {
+            if (closed) throw new IOException("Stream closed");
+            while (len > 0) {
+                int space = buffer.length - count;
+                if (space == 0) {
+                    flushChunk();
+                    space = buffer.length;
+                }
+                int toWrite = Math.min(space, len);
+                System.arraycopy(b, off, buffer, count, toWrite);
+                count += toWrite;
+                off += toWrite;
+                len -= toWrite;
+            }
+        }
+
+        private void flushChunk() throws IOException {
+            if (count == 0) return;
+            out.write(Integer.toHexString(count).getBytes("US-ASCII"));
+            out.write('\r');
+            out.write('\n');
+            out.write(buffer, 0, count);
+            out.write('\r');
+            out.write('\n');
+            out.flush();
+            count = 0;
+        }
+
+        public void finish() throws IOException {
+            if (closed) return;
+            closed = true;
+            flushChunk();
+            out.write('0');
+            out.write('\r');
+            out.write('\n');
+            out.write('\r');
+            out.write('\n');
+            out.flush();
+        }
+
+        @Override
+        public void flush() throws IOException {
+            out.flush();
+        }
+
+        @Override
+        public void close() throws IOException {
+            finish();
+        }
     }
 }
