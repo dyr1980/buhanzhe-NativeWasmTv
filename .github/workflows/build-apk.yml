@@ -88,7 +88,7 @@ jobs:
             -PupdateApk64=dist/XCZ64.apk \
             -PupdateApkX86=dist/XCZX86.apk \
             -PimportantUpdate=true \
-            -PreleaseNotes="固定 BL v5 只读验收版订阅与校验值"
+            -PreleaseNotes="修复旧版安卓播放与网页适配，修复解码失败、播放器准备超时、直播控制语义与进度异常；完善网页播放、频道导入、节目单及电视界面兼容性。加入标准化回归流程、GPLv3 与版权说明。轻量内核仅提交 ARM32、ARM64、x86 的 libntvLitebro.so 快照，排除内核源码及私有子模块入口。"
 
       - name: 上传产物
         uses: actions/upload-artifact@v4
