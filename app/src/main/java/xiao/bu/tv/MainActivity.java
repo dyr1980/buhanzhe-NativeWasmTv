@@ -2018,7 +2018,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                 // Leave protected providers' expiring requests and decryption
                 // exclusively to their original player, including subframes.
                 // Even a background metadata probe would duplicate the request.
-                        || WebTvPlaybackPolicy.webPlayerOnly(pageUrl)
+                                        if (WebTvPlaybackPolicy.webPlayerOnly(pageUrl)
                         || WebTvPlaybackPolicy.webPlayerOnly(webSourceView.currentPageUrl())) return;
                 Log.i(TAG, "Web source stream discovered channel=" + webSourceView.currentChannelTitle()
                         + " url=" + streamUrl);
@@ -3462,12 +3462,9 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                     .put("dateTimeFormat", dateTimeFormat)
                     .put("liveDelayMode", liveDelayMode);
         }
-        if (full || "browser".equals(view) || "script".equals(view)) {
+                if (full || "browser".equals(view) || "script".equals(view)) {
             settings.put("webSourceEngine", webSourceEngine)
                     .put("liteNetworkThreadMultiplier",liteNetworkThreadMultiplier)
-                    .put("liteNetworkThreadCounts",new JSONObject()
-                            .put("0",//// // // LiteEngine.networkThreadCount(0)).put("2",//// // // LiteEngine.networkThreadCount(2))
-                            .put("4",//// // // LiteEngine.networkThreadCount(4)).put("8",//// // // LiteEngine.networkThreadCount(8)))
                     .put("liteBrowserSupported", LiteWebPlayback.supported())
                     .put("configuredWebSourceEngine", defaultWebSourceEngine)
                     .put("defaultWebSourceEngine",BuildConfig.LITE_BROWSER_DEFAULT&&Build.VERSION.SDK_INT<21&&LiteWebPlayback.supported()?"lite":"system")
@@ -3487,11 +3484,11 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                     .put("webViewAdBlockLastUpdatedAt", WebAdBlocker.lastUpdatedAt())
                     .put("webViewAdBlockVersion", WebAdBlocker.version())
                     .put("webViewAdBlockError", WebAdBlocker.lastError())
-                     .put("webViewAdBlockSource", WebAdBlocker.sourceUrl())
-                     .put("webViewWebRtcEnabled", webViewWebRtcEnabled)
-                     .put("webViewUserScriptEnabled", webViewUserScriptEnabled)
-                     .put("webViewUserScripts", new JSONArray(webViewUserScripts))
-                     .put("webViewCacheBytes", webSourceView == null
+                    .put("webViewAdBlockSource", WebAdBlocker.sourceUrl())
+                    .put("webViewWebRtcEnabled", webViewWebRtcEnabled)
+                    .put("webViewUserScriptEnabled", webViewUserScriptEnabled)
+                    .put("webViewUserScripts", new JSONArray(webViewUserScripts))
+                    .put("webViewCacheBytes", webSourceView == null
                             ? 0L : webSourceView.browserCacheSizeBytes());
         }
 
