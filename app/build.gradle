@@ -105,6 +105,8 @@ android {
 
     flavorDimensions 'architecture'
     productFlavors {
+        // ======= 注释掉 ntvBro，避免 CI 报错 =======
+        /*
         ntvBro {
             dimension 'architecture'
             minSdkVersion 14
@@ -113,8 +115,10 @@ android {
             buildConfigField 'String', 'CJS_PLUGIN_ABI', '"armeabi-v7a"'
             buildConfigField 'String', 'UPDATE_APK_URL_FIELD', '"apkBroUrl"'
             buildConfigField 'String', 'UPDATE_SHA256_FIELD', '"sha256Bro"'
-            buildConfigField 'String', 'UPDATE_APK_ASSET', '"xczntvbro.apk"' // 修改处：去掉下划线
+            buildConfigField 'String', 'UPDATE_APK_ASSET', '"xczntvbro.apk"'
         }
+        */
+        // ==========================================
         arm32 {
             dimension 'architecture'
             minSdkVersion 14
@@ -213,7 +217,7 @@ android {
         }
     }
 
-    // 固定四种架构的 APK 输出文件名，确保构建产物符合规范。
+    // 固定三种架构的 APK 输出文件名，确保构建产物符合规范。
     applicationVariants.all { variant ->
         variant.outputs.all { output ->
             if (variant.flavorName == 'arm32') {
@@ -222,9 +226,13 @@ android {
                 outputFileName = "XCZ64.apk"
             } else if (variant.flavorName == 'x86') {
                 outputFileName = "XCZX86.apk"
-            } else if (variant.flavorName == 'ntvBro') {
-                outputFileName = "xczntvbro.apk" // 修改处：去掉下划线
+            } 
+            // 注释掉 ntvBro 的命名
+            /*
+            else if (variant.flavorName == 'ntvBro') {
+                outputFileName = "xczntvbro.apk"
             }
+            */
         }
     }
 
@@ -281,27 +289,16 @@ task packageWebkitCorePair(type: Jar) {
     }
 }
 
-task packageLiteCoreBridge {
-    dependsOn ':litecore:bundleReleaseAar'
-    def aar = project(':litecore').layout.buildDirectory.file('outputs/aar/litecore-release.aar')
-    def bridge = layout.buildDirectory.file('generated/litecore/litecore-bridge.jar')
-    inputs.file aar
-    outputs.file bridge
-    doLast {
-        copy {
-            from zipTree(aar.get().asFile)
-            include 'classes.jar'
-            into bridge.get().asFile.parentFile
-            rename 'classes.jar', 'litecore-bridge.jar'
-        }
-    }
-}
+// ======= 删除了 packageLiteCoreBridge 任务（因为 ntvBro 被禁用了） =======
 
 dependencies {
-    ntvBroImplementation project(':litecore')
-    arm32Implementation files(packageLiteCoreBridge)
-    arm64Implementation files(packageLiteCoreBridge)
-    x86Implementation files(packageLiteCoreBridge)
+    // ======= 注释掉私有内核依赖 =======
+    // ntvBroImplementation project(':litecore')
+    // arm32Implementation files(packageLiteCoreBridge)
+    // arm64Implementation files(packageLiteCoreBridge)
+    // x86Implementation files(packageLiteCoreBridge)
+    // ==================================
+
     implementation 'tv.danmaku.ijk.media:ijkplayer-java:0.8.8'
     // All ABIs use the patched local libraries, including Dolby audio and metrics.
     implementation('androidx.webkit:webkit:1.9.0') {
@@ -350,8 +347,10 @@ task generateVersionFile {
         String apk32Asset = 'XCZ.apk'
         String apk64Asset = 'XCZ64.apk'
         String apkX86Asset = 'XCZX86.apk'
-        String apkBroAsset = 'xczntvbro.apk' // 修改处：去掉下划线
-        String sha256Bro = fileSha256('updateApkBro')
+        
+        // 去掉 ntvBro 相关的变量
+        // String apkBroAsset = 'xczntvbro.apk'
+        // String sha256Bro = fileSha256('updateApkBro')
 
         def manifest = [
                 versionCode : android.defaultConfig.versionCode,
@@ -361,8 +360,7 @@ task generateVersionFile {
                 apk32Url    : releaseBase + apk32Asset,
                 apk64Url    : releaseBase + apk64Asset,
                 apkX86Url   : releaseBase + apkX86Asset,
-                apkBroUrl   : releaseBase + apkBroAsset,
-                sha256Bro   : sha256Bro,
+                // 去掉 apkBroUrl 和 sha256Bro
                 sha256      : sha25632,
                 sha25632    : sha25632,
                 sha25664    : sha25664,
@@ -381,7 +379,6 @@ task generateVersionFile {
         rootProject.file('version.json').setText(startupManifestJson, 'UTF-8')
         logger.lifecycle("Generated ${liteOutput} (arm32=${sha25632 ?: 'unset'}, "
                 + "arm64=${sha25664 ?: 'unset'}, x86=${sha256X86 ?: 'unset'}, "
-                + "bro=${sha256Bro ?: 'unset'}, "
                 + 'startupVersionCode=6)')
     }
 }
