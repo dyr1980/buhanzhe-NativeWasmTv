@@ -14,7 +14,7 @@ if (releaseKeystore.exists() != releaseSigningInfo.exists()) {
 def releaseSigningProperties = new Properties()
 def configuredTargetSdk = 25
 def configuredVersionCode = project.hasProperty('versionCodeOverride')
-        ? Integer.parseInt(project.property('versionCodeOverride').toString()) : 23
+        ? Integer.parseInt(project.property('versionCodeOverride').toString()) : 24
 if (releaseSigningAvailable) {
     releaseSigningInfo.withInputStream { releaseSigningProperties.load(it) }
     ['alias', 'storePassword', 'keyPassword'].each { propertyName ->
@@ -61,7 +61,7 @@ android {
         // REQUEST_INSTALL_PACKAGES, while remaining installable on Android 15.
         targetSdkVersion configuredTargetSdk
         versionCode configuredVersionCode
-        versionName '3.3.1'
+        versionName '3.3.2'
         buildConfigField 'boolean', 'CAST_LATENCY_TRACE',
                 project.findProperty('castLatencyTrace') == 'true' ? 'true' : 'false'
         testInstrumentationRunner project.hasProperty('testRunner')
@@ -128,13 +128,13 @@ android {
             }
             buildConfigField 'boolean', 'EMBED_CONTROL_PAGES', 'false'
             buildConfigField 'String', 'RECOMMENDED_JOY_SOURCE_URL',
-                    '"https://github.com/dyr1980/webSourceM3U8/releases/latest/download/JoyPage.txt"'
+                    '"https://raw.githubusercontent.com/dyr1980/webSourceM3U8/refs/heads/main/JoyPage.txt"'
             buildConfigField 'String', 'RECOMMENDED_FM_SOURCE_URL',
-                    '"https://github.com/dyr1980/webSourceM3U8/releases/latest/download/fm.txt"'
+                    '"https://raw.githubusercontent.com/dyr1980/webSourceM3U8/refs/heads/main/fm.txt"'
             buildConfigField 'String', 'RECOMMENDED_TEST_SOURCE_URL',
-                    '"https://github.com/dyr1980/webSourceM3U8/releases/latest/download/test.txt"'
+                    '"https://raw.githubusercontent.com/dyr1980/webSourceM3U8/refs/heads/main/test.txt"'
             buildConfigField 'String', 'RECOMMENDED_WEBVIEW_SOURCE_URL',
-                    '"https://github.com/dyr1980/webSourceM3U8/releases/latest/download/webview.txt"'
+                    '"https://raw.githubusercontent.com/dyr1980/webSourceM3U8/refs/heads/main/webview.txt"'
             buildConfigField 'String', 'FLY_MOUSE_PAGE_SOURCE_URL',
                     '"https://raw.githubusercontent.com/dyr1980/buhanzhe-NativeWasmTv/gh-pages/flymouse.html"'
             buildConfigField 'String', 'VIDEO_RECORDER_PAGE_SOURCE_URL',
@@ -149,7 +149,7 @@ android {
         }
     }
 
-    // 固定三种架构的 APK 输出文件名，确保构建产物就是 XCZ 系列。
+    // 固定三种架构的 APK 输出文件名，确保产物就是 XCZ 系列。
     applicationVariants.all { variant ->
         variant.outputs.all { output ->
             if (variant.flavorName == 'arm32') {
@@ -166,7 +166,7 @@ android {
         main {
             // 【已修改】加上这一行，引入缺失的 transcoder 源码
             java.srcDirs += [rootProject.file("third_party/android-transcoder/src")]
-            
+
             jni.srcDirs = []
             jniLibs.srcDirs = ['src/main/libs']
         }

@@ -36,6 +36,9 @@ final class AutoUpdater {
             + "releases/latest/download/version.json";
     private static final String LITE_VERSION_URL = "https://github.com/dyr1980/buhanzhe-NativeWasmTv/"
             + "releases/latest/download/version-lite.json";
+    // 修改点：只要版本文件里给出的地址不是本仓库，一律拒收，防止被换成别人的包。
+    private static final String RELEASE_OWNER = "dyr1980";
+    private static final String RELEASE_REPO = "buhanzhe-NativeWasmTv";
     private static final int CONNECT_TIMEOUT_MS = 15000;
     private static final int READ_TIMEOUT_MS = 30000;
     private static final int MAX_MANIFEST_BYTES = 64 * 1024;
@@ -43,7 +46,7 @@ final class AutoUpdater {
 
     private final Activity activity;
     private volatile boolean destroyed;
-    
+
     // === 恢复原作者的回调接口，确保 MainActivity 不报错 ===
     private volatile Runnable liteListener;
     void setLiteListener(Runnable listener){liteListener=listener;}
@@ -210,25 +213,29 @@ final class AutoUpdater {
 
     private UpdateInfo loadUpdateInfo(String manifestUrl, boolean allowArchitectureUpgrade)
             throws IOException, JSONException {
-        String json = readManifest(manifestUrl,
-                allowArchitectureUpgrade ? IMPORTANT_VERSION_URL : null);
+        String json = readManifest(manifestUrl);
 
         JSONObject object = new JSONObject(json);
         return parseUpdateInfo(object, allowArchitectureUpgrade);
     }
 
-    // === 保留你的优秀设计：老版本 404 兼容回退 ===
-    String readManifest(String manifestUrl, String legacyUrl) throws IOException {
+    String readManifest(String manifestUrl) throws IOException {
         try {
-            return downloadManifest(manifestUrl);
+            return readManifestOnce(manifestUrl);
         } catch (HttpStatusException error) {
-            if (error.status != 404 || legacyUrl == null) throw error;
-            Log.i(TAG, "Release has no lightweight manifest; reading legacy metadata");
-            return downloadManifest(legacyUrl);
+            if (error.status != HttpURLConnection.HTTP_NOT_FOUND) throw error;
+            URL original = new URL(manifestUrl.trim());
+            if (!original.getPath().endsWith("/version-lite.json")) throw error;
+            // Older releases only publish version.json. Keep the same release
+            // path and caller query; never treat other HTTP failures as absence.
+            String query = original.getQuery();
+            String fallback = new URL(original, "version.json"
+                    + (query == null ? "" : "?" + query)).toExternalForm();
+            return readManifestOnce(fallback);
         }
     }
 
-    private String downloadManifest(String manifestUrl) throws IOException {
+    private String readManifestOnce(String manifestUrl) throws IOException {
         // Keep the canonical URL here. NetworkClient owns accelerator selection
         // and failover; query parameters must never be appended to an empty route.
         HttpURLConnection connection = openConnection(
@@ -278,7 +285,8 @@ final class AutoUpdater {
         int versionCode = object.getInt("versionCode");
         String versionName = object.getString("versionName").trim();
         boolean architectureUpgrade = allowArchitectureUpgrade
-                && isArm32Build() && supports64Bit();
+                && isArm32Build() && supportsArm64(Build.VERSION.SDK_INT >= 21
+                        ? Build.SUPPORTED_64_BIT_ABIS : null);
         String urlField = architectureUpgrade ? "apk64Url" : BuildConfig.UPDATE_APK_URL_FIELD;
         String shaField = architectureUpgrade ? "sha25664" : BuildConfig.UPDATE_SHA256_FIELD;
         // 修改点 1：将 nTv64.apk 改为 XCZ64.apk
@@ -293,10 +301,7 @@ final class AutoUpdater {
         if (apkUrl.length() == 0) {
             throw new JSONException("Missing APK URL for " + apkAsset);
         }
-        if (!apkUrl.endsWith("/" + apkAsset)) {
-            throw new JSONException("Wrong APK URL for " + apkAsset);
-        }
-        apkUrl = validatedGithubUrl(apkUrl);
+        apkUrl = validatedGithubUrl(apkUrl, apkAsset);
         if (sha256.length() > 0 && !sha256.matches("[0-9a-f]{64}")) {
             throw new JSONException("Invalid APK SHA-256");
         }
@@ -304,12 +309,21 @@ final class AutoUpdater {
                 apkAsset, architectureUpgrade);
     }
 
+    // 修改点 3：下载地址必须落在本仓库路径下，且文件名正好是本次要装的包。
+    // 这样 https://github.com/恶意账号/任意仓库/releases/.../XCZ.apk 会被直接拒掉。
+    private static final String REPO_PATH_PREFIX = "/" + RELEASE_OWNER + "/" + RELEASE_REPO + "/";
+
     private static boolean isArm32Build() {
         return "arm32".equals(BuildConfig.FLAVOR);
     }
 
     private static boolean is64BitBuild() {
         return "arm64".equals(BuildConfig.FLAVOR);
+    }
+
+    private static boolean supportsArm64(String[] abis) {
+        if (abis != null) for (String abi : abis) if ("arm64-v8a".equals(abi)) return true;
+        return false;
     }
 
     private static boolean supports64Bit() {
@@ -414,6 +428,7 @@ final class AutoUpdater {
                     File apk = new File(directory, update.apkAsset
                             .replace(".apk", "-" + update.versionCode + ".apk"));
                     if (apk.isFile() && verifySha256(apk, update.sha256) && isApk(apk)) {
+                        validateUpdatePackage(apk); // 修改点 4：复用旧包前也必须校验
                         finishDownload(apk);
                         return;
                     }
@@ -428,6 +443,7 @@ final class AutoUpdater {
                     if (!isApk(partial)) {
                         throw new IOException("下载内容不是有效的 APK");
                     }
+                    validateUpdatePackage(partial); // 修改点 4：安装前必须校验包名和版本
                     if (apk.exists() && !apk.delete()) {
                         throw new IOException("无法替换旧的更新文件");
                     }
@@ -444,6 +460,7 @@ final class AutoUpdater {
                         liteState = "error";
                         liteMessage = "下载失败：" + readableMessage(error);
                     }
+                    notifyLite();
                     Log.e(TAG, "Update download failed", error);
                     if (partial != null && partial.exists() && !partial.delete()) {
                         Log.w(TAG, "Unable to remove failed partial APK " + partial);
@@ -512,6 +529,7 @@ final class AutoUpdater {
                         }
                     }
                 }
+                if (length >= 0 && total != length) throw new IOException("APK 下载不完整，请重试");
                 output.getFD().sync();
             } finally {
                 try {
@@ -525,12 +543,26 @@ final class AutoUpdater {
         }
     }
 
+    // 修改点 4：加回原作者的安装包校验，去掉它等于任何 APK 都能被装进来。
+    private void validateUpdatePackage(File apk) throws IOException {
+        android.content.pm.PackageInfo info = activity.getPackageManager()
+                .getPackageArchiveInfo(apk.getAbsolutePath(), 0);
+        if (info == null || !activity.getPackageName().equals(info.packageName)) {
+            throw new IOException("更新包与当前应用不匹配，请检查发布文件");
+        }
+        // The manifest code controls prompting; the APK code controls installation.
+        if (info.versionCode < BuildConfig.VERSION_CODE) {
+            throw new IOException("更新包版本低于当前版本，请检查发布文件");
+        }
+    }
+
     private void finishDownload(final File apk) {
         downloadActive = false;
         if ("downloading".equals(liteState)) {
             liteState = "ready";
             liteMessage = "下载完成，请在设备上完成安装";
         }
+        notifyLite();
         activity.runOnUiThread(new Runnable() {
             @Override
             public void run() {
@@ -564,6 +596,10 @@ final class AutoUpdater {
             }
             activity.startActivity(intent);
         } catch (Exception error) {
+            if ("ready".equals(liteState)) {
+                liteMessage = "无法打开安装器：" + readableMessage(error) + "，可重试安装";
+                notifyLite();
+            }
             Log.e(TAG, "Unable to launch package installer", error);
             Toast.makeText(activity, R.string.update_install_failed, Toast.LENGTH_LONG).show();
         }
@@ -616,7 +652,7 @@ final class AutoUpdater {
         }
     }
 
-    private String validatedGithubUrl(String url) throws JSONException {
+    private String validatedGithubUrl(String url, String apkAsset) throws JSONException {
         try {
             URL parsed = new URL(url);
             String host = parsed.getHost().toLowerCase(Locale.US);
@@ -624,6 +660,15 @@ final class AutoUpdater {
                     || !("github.com".equals(host)
                     || "raw.githubusercontent.com".equals(host))) {
                 throw new JSONException("APK URL must be an HTTPS GitHub URL");
+            }
+            // 修改点 3：仓库和文件名都必须对上，否则宁可报错也不下载。
+            String path = parsed.getPath() == null ? "" : parsed.getPath();
+            if (!path.startsWith(REPO_PATH_PREFIX)) {
+                throw new JSONException("APK URL is not from " + RELEASE_OWNER + "/" + RELEASE_REPO);
+            }
+            String file = path.substring(path.lastIndexOf('/') + 1);
+            if (!file.equalsIgnoreCase(apkAsset)) {
+                throw new JSONException("Wrong APK URL for " + apkAsset);
             }
             return url; // NetworkClient applies the current GitHub route at request time.
         } catch (IOException error) {
