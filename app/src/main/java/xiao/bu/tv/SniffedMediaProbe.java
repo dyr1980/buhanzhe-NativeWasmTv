@@ -80,8 +80,6 @@ final class SniffedMediaProbe {
                         probeUrl = hls ? probeProxy.playerHlsUrl(url) : probeProxy.mediaUrl(url);
                     }
                     if (hls) {
-                        // Inspect the same selected rendition and cached manifests
-                        // that the native probe will use; avoid a second TLS walk.
                         String target = probeUrl;
                         for (int depth = 0; depth < 3 && expected == generation.get(); depth++) {
                             String manifest = readManifest(target, pageUrl, agent, cookies, expected, deadline);
@@ -101,15 +99,13 @@ final class SniffedMediaProbe {
                             result.variant = null;
                         }
                     }
-                    else if (java.net.URI.create(url).getPath().toLowerCase(java.util.Locale.US).endsWith(".mp4")
-                            && initializationOnly(probeUrl,pageUrl,agent,cookies,deadline)) {
-                        result.type="fragment";
-                        throw new ManifestFailure("这是直播初始化分片，继续在网页中播放");
+                    else if (java.net.URI.create(url).getPath().toLowerCase(java.util.Locale.US).endsWith(".mp4")) {
+                        // 【已修改】移除依赖 LiteMp4Probe 的 initializationOnly 逻辑
+                        // 直接让 IJK 播放器去探针
                     }
                 } catch (Exception error) {
                     result.error = probeFailure(error);
                     if (error instanceof ManifestFailure) throw error;
-                    // Native HTTP may still support this transport; only a failed native probe blocks opening.
                 }
                 if (expected != generation.get()) return;
                 if (SystemClock.elapsedRealtime() >= deadline)
@@ -136,19 +132,12 @@ final class SniffedMediaProbe {
                 player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "start-on-prepared", 0);
                 player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "ntv-metadata-only", 1);
                 player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec", 0);
-                // Header discovery needs no frame-thread pipeline. Bound the
-                // decoder used by find_stream_info on high-resolution sources.
                 player.setOption(IjkMediaPlayer.OPT_CATEGORY_CODEC, "threads", 1);
                 player.setOption(IjkMediaPlayer.OPT_CATEGORY_CODEC, "skip_frame", "all");
-                // The resource card exposes dimensions/tracks, not a frame-rate
-                // sample. The native metadata probe fills missing TS dimensions
-                // from bounded SPS headers without decoding even a UHD keyframe.
                 player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "fpsprobesize", 0);
                 player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "packet-buffering", 0);
                 player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "rw_timeout", 3000000);
                 player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "timeout", 3000000);
-                // A UDP probe can join after the first SPS/keyframe. Allow the
-                // next GOP before concluding that only the early audio is present.
                 boolean rtp = url.regionMatches(true,0,"rtp://",0,6);
                 if (rtp) player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "buffer_size", 1024 * 1024);
                 player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "probesize", rtp ? 4 * 1024 * 1024 : 512 * 1024);
@@ -164,9 +153,6 @@ final class SniffedMediaProbe {
                     IjkMediaMeta meta = IjkMediaMeta.parse(player.getMediaMeta());
                     if (meta != null) applyMeta(result, meta);
                     result.videoDescription = IjkStreamMetrics.videoDescription(player);
-                    // A short-lived live segment can expire before HEAD, or the
-                    // origin can omit Content-Length. Reuse the segment already
-                    // fetched for discovery instead of downloading another one.
                     if (result.bitrate <= 0 && probeProxy != null) {
                         long video = Math.max(0, probeProxy.measuredMediaBitrate(true));
                         long audio = Math.max(0, probeProxy.measuredMediaBitrate(false));
@@ -190,8 +176,6 @@ final class SniffedMediaProbe {
                 }
                 if (probeProxy != null) probeProxy.close();
             }
-            // Only the advisory cache can retain a completed result after cancellation.
-            // Resource-card callers still discard obsolete page/media results.
             if (expected == generation.get() || lightweight && "ready".equals(result.status)) callback.complete(result);
         });
     }
@@ -216,8 +200,6 @@ final class SniffedMediaProbe {
             if (meta.mVideoStream != null) bitrate = Math.max(0, meta.mVideoStream.mBitrate);
             if (meta.mAudioStream != null) bitrate += Math.max(0, meta.mAudioStream.mBitrate);
         }
-        // Some vendor IJK HLS builds report a tiny container bitrate (e.g. 442 bps).
-        // Prefer the rendition's BANDWIDTH or a segment size/duration estimate.
         if (bitrate >= 1000 && (!result.manifestKnown || result.bitrate <= 0)) {
             result.bitrate = bitrate; result.bitrateEstimated = false;
         }
@@ -269,8 +251,6 @@ final class SniffedMediaProbe {
                 if (error != null) error.close();
                 return 0;
             }
-            // HEAD has no payload, but OkHttp still owns a response body. Cancel
-            // alone does not close it and can leave a pooled connection leaked.
             try (InputStream body = connection.getInputStream()) {
                 long bytes = connection.getContentLength();
                 return bytes > 0 ? (long) (bytes * 8d / seconds) : 0;
@@ -281,8 +261,6 @@ final class SniffedMediaProbe {
 
     private String readManifest(String url, String page, String agent, String cookies, int expected, long deadline) throws Exception {
         HttpURLConnection connection = openConnection(url, page, agent, cookies);
-        // The local proxy owns TLS and bounded upstream retries. A 2-second
-        // client timeout can cancel it before its first HTTP/2 retry completes.
         connection.setReadTimeout((int)Math.max(1L,Math.min(10000L,deadline-SystemClock.elapsedRealtime())));
         try {
             int status = connection.getResponseCode();
@@ -307,21 +285,7 @@ final class SniffedMediaProbe {
             }
         } finally { connection.disconnect(); }
     }
-    private static boolean initializationOnly(String url,String page,String agent,String cookies,long deadline)throws Exception {
-        HttpURLConnection connection=openConnection(url,page,agent,cookies);
-        connection.setRequestProperty("Range","bytes=0-65535");
-        connection.setReadTimeout((int)Math.max(1,Math.min(3000,deadline-SystemClock.elapsedRealtime())));
-        try{
-            int status=connection.getResponseCode();if(status!=200&&status!=206)return false;
-            byte[] bytes=new byte[65536];int count=0,n;boolean complete=false;
-            try(InputStream in=connection.getInputStream()){
-                while(count<bytes.length&&(n=in.read(bytes,count,bytes.length-count))>0){count+=n;if(count>=12&&!LiteMp4Probe.isMp4(bytes,count))return false;}
-                if(count<bytes.length)complete=true;
-            }
-            if(status==206){String range=connection.getHeaderField("Content-Range");complete=range!=null&&range.endsWith("/"+count);}
-            return LiteMp4Probe.initializationOnly(bytes,count,complete);
-        }finally{connection.disconnect();}
-    }
+
     private static HttpURLConnection openConnection(String url, String page, String agent, String cookies) throws java.io.IOException {
         HttpURLConnection connection = NetworkClient.open(new URL(url));
         connection.setConnectTimeout(2000); connection.setReadTimeout(2000);
