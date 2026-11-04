@@ -25,19 +25,19 @@ jobs:
           java-version: "17"
           cache: gradle
 
-      - name: Manually install Android SDK cmdline-tools 4.0
+      - name: 安装 Android SDK 依赖
         run: |
-          # 清除可能冲突的系统默认 ANDROID_HOME
+          # 清除可能冲突的环境变量
           unset ANDROID_HOME
-          
           export ANDROID_SDK_ROOT=${{ github.workspace }}/android-sdk
           export ANDROID_HOME=${{ github.workspace }}/android-sdk
-          
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           
           mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-6858069_latest.zip -O cmdline.zip
+          
+          # 使用最新稳定版的 commandlinetools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline.zip
           unzip -q cmdline.zip -d $ANDROID_SDK_ROOT/cmdline-tools
           mv $ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
           rm cmdline.zip
@@ -45,7 +45,10 @@ jobs:
           export PATH=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH
           echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> $GITHUB_PATH
           
-          yes | sdkmanager --licenses
+          # 强制接受所有协议，防止云端因交互卡死
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          
+          # 安装构建所需组件
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;35.0.0"
 
       - name: 赋予 gradlew 执行权限
@@ -113,7 +116,7 @@ jobs:
             gh release create "$TAG" \
               --target "$GITHUB_SHA" \
               --title "XCZTV ${TAG}" \
-              --notes "固定 BL v5 只读验收版订阅与校验值" \
+              --notes "修复旧版安卓播放与网页适配，修复解码失败、播放器准备超时、直播控制语义与进度异常；完善网页播放、频道导入、节目单及电视界面兼容性。加入标准化回归流程、GPLv3 与版权说明。轻量内核仅提交 ARM32、ARM64、x86 的 libntvLitebro.so 快照，排除内核源码及私有子模块入口。" \
               dist/XCZ.apk dist/XCZ64.apk dist/XCZX86.apk \
               version.json version-iptv.json version-lite.json
           fi
