@@ -4018,7 +4018,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                 }
             }
         }
-        result.put("audioTracks", audioTracks)
+                result.put("audioTracks", audioTracks)
                 .put("videoTracks", videoTracks).put("selectedVideoTrack", selectedVideo)
                 .put("subtitleTracks", subtitleTracks)
                 .put("selectedAudioTrack", selectedAudio)
@@ -5772,6 +5772,8 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         if(cacheResult!=null)response.put("clearedBytes",cacheResult.cleared).put("cacheBytesBefore",cacheResult.before).put("cacheBytesRemaining",cacheResult.remaining).put("cacheClearInProgress",cacheResult.busy);
         return response.toString();
     }
+
+        }
 
     @SuppressLint("NewApi")
     private void ensureLocalPlaylistPermission(JSONArray sources) throws IOException {
