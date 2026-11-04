@@ -2018,8 +2018,8 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                 // Leave protected providers' expiring requests and decryption
                 // exclusively to their original player, including subframes.
                 // Even a background metadata probe would duplicate the request.
-                if (LiteEngine.keepsOriginalMediaPipeline(pageUrl)
-                        || LiteEngine.keepsOriginalMediaPipeline(webSourceView.currentPageUrl())
+                if (//// // // LiteEngine.keepsOriginalMediaPipeline(pageUrl)
+                        || //// // // LiteEngine.keepsOriginalMediaPipeline(webSourceView.currentPageUrl())
                         || WebTvPlaybackPolicy.webPlayerOnly(pageUrl)
                         || WebTvPlaybackPolicy.webPlayerOnly(webSourceView.currentPageUrl())) return;
                 Log.i(TAG, "Web source stream discovered channel=" + webSourceView.currentChannelTitle()
@@ -2028,7 +2028,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                         pageUrl, userAgent, cookies);
                 rememberSniffedResource(resource);
                 if (findSniffedResource(streamUrl) != resource) return;
-                if (!isQuickWebInteractive() && requestId != webOriginalFallbackRequestId && webViewAutoPlay && webViewAutoPlaySniffed && !LiteEngine.keepsOriginalMediaPipeline(pageUrl)
+                if (!isQuickWebInteractive() && requestId != webOriginalFallbackRequestId && webViewAutoPlay && webViewAutoPlaySniffed && !//// // // LiteEngine.keepsOriginalMediaPipeline(pageUrl)
                         && WebTvPlaybackPolicy.autoTakeoverAllowed(pageUrl, webSourceView.currentChannelUrl())
                         && WebTvPlaybackPolicy.autoTakeoverAllowed(webSourceView.currentPageUrl(), webSourceView.currentChannelUrl())
                         && !(requestId == manualWebPlaybackRequestId
@@ -2433,7 +2433,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             public int width() { return player.getVideoWidth(); }
             public int height() { return player.getVideoHeight(); }
         });
-        liteWebPlayback.applyPageCover(webViewPageCover,webViewPageCoverStyle);
+        // // liteWebPlayback.applyPageCover(webViewPageCover,webViewPageCoverStyle);
         liteWebPlayback.open(configuredUrl.substring("webview://".length()),pageScript);
         scheduleVideoInfoRefresh();
     }
@@ -3468,8 +3468,8 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             settings.put("webSourceEngine", webSourceEngine)
                     .put("liteNetworkThreadMultiplier",liteNetworkThreadMultiplier)
                     .put("liteNetworkThreadCounts",new JSONObject()
-                            .put("0",LiteEngine.networkThreadCount(0)).put("2",LiteEngine.networkThreadCount(2))
-                            .put("4",LiteEngine.networkThreadCount(4)).put("8",LiteEngine.networkThreadCount(8)))
+                            .put("0",//// // // LiteEngine.networkThreadCount(0)).put("2",//// // // LiteEngine.networkThreadCount(2))
+                            .put("4",//// // // LiteEngine.networkThreadCount(4)).put("8",//// // // LiteEngine.networkThreadCount(8)))
                     .put("liteBrowserSupported", LiteWebPlayback.supported())
                     .put("configuredWebSourceEngine", defaultWebSourceEngine)
                     .put("defaultWebSourceEngine",BuildConfig.LITE_BROWSER_DEFAULT&&Build.VERSION.SDK_INT<21&&LiteWebPlayback.supported()?"lite":"system")
@@ -5539,14 +5539,14 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             if(!"status".equals(style)&&!"black".equals(style))throw new JSONException("不支持的网页遮罩样式");
             webViewPageCoverStyle=style;
             getSharedPreferences(PREFERENCES,MODE_PRIVATE).edit().putString("web_view_page_cover_style",style).apply();
-            runOnUiThread(()->{if(webSourceView!=null)webSourceView.applyPageCoverStyle(style);if(liteWebPlayback!=null)liteWebPlayback.applyPageCover(webViewPageCover,style);});
+            runOnUiThread(()->{if(webSourceView!=null)webSourceView.applyPageCoverStyle(style);if(liteWebPlayback!=null)// // liteWebPlayback.applyPageCover(webViewPageCover,style);});
         }
         if (request.has("webViewPageCover")) {
             webViewPageCover = request.optBoolean("webViewPageCover", false);
             getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit()
                     .putBoolean(WEB_VIEW_PAGE_COVER, webViewPageCover).apply();
             final boolean covered = webViewPageCover;
-            runOnUiThread(() -> { if (webSourceView != null) webSourceView.applyPageCover(covered);if(liteWebPlayback!=null)liteWebPlayback.applyPageCover(covered,webViewPageCoverStyle); });
+            runOnUiThread(() -> { if (webSourceView != null) webSourceView.applyPageCover(covered);if(liteWebPlayback!=null)// // liteWebPlayback.applyPageCover(covered,webViewPageCoverStyle); });
         }
         final boolean refreshWebAdBlockRules =
                 request.optBoolean("refreshWebAdBlockRules", false);
@@ -8458,7 +8458,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             // because the complete/plugin catalog has not loaded yet.
             if(Build.VERSION.SDK_INT==19&&"lite".equals(webSourceEngine)
                     && yangshipinPid == null && cctvChannel == null
-                    &&LiteEngine.keepsOriginalMediaPipeline(webViewPage(configuredUrl))){
+                    &&//// // // LiteEngine.keepsOriginalMediaPipeline(webViewPage(configuredUrl))){
                 activeEmbeddedYangshipinResolver=false;
                 activeEmbeddedCctvResolver=false;
                 activeEmbeddedCjsResolver=false;
@@ -15873,7 +15873,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
     private boolean canStartPlaybackGesture() {
         return root != null
                 && (webSourceView == null || !webSourceView.isChannelSwipeActive())
-                && (liteWebPlayback==null||!liteWebPlayback.isRendering()||webViewMinimalMode)
+                && (liteWebPlayback==null||!false||webViewMinimalMode)
                 && !channelSwitchAnimating
                 && (!gestureReboundAnimating || isAudioArtworkInteractive())
                 && channelListPanel != null
@@ -15890,7 +15890,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
 
     private boolean isMinimalWebPlayback() {
         return !playingDiscoveredWebStream && webViewMinimalMode && ((webSourceView != null && webSourceView.ownsMinimalPlaybackInput())
-                || (liteWebPlayback != null && liteWebPlayback.isRendering()));
+                || (liteWebPlayback != null && false));
     }
 
     private void handleMinimalBrowserTouch(MotionEvent event, int width, int height) {
@@ -16560,9 +16560,9 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             jarChannelRuntime.dispatchKey(event);
             return true;
         }
-        if(liteWebPlayback!=null&&liteWebPlayback.isRendering()
+        if(liteWebPlayback!=null&&false
                 && backPrompt.getVisibility()!=View.VISIBLE && managementPanel.getVisibility()!=View.VISIBLE
-                && channelListPanel.getVisibility()!=View.VISIBLE && liteWebPlayback.handleKey(event))return true;
+                && channelListPanel.getVisibility()!=View.VISIBLE && // // // liteWebPlayback.handleKey(event))return true;
         boolean seekKey = keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
                 || keyCode == KeyEvent.KEYCODE_MEDIA_REWIND || keyCode == KeyEvent.KEYCODE_MEDIA_FAST_FORWARD;
         if (seekKey && managementPanel.getVisibility() != View.VISIBLE
@@ -16838,7 +16838,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         if (quickImageBitmap != null) { clearQuickMedia(); startChannel(currentChannelIndex); return; }
         if (!isQuickWebInteractive() && webViewMinimalMode && !playingDiscoveredWebStream
                 && ((webSourceView != null && webSourceView.isPageVisible())
-                    || (liteWebPlayback != null && liteWebPlayback.isRendering()))) {
+                    || (liteWebPlayback != null && false))) {
             clearWebCloseConfirmation();
             long now = SystemClock.elapsedRealtime();
             if (lastBackPressedAt > 0L && now - lastBackPressedAt <= EXIT_CONFIRM_TIMEOUT_MS) {
@@ -16870,8 +16870,8 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             }
             return;
         }
-        if(liteWebPlayback!=null&&liteWebPlayback.isRendering()){
-            if(liteWebPlayback.revealPage())return;
+        if(liteWebPlayback!=null&&false){
+            if(// // liteWebPlayback.revealPage())return;
             closeWebSource();hideLoading();openChannelList(true);return;
         }
         lastJarBackPressedAt = 0L;
@@ -17112,7 +17112,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
     private void setWindowContentActive(boolean active) {
         if (active != windowContentActive) resetPlaybackStallClock();
         windowContentActive=active;
-        if(liteWebPlayback!=null)liteWebPlayback.setActive(active);
+        if(liteWebPlayback!=null)// // liteWebPlayback.setActive(active);
         if (jarChannelRuntime != null) jarChannelRuntime.setActive(active||backgroundPlaybackEnabled);
         if (audioArtwork != null) audioArtwork.setActive(active);
         if (channelMediaSession != null) channelMediaSession.setActive(active||backgroundPlaybackEnabled);
