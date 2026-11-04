@@ -8445,26 +8445,25 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         if (cjsSitePage == null && cjsSiteResolver != null) {
             cjsSiteResolver.cancel();
         }
-        if (isWebViewSource(configuredUrl)) {
-            String yangshipinPid = extractYangshipinPid(configuredUrl);
-            Channel cctvChannel = extractCctvWebChannel(configuredUrl);
-            // The allocation-only cold-start catalog also uses webview:// YSP
-            // URLs. Recognized native providers must not enter Lite merely
-            // because the complete/plugin catalog has not loaded yet.
-            if(Build.VERSION.SDK_INT==19&&"lite".equals(webSourceEngine)
-                    && yangshipinPid == null && cctvChannel == null
-                    &&//// // // LiteEngine.keepsOriginalMediaPipeline(webViewPage(configuredUrl))){
-                activeEmbeddedYangshipinResolver=false;
-                activeEmbeddedCctvResolver=false;
-                activeEmbeddedCjsResolver=false;
-                openWebSource(channel,configuredUrl,requestId);
-                return;
-            }
-            if (cjsSitePage != null) {
-                resolveCjsSite(channel, cctvChannel == null ? cjsSitePage
-                        : "https://tv.cctv.com/live/" + cctvChannel.streamId + "/", requestId);
-                return;
-            }
+                    if (isWebViewSource(configuredUrl)) {
+                String yangshipinPid = extractYangshipinPid(configuredUrl);
+                Channel cctvChannel = extractCctvWebChannel(configuredUrl);
+                // The allocation-only cold-start catalog also uses webview:// YSP
+                // URLs. Recognized native providers must not enter Lite merely
+                // because the complete/plugin catalog has not loaded yet.
+                if(Build.VERSION.SDK_INT==19&&"lite".equals(webSourceEngine)
+                        && yangshipinPid == null && cctvChannel == null){
+                    activeEmbeddedYangshipinResolver=false;
+                    activeEmbeddedCctvResolver=false;
+                    activeEmbeddedCjsResolver=false;
+                    openWebSource(channel,configuredUrl,requestId);
+                    return;
+                }
+                if (cjsSitePage != null) {
+                    resolveCjsSite(channel, cctvChannel == null ? cjsSitePage
+                            : "https://tv.cctv.com/live/" + cctvChannel.streamId + "/", requestId);
+                    return;
+                }
             // Known providers use their native authorization/playback flow;
             // ordinary pages use the selected browser engine.
             if (yangshipinPid != null) {
