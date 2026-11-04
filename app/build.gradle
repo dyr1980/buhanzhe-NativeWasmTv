@@ -62,8 +62,15 @@ android {
         targetSdkVersion configuredTargetSdk
         versionCode configuredVersionCode
         versionName '3.3.2'
+        // 私有 browser-core 未授权，相关能力全部关闭，走系统 WebView 内核。
+        buildConfigField 'boolean', 'BUNDLED_LITE_BROWSER', 'false'
+        buildConfigField 'boolean', 'LITE_BROWSER_DEFAULT', 'false'
+        buildConfigField 'boolean', 'H5E_STREAMING_CHECKS',
+                project.hasProperty('h5eStreaming') || project.hasProperty('h5eStreamingChecks') ? 'true' : 'false'
         buildConfigField 'boolean', 'CAST_LATENCY_TRACE',
                 project.findProperty('castLatencyTrace') == 'true' ? 'true' : 'false'
+        buildConfigField 'boolean', 'HDR_LUT_TEST_128',
+                project.findProperty('hdrLutTest128') == 'true' ? 'true' : 'false'
         testInstrumentationRunner project.hasProperty('testRunner')
                 ? project.property('testRunner').toString() : 'xiao.bu.tv.DolbyPlaybackInstrumentation'
     }
