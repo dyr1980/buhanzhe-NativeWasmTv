@@ -2018,8 +2018,6 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                 // Leave protected providers' expiring requests and decryption
                 // exclusively to their original player, including subframes.
                 // Even a background metadata probe would duplicate the request.
-                if (//// // // LiteEngine.keepsOriginalMediaPipeline(pageUrl)
-                        || //// // // LiteEngine.keepsOriginalMediaPipeline(webSourceView.currentPageUrl())
                         || WebTvPlaybackPolicy.webPlayerOnly(pageUrl)
                         || WebTvPlaybackPolicy.webPlayerOnly(webSourceView.currentPageUrl())) return;
                 Log.i(TAG, "Web source stream discovered channel=" + webSourceView.currentChannelTitle()
@@ -2028,7 +2026,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                         pageUrl, userAgent, cookies);
                 rememberSniffedResource(resource);
                 if (findSniffedResource(streamUrl) != resource) return;
-                if (!isQuickWebInteractive() && requestId != webOriginalFallbackRequestId && webViewAutoPlay && webViewAutoPlaySniffed && !//// // // LiteEngine.keepsOriginalMediaPipeline(pageUrl)
+                if (!isQuickWebInteractive() && requestId != webOriginalFallbackRequestId && webViewAutoPlay && webViewAutoPlaySniffed
                         && WebTvPlaybackPolicy.autoTakeoverAllowed(pageUrl, webSourceView.currentChannelUrl())
                         && WebTvPlaybackPolicy.autoTakeoverAllowed(webSourceView.currentPageUrl(), webSourceView.currentChannelUrl())
                         && !(requestId == manualWebPlaybackRequestId
