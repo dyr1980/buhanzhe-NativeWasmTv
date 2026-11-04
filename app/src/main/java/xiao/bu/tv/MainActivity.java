@@ -3488,9 +3488,10 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                     .put("webViewWebRtcEnabled", webViewWebRtcEnabled)
                     .put("webViewUserScriptEnabled", webViewUserScriptEnabled)
                     .put("webViewUserScripts", new JSONArray(webViewUserScripts))
-                    .put("webViewCacheBytes", webSourceView == null
+                                        .put("webViewCacheBytes", webSourceView == null
                             ? 0L : webSourceView.browserCacheSizeBytes());
         }
+    }
 
         if (full || "flymouse".equals(view)) {
             settings.put("flyMouseEnabled", flyMouseEnabled)
@@ -16553,9 +16554,6 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             jarChannelRuntime.dispatchKey(event);
             return true;
         }
-        if(liteWebPlayback!=null&&false
-                && backPrompt.getVisibility()!=View.VISIBLE && managementPanel.getVisibility()!=View.VISIBLE
-                && channelListPanel.getVisibility()!=View.VISIBLE && // // // liteWebPlayback.handleKey(event))return true;
                 boolean seekKey = keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
                 || keyCode == KeyEvent.KEYCODE_MEDIA_REWIND || keyCode == KeyEvent.KEYCODE_MEDIA_FAST_FORWARD;
         if (seekKey && managementPanel.getVisibility() != View.VISIBLE
