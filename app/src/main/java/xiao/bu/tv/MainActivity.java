@@ -3410,7 +3410,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         }
     }
 
-        private JSONObject buildControlSettings(String view, boolean full) throws JSONException {
+            private JSONObject buildControlSettings(String view, boolean full) throws JSONException {
         JSONObject settings = new JSONObject();
         if (full || "advanced".equals(view) || "channels".equals(view)) {
             settings.put("githubProxyBaseUrl", GithubProxy.baseUrl());
@@ -3488,10 +3488,9 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                     .put("webViewWebRtcEnabled", webViewWebRtcEnabled)
                     .put("webViewUserScriptEnabled", webViewUserScriptEnabled)
                     .put("webViewUserScripts", new JSONArray(webViewUserScripts))
-                                        .put("webViewCacheBytes", webSourceView == null
+                    .put("webViewCacheBytes", webSourceView == null
                             ? 0L : webSourceView.browserCacheSizeBytes());
         }
-    }
 
         if (full || "flymouse".equals(view)) {
             settings.put("flyMouseEnabled", flyMouseEnabled)
@@ -3527,122 +3526,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             settings.put("uiScaleFactor",
                     Math.round(effectiveUiScale * 100f) / 100.0d);
         }
-        return settings;
-    }
-    private String handleWebControl(JSONObject request) throws JSONException {
-        if(receiverRenderOnly)throw new JSONException("电视只渲染投屏，请在手机操作");
-        final String action = request.optString("action", "");
-        if ("quickPlay".equals(action)) {
-            final String url = request.optString("url", "");
-            if (!url.matches("(?i)(?:https?|tvbus|sop)://[^\\s]+")) throw new JSONException("网址无效");
-            final String target = !TvbusPlugin.matches(url) && request.optBoolean("web", false) ? "webview://" + url : url;
-            final boolean interactive = request.optBoolean("web", false) && target.startsWith("webview://");
-            runOnUiThread(() -> playQuickMedia(target, interactive?"临时网页":"临时播放", null, null, interactive));
-            return new JSONObject().put("ok", true).put("message",interactive?"已发送到设备，正在打开网页":"已发送到设备，正在打开媒体").toString();
-        }
-        if ("volume".equals(action)) {
-            final int direction = request.optInt("direction", 0);
-            if (direction != -1 && direction != 1) throw new JSONException("音量方向无效");
-            runOnUiThread(new Runnable() { @Override public void run() {
-                adjustRemoteVolume(direction > 0 ? KeyEvent.KEYCODE_VOLUME_UP
-                        : KeyEvent.KEYCODE_VOLUME_DOWN);
-            }});
-            return new JSONObject().put("ok", true).toString();
-        }
-        if ("play".equals(action) && request.has("controllerCatalogGeneration")) {
-            awaitControllerCatalog(request);
-        }
-        final int requestedGroup = request.optInt("group", -1);
-        final int requestedChannel = request.optInt("channel", -1);
-        final int requestedSource = request.optInt("source", 0);
-        if (request.optBoolean("receiver", false)) {
-            throw new JSONException("此版本仅支持接收投屏");
-        }
-        if ("backFromPlayback".equals(action) || "returnToWeb".equals(action)) {
-            final boolean[] returned = {false};
-            try { runOnMainThreadAndWait(() -> returned[0] = returnToRetainedWebPage()); }
-            catch (IOException error) { throw new JSONException(error.getMessage()); }
-            return new JSONObject().put("ok", true).put("returned", returned[0]).toString();
-        }
-        final String requestedUrl = request.optString("url", "");
-        final SniffedResource requestedResource = "playSniffed".equals(action)
-                ? findSniffedResource(requestedUrl) : null;
-        if (!"next".equals(action) && !"previous".equals(action)
-                && !"toggle".equals(action) && !"play".equals(action)
-                && !"sourcePrevious".equals(action) && !"sourceNext".equals(action)
-                && !"playSniffed".equals(action)
-                && !"endTakeover".equals(action)) {
-            throw new JSONException("未知的控制指令");
-        }
-        if ("play".equals(action)) {
-            ChannelCatalog.Group[] groups = ChannelCatalog.GROUPS;
-            if (requestedGroup < 0 || requestedGroup >= groups.length
-                    || requestedChannel < 0
-                    || requestedChannel >= groups[requestedGroup].channels.length
-                    || requestedSource < 0
-                    || requestedSource >= Math.max(1,
-                            groups[requestedGroup].channels[requestedChannel].sourceCount())) {
-                throw new JSONException("频道不存在");
-            }
-        }
-        if ("playSniffed".equals(action) && (requestedResource == null
-                || (request.has("pageKey") && !request.optString("pageKey").equals(currentSniffedPageKey())))) {
-            throw new JSONException("嗅探资源已失效，请刷新资源列表");
-        }
-
-        Runnable command = new Runnable() {
-            @Override
-            public void run() {
-                if ("next".equals(action)) {
-                    switchRelative(1);
-                } else if ("previous".equals(action)) {
-                    switchRelative(-1);
-                } else if ("sourcePrevious".equals(action)) {
-                    switchCustomSource(-1, false, "");
-                } else if ("sourceNext".equals(action)) {
-                    switchCustomSource(1, false, "");
-                } else if ("toggle".equals(action)) {
-                    togglePlayback();
-                } else if ("playSniffed".equals(action)) {
-                    startSniffedResource(requestedResource);
-                } else if ("endTakeover".equals(action)) {
-                    synchronized (receiverRouteLock) {
-                        if (CastRouteHandover.canEnd(remoteTakeoverSessionId,
-                                request.optString("sessionId", ""))) {
-                            exitRemoteCatalogTakeover("已结束接管");
-                        }
-                    }
-                } else {
-                    ChannelCatalog.Group[] groups = ChannelCatalog.GROUPS;
-                    if (requestedGroup < 0 || requestedGroup >= groups.length
-                            || requestedChannel < 0
-                            || requestedChannel >= groups[requestedGroup].channels.length
-                            || requestedSource < 0
-                            || requestedSource >= Math.max(1,
-                                    groups[requestedGroup].channels[requestedChannel]
-                                            .sourceCount())) {
-                        return;
-                    }
-                    currentGroupIndex = requestedGroup;
-                    // Keep the active selection valid while takeover mode closes the
-                    // channel panel. closeChannelList() refreshes the debug overlay,
-                    // which reads currentChannel() before switchChannel() runs below.
-                    // The previous group's index may not exist in the requested group.
-                    currentChannelIndex = requestedChannel;
-                    browsingGroupIndex = requestedGroup;
-
-                    if(request.has("source")){
-                        Channel chosen=groups[requestedGroup].channels[requestedChannel];
-                        if(rememberChannelSource)playbackMemory.rememberSource(playbackMemoryKey(groups[requestedGroup],chosen),chosen.sourceUrl(requestedSource));
-                        switchChannel(requestedChannel,requestedSource);
-                    }else switchChannel(requestedChannel);
-                    closeChannelList();
-                }
-            }
-        };
-
-        runOnUiThread(command);
-        return new JSONObject().put("ok", true).toString();
+               return settings;
     }
 
     private String handleWifiDirect(JSONObject request) throws Exception {
