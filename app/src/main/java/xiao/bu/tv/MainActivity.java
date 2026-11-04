@@ -3406,11 +3406,12 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             root.put("settings", buildControlSettings(view, full));
             return root.toString();
         } catch (JSONException error) {
-            return "{\"ok\":false,\"message\":\"状态生成失败\"}";
+                        return "{\"ok\":false,\"message\":\"状态生成失败\"}";
         }
     }
 
-            private JSONObject buildControlSettings(String view, boolean full) throws JSONException {
+    private JSONObject buildControlSettings(String view, boolean full) throws JSONException {
+        JSONObject settings = new JSONObject();
         JSONObject settings = new JSONObject();
         if (full || "advanced".equals(view) || "channels".equals(view)) {
             settings.put("githubProxyBaseUrl", GithubProxy.baseUrl());
