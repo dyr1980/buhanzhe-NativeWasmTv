@@ -4018,7 +4018,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                 }
             }
         }
-                result.put("audioTracks", audioTracks)
+                        result.put("audioTracks", audioTracks)
                 .put("videoTracks", videoTracks).put("selectedVideoTrack", selectedVideo)
                 .put("subtitleTracks", subtitleTracks)
                 .put("selectedAudioTrack", selectedAudio)
@@ -4622,10 +4622,11 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                             .put("message", browserActionMessage)
                     : JSONObject.NULL);
         }
-        return response.toString();
+                return response.toString();
     }
 
-    private LocalControlServer.Resource browserImageDownload(long eventId) throws IOException {
+    @SuppressLint("NewApi")
+    private void ensureLocalPlaylistPermission(JSONArray sources) throws IOException {
         final BrowserImageDownload item;
         synchronized (browserActionLock) {
             item = browserImageDownloads.get(eventId);
@@ -5775,7 +5776,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
 
         }
 
-        @SuppressLint("NewApi")
+                @SuppressLint("NewApi")
     private void ensureLocalPlaylistPermission(JSONArray sources) throws IOException {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M
                 || checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE)
@@ -5806,6 +5807,52 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         });
         throw new IOException("已请求本地文件读取权限，请允许后再次保存频道源");
     }
+        private LocalControlServer.Resource browserImageDownload(long eventId) throws IOException {
+        final BrowserImageDownload item;
+        synchronized (browserActionLock) {
+            item = browserImageDownloads.get(eventId);
+        }
+        if (item == null) throw new IOException("图片下载任务已失效，请重新点击下载");
+        HttpURLConnection connection = NetworkClient.open(new URL(item.url));
+        connection.setConnectTimeout(15000);
+        connection.setReadTimeout(30000);
+        connection.setInstanceFollowRedirects(true);
+        if (item.referer.length() > 0) connection.setRequestProperty("Referer", item.referer);
+        if (item.userAgent.length() > 0) connection.setRequestProperty("User-Agent", item.userAgent);
+        if (item.cookies.length() > 0) connection.setRequestProperty("Cookie", item.cookies);
+        try {
+                        int status = connection.getResponseCode();
+            if (status < 200 || status >= 300) throw new IOException("图片服务器返回 HTTP " + status);
+            int declaredLength = connection.getContentLength();
+            if (declaredLength > MAX_BROWSER_IMAGE_DOWNLOAD_BYTES) {
+                throw new IOException("图片超过 24MB，已取消下载");
+            }
+            InputStream input = connection.getInputStream();
+            ByteArrayOutputStream output = new ByteArrayOutputStream(
+                    declaredLength > 0 ? Math.min(declaredLength, 1024 * 1024) : 32768);
+            try {
+                byte[] buffer = new byte[16384];
+                int count;
+                while ((count = input.read(buffer)) != -1) {
+                    if (output.size() + count > MAX_BROWSER_IMAGE_DOWNLOAD_BYTES) {
+                        throw new IOException("图片超过 24MB，已取消下载");
+                    }
+                    output.write(buffer, 0, count);
+                }
+            } finally {
+                input.close();
+            }
+            String contentType = connection.getContentType();
+            if (contentType == null || contentType.length() == 0
+                    || contentType.indexOf('\r') >= 0 || contentType.indexOf('\n') >= 0) {
+                contentType = "application/octet-stream";
+            }
+            return new LocalControlServer.Resource(contentType, output.toByteArray(), item.fileName);
+        } finally {
+            connection.disconnect();
+        }
+    }
+
 
     private void requestLocalPlaylistPermissionIfNeeded() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
