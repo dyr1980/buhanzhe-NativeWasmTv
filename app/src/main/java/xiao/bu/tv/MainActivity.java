@@ -5775,7 +5775,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
 
         }
 
-    @SuppressLint("NewApi")
+        @SuppressLint("NewApi")
     private void ensureLocalPlaylistPermission(JSONArray sources) throws IOException {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M
                 || checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE)
