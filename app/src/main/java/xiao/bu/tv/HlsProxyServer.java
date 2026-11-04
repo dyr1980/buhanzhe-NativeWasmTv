@@ -1545,7 +1545,8 @@ final class HlsProxyServer implements Closeable {
                 responseStarted = true;
                 boolean chunked=contentLength<0;
                 writeStreamingHeaders(output, status, contentType, contentLength, contentRange,chunked);
-                LiteChunkedOutputStream chunks=chunked?new LiteChunkedOutputStream(output):null;
+                // 使用 Java 标准分块输出流
+                ChunkedOutputStream chunks=chunked?new ChunkedOutputStream(output):null;
                 OutputStream mediaOutput=chunked?chunks:output;
 
                 InputStream upstream = connection.getInputStream();
@@ -2708,7 +2709,7 @@ final class HlsProxyServer implements Closeable {
             try (InputStream input = media.open()) {
                 byte[] block = streamCopyBuffer.get();
                 int count;
-                LiteChunkedOutputStream chunks = null;
+                ChunkedOutputStream chunks = null;
                 long length = -1;
                 while ((count = input.read(block)) >= 0) {
                     if (!running) throw new IOException("TS proxy closed");
@@ -2718,7 +2719,7 @@ final class HlsProxyServer implements Closeable {
                         // grows by 32 KiB and repeatedly copies the whole segment.
                         length = media.expectedLength();
                         writeStreamingHeaders(output, 200, "video/MP2T", length, null, length < 0);
-                        if (length < 0) chunks = new LiteChunkedOutputStream(output);
+                        if (length < 0) chunks = new ChunkedOutputStream(output);
                         started = true;
                         startupCost("first-data", -1);
                     }
@@ -3422,7 +3423,7 @@ final class HlsProxyServer implements Closeable {
     private static void normalizeDolbyInit(byte[] data, int start, int end) {
         for (int offset = start; offset + 8 <= end;) {
             long size = ((long)(data[offset] & 255) << 24) | ((long)(data[offset + 1] & 255) << 16)
-                    | ((data[offset + 2] & 255) << 8) | (data[offset + 3] & 255);
+                    | ((long)(data[offset + 2] & 255) << 8) | (data[offset + 3] & 255);
             if (size < 8 || size > end - offset) return;
             String type = new String(data, offset + 4, 4, java.nio.charset.Charset.forName("US-ASCII"));
             int next = offset + (int)size;
@@ -5171,6 +5172,78 @@ final class HlsProxyServer implements Closeable {
         int readSignedExpGolomb() {
             int value = readUnsignedExpGolomb();
             return (value & 1) == 1 ? (value + 1) / 2 : -(value / 2);
+        }
+    }
+
+    // ======= 新增：标准 HTTP 分块输出流，替代原私有 LiteChunkedOutputStream =======
+    private static final class ChunkedOutputStream extends OutputStream {
+        private final OutputStream out;
+        private final byte[] buffer = new byte[8192];
+        private int count;
+        private boolean closed;
+
+        ChunkedOutputStream(OutputStream out) {
+            this.out = out;
+        }
+
+        @Override
+        public void write(int b) throws IOException {
+            if (closed) throw new IOException("Stream closed");
+            if (count == buffer.length) {
+                flushChunk();
+            }
+            buffer[count++] = (byte) b;
+        }
+
+        @Override
+        public void write(byte[] b, int off, int len) throws IOException {
+            if (closed) throw new IOException("Stream closed");
+            while (len > 0) {
+                int space = buffer.length - count;
+                if (space == 0) {
+                    flushChunk();
+                    space = buffer.length;
+                }
+                int toWrite = Math.min(space, len);
+                System.arraycopy(b, off, buffer, count, toWrite);
+                count += toWrite;
+                off += toWrite;
+                len -= toWrite;
+            }
+        }
+
+        private void flushChunk() throws IOException {
+            if (count == 0) return;
+            out.write(Integer.toHexString(count).getBytes("US-ASCII"));
+            out.write('\r');
+            out.write('\n');
+            out.write(buffer, 0, count);
+            out.write('\r');
+            out.write('\n');
+            out.flush();
+            count = 0;
+        }
+
+        public void finish() throws IOException {
+            if (closed) return;
+            closed = true;
+            flushChunk();
+            out.write('0');
+            out.write('\r');
+            out.write('\n');
+            out.write('\r');
+            out.write('\n');
+            out.flush();
+        }
+
+        @Override
+        public void flush() throws IOException {
+            out.flush();
+        }
+
+        @Override
+        public void close() throws IOException {
+            finish();
         }
     }
 }
