@@ -20,7 +20,7 @@ final class ChannelNetworkWarmup implements java.io.Closeable {
     private final ExecutorService planner=Executors.newSingleThreadExecutor(r->new Thread(()->{android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);r.run();},"channel-network-warmup"));
     private final Map<String,Entry> entries=new LinkedHashMap<>();
     private final ArrayDeque<Plan> scripts=new ArrayDeque<>();
-    private volatile LitePageWarmup pages;
+    // 移除 LitePageWarmup
     private okhttp3.Dns resolver;
     private volatile int generation;
     private int sequence=-1000;
@@ -47,14 +47,14 @@ final class ChannelNetworkWarmup implements java.io.Closeable {
     }
     ChannelNetworkWarmup(Activity activity,FrameLayout root){this.activity=activity;this.root=root;}
     void prepare(List<Target> targets,String quality){
-        if(closed)return;final int epoch=++generation;clearEntries();scripts.clear();resolving=false;LitePageWarmup existing=pages;if(existing!=null)existing.cancel();
+        if(closed)return;final int epoch=++generation;clearEntries();scripts.clear();resolving=false;
         final List<Target> bounded=new ArrayList<>(targets.subList(0,Math.min(2,targets.size())));
         planner.execute(()->{
             try{
                 if(closed||epoch!=generation)return;
                 okhttp3.Dns selected=NetworkClient.sharedClient().dns();
-                if(pages==null||resolver!=selected){if(pages!=null)pages.close();resolver=selected;pages=new LitePageWarmup(activity.getApplicationContext(),selected);}
-                if(closed){pages.close();return;}
+                // 移除 pages 初始化
+                if(closed)return;
                 List<Plan> plans=new ArrayList<>();
                 for(Target target:bounded){
                     if(closed||epoch!=generation)return;
@@ -63,17 +63,17 @@ final class ChannelNetworkWarmup implements java.io.Closeable {
                     String effective=p.raw;
                     if(CjsSource.isSource(p.raw)){
                         CjsSource source=CjsSource.parse(p.raw);
-                        if(!CjsPluginRuntime.knowsSource(source)){pages.dns(source.descriptorUrl);continue;}
+                        if(!CjsPluginRuntime.knowsSource(source))continue;
                         effective=CjsPluginRuntime.playbackUrl(p.raw);p.source=p.raw;
                         if(source.parameters.get("quality")!=null)p.quality=source.parameters.get("quality");
                     }
                     if(effective.startsWith("webview://")){
                         p.page=effective.substring("webview://".length());p.cjs=CjsPluginRuntime.supportsSite(p.page);
-                        pages.dns(p.page);if(!p.cjs)pages.page(p.page);
+                        if(!p.cjs)continue; // 无法预热页面
                     }else if(Ku9ScriptResolver.isKu9Source(effective)){
-                        p.ku9=true;p.page=effective;pages.dns(effective);
+                        p.ku9=true;p.page=effective;
                     }else if(effective.startsWith("http://")||effective.startsWith("https://")){
-                        pages.dns(effective);continue;
+                        continue;
                     }else continue;
                     p.key=p.ku9?"ku9\n"+effective:"cjs\n"+p.page+'\n'+p.quality+'\n'+p.source;
                     if(p.ku9||p.cjs)plans.add(p);
@@ -90,7 +90,7 @@ final class ChannelNetworkWarmup implements java.io.Closeable {
             e.ku9=new Ku9ScriptResolver(activity,root,true);
             e.ku9.resolve(request,p.name,p.page,new Ku9ScriptResolver.Callback(){
                 public void onResolved(int id,Ku9ScriptResolver.Result result){
-                    if(e.cancelled)return;e.ku9Result=result;e.readyAt=SystemClock.elapsedRealtime();dnsResult(result.url);ready(e);
+                    if(e.cancelled)return;e.ku9Result=result;e.readyAt=SystemClock.elapsedRealtime();ready(e);
                     if(e.adopted)e.ku9Callback.onResolved(e.request,result);
                 }
                 public void onFailed(int id,String reason){failed(e);if(e.adopted)e.ku9Callback.onFailed(e.request,reason);}
@@ -99,14 +99,13 @@ final class ChannelNetworkWarmup implements java.io.Closeable {
             e.cjs=new CjsSiteResolver(activity,true);
             e.cjs.resolve(request,p.name,p.page,p.quality,p.source,new CjsSiteResolver.Callback(){
                 public void onResolved(int id,CjsSiteResolver.Result result){
-                    if(e.cancelled)return;e.cjsResult=result;e.readyAt=SystemClock.elapsedRealtime();dnsResult(result.url);ready(e);
+                    if(e.cancelled)return;e.cjsResult=result;e.readyAt=SystemClock.elapsedRealtime();ready(e);
                     if(e.adopted)e.cjsCallback.onResolved(e.request,result);
                 }
                 public void onFailed(int id,String reason){failed(e);if(e.adopted)e.cjsCallback.onFailed(e.request,reason);}
             });
         }
     }
-    private void dnsResult(String url){LitePageWarmup p=pages;if(p!=null)p.dns(url);}
     private void ready(Entry e){if(!e.completed){e.completed=true;resolving=false;Log.d("ChannelWarmup","Neighbour resolver ready in "+(SystemClock.elapsedRealtime()-e.started)+" ms");next();}}
     private void failed(Entry e){
         if(e.cancelled)return;
@@ -115,7 +114,7 @@ final class ChannelNetworkWarmup implements java.io.Closeable {
     }
     /** Keep only the imminent source; unrelated preparation never races a tune. */
     void foreground(String source){
-        ++generation;scripts.clear();resolving=false;LitePageWarmup p=pages;if(p!=null)p.cancel();
+        ++generation;scripts.clear();resolving=false;
         Iterator<Entry> iterator=entries.values().iterator();while(iterator.hasNext()){
             Entry e=iterator.next();if(!e.plan.raw.equals(source)&&!("webview://"+e.plan.page).equals(source)){iterator.remove();e.cancel();}
         }
@@ -132,5 +131,5 @@ final class ChannelNetworkWarmup implements java.io.Closeable {
         Entry e=take("cjs\n"+page+'\n'+quality+'\n'+source);if(e==null)return null;e.request=request;e.cjsCallback=callback;e.cjs.promoteWarmup();return new CjsLease(e);
     }
     private void clearEntries(){for(Entry e:entries.values())e.cancel();entries.clear();}
-    public void close(){closed=true;++generation;clearEntries();scripts.clear();main.removeCallbacksAndMessages(null);planner.shutdownNow();LitePageWarmup p=pages;if(p!=null)p.close();}
+    public void close(){closed=true;++generation;clearEntries();scripts.clear();main.removeCallbacksAndMessages(null);planner.shutdownNow();}
 }
