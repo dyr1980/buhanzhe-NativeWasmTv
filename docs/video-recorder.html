@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#f7f7f8">
   <link rel="icon" href="data:,">
-  <title>视频录制</title>
+  <!-- 【品牌修改】标题改为 XCZ -->
+  <title>视频录制 · XCZ</title>
   <style>
     *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
     html,body{margin:0;min-height:100%;background:#f7f7f8;color:#1d1d1f}
@@ -56,7 +57,8 @@
     <div class="identity">
       <div class="file-icon"><span class="live-tag">LIVE</span></div>
       <div class="quality"><select id="quality" aria-label="录制清晰度" disabled><option>正在读取清晰度</option></select></div>
-      <div class="meta"><span class="badge">文件名</span><span id="filename" class="filename">NTV-Live</span><button class="rename" type="button" onclick="editFilename()">编辑</button></div>
+      <!-- 【品牌修改】默认文件名改为 XCZ-Live -->
+      <div class="meta"><span class="badge">文件名</span><span id="filename" class="filename">XCZ-Live</span><button class="rename" type="button" onclick="editFilename()">编辑</button></div>
       <input id="filenameInput" class="rename-input" maxlength="80" aria-label="录制文件名">
     </div>
     <div class="progress-wrap"><div id="progress" class="progress">准备录制</div></div>
@@ -70,7 +72,7 @@
     </div>
     <div id="notice" class="notice"></div>
     <p class="help">截屏需播放设备为 Android 7.0 或以上，并保持视频界面在前台；可从另一台手机的网页保存。</p>
-    <div id="screenshotResult" class="screenshot-result" hidden><img id="screenshotPreview" alt="当前节目的视频截屏"><a id="screenshotSave" download="nTv-screenshot.png">保存截屏（PNG）</a><p>只截取视频画面，不含菜单和调试信息。若未自动下载，可点击保存；手机也可长按图片保存。</p></div>
+    <div id="screenshotResult" class="screenshot-result" hidden><img id="screenshotPreview" alt="当前节目的视频截屏"><a id="screenshotSave" download="XCZ-screenshot.png">保存截屏（PNG）</a><p>只截取视频画面，不含菜单和调试信息。若未自动下载，可点击保存；手机也可长按图片保存。</p></div>
     <div id="settings" class="settings">
       <div class="settings-grid">
         <div class="field"><label for="format">保存格式</label><select id="format" disabled><option value="mp4">MP4</option></select></div>
@@ -79,7 +81,8 @@
       <p class="help">录制和 MP4 合并全部在当前浏览器完成，不会上传视频。较长节目建议分段录制；录制期间请保持页面在前台。</p>
     </div>
   </section>
-  <div class="legal">界面参考 FetchV 的录制信息结构，代码为 NTV 独立实现。仅录制你有权保存的内容。<br><a href="https://github.com/buhanzhe/NativeWasmTv" rel="noopener">NativeWasmTv</a></div>
+  <!-- 【品牌修改】底部版权信息和仓库链接 -->
+  <div class="legal">界面参考 FetchV 的录制信息结构，代码为 XCZ 独立实现。仅录制你有权保存的内容。<br><a href="https://github.com/dyr1980/buhanzhe-NativeWasmTv" rel="noopener">buhanzhe-NativeWasmTv</a></div>
 </main>
 
 <script>
@@ -126,7 +129,7 @@ async function captureVideoScreenshot(){
     if(screenshotUrl)URL.revokeObjectURL(screenshotUrl);
     screenshotUrl=URL.createObjectURL(blob);
     document.getElementById('screenshotPreview').src=screenshotUrl;
-    var save=document.getElementById('screenshotSave');save.href=screenshotUrl;save.download=defaultFilename('nTv-screenshot')+'.png';
+    var save=document.getElementById('screenshotSave');save.href=screenshotUrl;save.download=defaultFilename('XCZ-screenshot')+'.png';
     document.getElementById('screenshotResult').hidden=false;save.click();
   }catch(error){showNotice('无法截屏',error.message)}finally{screenshotBusy=false;button.disabled=false}
 }
@@ -144,8 +147,8 @@ function clearNotice(){document.getElementById('notice').className='notice'}
 function setStatus(text,active){var bar=document.getElementById('progress');bar.textContent=text;bar.className='progress'+(active?' indeterminate':'');bar.style.width=active?'100%':(segments.length?'100%':'0')}
 function formatBytes(value){if(value<1024)return value+' B';if(value<1048576)return(value/1024).toFixed(0)+' KB';if(value<1073741824)return(value/1048576).toFixed(2)+' MB';return(value/1073741824).toFixed(2)+' GB'}
 function formatTime(seconds){seconds=Math.max(0,Math.floor(seconds||0));var h=Math.floor(seconds/3600),m=Math.floor(seconds%3600/60),s=seconds%60;return[h,m,s].map(function(v){return String(v).padStart(2,'0')}).join(':')}
-function safeFilename(value){return String(value||'NTV-Live').replace(/[\\/:*?"<>|]/g,'-').replace(/^\s+|\s+$/g,'').slice(0,80)||'NTV-Live'}
-function defaultFilename(name){var d=new Date(),stamp=d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0')+'-'+String(d.getHours()).padStart(2,'0')+String(d.getMinutes()).padStart(2,'0')+String(d.getSeconds()).padStart(2,'0');return safeFilename((name||'NTV-Live')+'-'+stamp)}
+function safeFilename(value){return String(value||'XCZ-Live').replace(/[\\/:*?"<>|]/g,'-').replace(/^\s+|\s+$/g,'').slice(0,80)||'XCZ-Live'}
+function defaultFilename(name){var d=new Date(),stamp=d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0')+'-'+String(d.getHours()).padStart(2,'0')+String(d.getMinutes()).padStart(2,'0')+String(d.getSeconds()).padStart(2,'0');return safeFilename((name||'XCZ-Live')+'-'+stamp)}
 function editFilename(){var label=document.getElementById('filename'),input=document.getElementById('filenameInput');input.value=label.textContent;input.style.display='block';input.focus();input.select();function done(){label.textContent=safeFilename(input.value);input.style.display='none';input.removeEventListener('blur',done);input.removeEventListener('keydown',key)}function key(event){if(event.key==='Enter')done();else if(event.key==='Escape'){input.value=label.textContent;done()}}input.addEventListener('blur',done);input.addEventListener('keydown',key)}
 function toggleSettings(){document.getElementById('settings').classList.toggle('show')}
 

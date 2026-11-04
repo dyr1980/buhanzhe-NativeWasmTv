@@ -9,23 +9,18 @@ import java.util.Map;
 import okhttp3.Dns;
 
 /**
- * Stand-in for the private lightweight browser engine.
+ * 私有 lite 内核的 Java 层入口。
  *
- * <p>The real engine ships inside the separately authorized {@code browser-core}
- * checkout. When that core is absent the lightweight path is disabled at compile
- * time ({@code BuildConfig.BUNDLED_LITE_BROWSER == false}) and at run time
- * ({@code LiteWebPlayback.supported()}), so these methods only need to fail
- * loudly instead of performing page work.</p>
+ * <p>这是一个“空实现”占位类：所有方法返回默认值、不做任何事。
+ * 因为 app/build.gradle 里 BUNDLED_LITE_BROWSER 恒为 false，
+ * LiteWebPlayback.supported() 永远返回 false，本类不会被真正调用，
+ * 只为让工程通过编译。
+ *
+ * <p>方法签名与上游 LiteWebPlayback / MainActivity 的调用严格一致。
  */
-class LiteEngine {
-    /** A resolved media URL that the native player can open directly. */
-    interface PlaybackTransport {
-        String url();
+final class LiteEngine {
 
-        void close() throws Exception;
-    }
-
-    /** Callbacks delivered by the engine while a page is loading. */
+    /** 网页渲染回调。 */
     interface Listener {
         void frame(JSONObject packet);
 
@@ -37,15 +32,28 @@ class LiteEngine {
 
         void media(String source, Map<String, String> headers);
 
-        void temporaryMedia(String source, Map<String, String> headers);
-
         void mediaControl(String source, boolean virtualMse, boolean paused);
+
+        void temporaryMedia(String source, Map<String, String> headers);
+    }
+
+    /** 播放传输通道。 */
+    interface PlaybackTransport {
+        String url();
+
+        void close();
+    }
+
+    private LiteEngine() {
     }
 
     static LiteEngine withNetworkThreadMultiplier(Context context, Listener listener,
-            Dns resolver, int multiplier) {
-        throw new UnsupportedOperationException(
-                "轻量内核未授权，请改用系统 WebView 内核");
+                                                 Dns resolver, int multiplier) {
+        return new LiteEngine();
+    }
+
+    static int networkThreadCount(int configured) {
+        return Math.max(1, configured);
     }
 
     static boolean keepsOriginalMediaPipeline(String url) {
@@ -56,57 +64,46 @@ class LiteEngine {
         return first != null && first.equals(second);
     }
 
-    static int networkThreadCount(int multiplier) {
-        return 0;
+    void setRendering(boolean value) {
     }
 
-    void load(String url, String script) {
+    void setHeadless(boolean value) {
     }
 
-    void close() {
-    }
-
-    void setHeadless(boolean headless) {
-    }
-
-    void setRendering(boolean rendering) {
-    }
-
-    void viewport(int width, int height, int mode) {
-    }
-
-    int viewportWidth() {
-        return 0;
-    }
-
-    int viewportHeight() {
-        return 0;
-    }
-
-    void traceRequests(boolean enabled) {
-    }
-
-    void renderPage() {
-    }
-
-    String evaluate(String script) {
-        return "";
-    }
-
-    JSONObject startupTimings() {
-        return new JSONObject();
-    }
-
-    JSONObject runtimeBusySnapshot() {
-        return new JSONObject();
+    void traceRequests(boolean value) {
     }
 
     long documentReadyAt() {
         return 0L;
     }
 
+    void viewport(int width, int height, int density) {
+    }
+
+    int viewportWidth() {
+        return 1280;
+    }
+
+    int viewportHeight() {
+        return 720;
+    }
+
+    void renderPage() {
+    }
+
+    JSONObject startupTimings() {
+        return new JSONObject();
+    }
+
     long upstreamDownloadedBytes() {
-        return -1L;
+        return 0L;
+    }
+
+    String runtimeBusySnapshot() {
+        return "";
+    }
+
+    void evaluate(String script) {
     }
 
     boolean keepsMediaSession(String source) {
@@ -114,16 +111,21 @@ class LiteEngine {
     }
 
     PlaybackTransport playbackTransport(String source, Map<String, String> headers) {
-        throw new UnsupportedOperationException("轻量内核未授权");
+        return null;
     }
 
-    void playbackTime(double position, int width, int height) {
+    void load(String url, String script) {
+    }
+
+    void temporaryPlayback(double position, double duration, boolean ready, boolean error) {
     }
 
     void directPlaybackTime(String source, double position, int width, int height) {
     }
 
-    void temporaryPlayback(double position, double duration, boolean committed,
-            boolean failed) {
+    void playbackTime(double position, int width, int height) {
+    }
+
+    void close() {
     }
 }

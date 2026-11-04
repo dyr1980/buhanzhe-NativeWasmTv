@@ -53,6 +53,7 @@ final class NetworkClient {
         if (context == null) {
             throw new IllegalStateException("Network client is not initialized");
         }
+        // Saving unrelated settings must not cancel active playback requests.
         if (mode.equals(getDnsMode())) return;
         context.getSharedPreferences(MainActivity.PREFERENCES, Context.MODE_PRIVATE)
                 .edit().putString(PREF_DNS, mode).apply();
@@ -92,6 +93,7 @@ final class NetworkClient {
         if (dns instanceof ProcessDns) ((ProcessDns) dns).invalidate(hostname);
     }
 
+    /** Bound the whole component request, including redirects and internal connection retries. */
     static HttpURLConnection openComponent(URL url, boolean nativeBinary) throws IOException {
         return openComponent(url, false, nativeBinary ? 30000 : 8000);
     }
@@ -116,6 +118,7 @@ final class NetworkClient {
         return opener.open(url);
     }
 
+    /** Shared OkHttp client for callers that need response headers or streaming bodies. */
     static synchronized OkHttpClient sharedClient() {
         factory();
         return client;
@@ -125,6 +128,7 @@ final class NetworkClient {
         return openHttp1(url, 0);
     }
 
+    /** Python-style short HTTP/1 connections must not stay pinned to one CDN address. */
     static synchronized HttpURLConnection openHttp1(URL url, int timeoutMs) throws IOException {
         factory();
         if (http1Factory == null) {
@@ -174,7 +178,6 @@ final class NetworkClient {
     private static synchronized OkUrlFactory factory() {
         if (factory == null) {
             http1Factory = null;
-            // 【已修改】移除了依赖私有内核的 LegacySystemDns，统一使用系统默认 DNS
             Dns dns = DNS_SYSTEM.equals(getDnsMode())
                     ? LegacySystemDns.create() : new PublicDns(getDnsMode());
             OkHttpClient.Builder builder = new OkHttpClient.Builder()

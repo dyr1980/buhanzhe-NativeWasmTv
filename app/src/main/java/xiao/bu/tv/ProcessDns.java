@@ -2,57 +2,46 @@ package xiao.bu.tv;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
-import java.util.Locale;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.FutureTask;
+
 import okhttp3.Dns;
 
-/** One successful resolution per hostname for this network client's process lifetime. */
+/**
+ * DNS 结果缓存包装器。
+ *
+ * <p>切换 DNS 设置时会清掉对应主机的缓存，让新设置立即生效；
+ * 其余情况直接复用上次的解析结果，减少解析次数。
+ */
 final class ProcessDns implements Dns {
+
     private final Dns delegate;
-    private final ConcurrentHashMap<String, FutureTask<List<InetAddress>>> entries =
-            new ConcurrentHashMap<String, FutureTask<List<InetAddress>>>();
+    private final ConcurrentHashMap<String, List<InetAddress>> cache =
+            new ConcurrentHashMap<String, List<InetAddress>>();
 
-    ProcessDns(Dns delegate) { this.delegate = delegate; }
-
-    void invalidate(String hostname) {
-        if (hostname != null) entries.remove(hostname.toLowerCase(Locale.US));
+    ProcessDns(Dns delegate) {
+        this.delegate = delegate == null ? Dns.SYSTEM : delegate;
     }
 
-    @Override public List<InetAddress> lookup(final String hostname) throws UnknownHostException {
-        if (hostname == null || hostname.length() == 0) throw new UnknownHostException("Empty hostname");
-        String key = hostname.toLowerCase(Locale.US);
-        FutureTask<List<InetAddress>> task = entries.get(key);
-        if (task == null) {
-        FutureTask<List<InetAddress>> candidate = new FutureTask<List<InetAddress>>(
-                new Callable<List<InetAddress>>() {
-                    @Override public List<InetAddress> call() throws UnknownHostException {
-                        List<InetAddress> result = delegate.lookup(hostname);
-                        if (result == null || result.isEmpty()) throw new UnknownHostException(hostname);
-                        return Collections.unmodifiableList(new ArrayList<InetAddress>(result));
-                    }
-                });
-        task = entries.putIfAbsent(key, candidate);
-        if (task == null) { task = candidate; task.run(); }
+    @Override
+    public List<InetAddress> lookup(String hostname) throws UnknownHostException {
+        List<InetAddress> cached = cache.get(hostname);
+        if (cached != null) {
+            return cached;
         }
-        try {
-            return task.get();
-        } catch (InterruptedException error) {
-            Thread.currentThread().interrupt();
-            UnknownHostException failure = new UnknownHostException("DNS interrupted: " + hostname);
-            failure.initCause(error);
-            throw failure;
-        } catch (ExecutionException error) {
-            // A temporary outage must not poison this host until the next launch.
-            entries.remove(key, task);
-            UnknownHostException failure = new UnknownHostException(hostname);
-            failure.initCause(error.getCause());
-            throw failure;
+        List<InetAddress> resolved = delegate.lookup(hostname);
+        if (resolved != null && !resolved.isEmpty()) {
+            cache.put(hostname, resolved);
+        }
+        return resolved;
+    }
+
+    /** 丢弃指定主机的缓存；传 null 表示全部清空。 */
+    void invalidate(String hostname) {
+        if (hostname == null) {
+            cache.clear();
+        } else {
+            cache.remove(hostname);
         }
     }
 }

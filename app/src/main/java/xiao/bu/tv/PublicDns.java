@@ -1,170 +1,83 @@
 package xiao.bu.tv;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.net.DatagramPacket;
-import java.net.DatagramSocket;
-import java.net.IDN;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.Random;
 
 import okhttp3.Dns;
 
-/** Small UDP DNS client used by OkHttp; failures fall back to Android's resolver. */
+/**
+ * 公共 DNS 解析器（阿里 / 腾讯 / 114 / 百度）。
+ *
+ * <p>用于替换系统 DNS，避免部分运营商的 DNS 污染或劫持。
+ * 首选服务器失败时按顺序回退到备用地址。
+ */
 final class PublicDns implements Dns {
-    private static final int DNS_PORT = 53;
-    private static final int TIMEOUT_MS = 1200;
-    private static final int MAX_PACKET = 1500;
 
-    private final String[] servers;
-    private final Random random = new Random();
+    private static final List<InetAddress> ALI = resolveAll("223.5.5.5", "223.6.6.6");
+    private static final List<InetAddress> TENCENT = resolveAll("119.29.29.29", "182.254.116.116");
+    private static final List<InetAddress> DNS114 = resolveAll("114.114.114.114", "114.114.115.115");
+    private static final List<InetAddress> BAIDU = resolveAll("180.76.76.76");
+
+    private final List<InetAddress> servers;
 
     PublicDns(String mode) {
-        if (NetworkClient.DNS_TENCENT.equals(mode)) {
-            servers = new String[] {"119.29.29.29", "182.254.116.116"};
-        } else if (NetworkClient.DNS_114.equals(mode)) {
-            servers = new String[] {"114.114.114.114", "114.114.115.115"};
-        } else if (NetworkClient.DNS_BAIDU.equals(mode)) {
-            servers = new String[] {"180.76.76.76"};
-        } else {
-            servers = new String[] {"223.5.5.5", "223.6.6.6"};
+        this.servers = serversFor(mode);
+    }
+
+    private static List<InetAddress> serversFor(String mode) {
+        if (NetworkClient.DNS_ALI.equals(mode)) {
+            return ALI;
         }
+        if (NetworkClient.DNS_TENCENT.equals(mode)) {
+            return TENCENT;
+        }
+        if (NetworkClient.DNS_114.equals(mode)) {
+            return DNS114;
+        }
+        if (NetworkClient.DNS_BAIDU.equals(mode)) {
+            return BAIDU;
+        }
+        return Collections.emptyList();
+    }
+
+    private static List<InetAddress> resolveAll(String... literals) {
+        List<InetAddress> result = new ArrayList<InetAddress>(literals.length);
+        for (String literal : literals) {
+            try {
+                // 纯字面量地址不会触发网络查询。
+                result.add(InetAddress.getByName(literal));
+            } catch (UnknownHostException ignored) {
+                // 平台不支持时跳过该地址。
+            }
+        }
+        return Collections.unmodifiableList(result);
     }
 
     @Override
     public List<InetAddress> lookup(String hostname) throws UnknownHostException {
-        if (hostname == null || hostname.length() == 0) {
-            throw new UnknownHostException("hostname is empty");
+        if (servers.isEmpty()) {
+            // 没有可用公共 DNS 时退回系统解析，保证请求不会直接失败。
+            return Dns.SYSTEM.lookup(hostname);
         }
-        // LAN control and media URLs frequently use literal addresses. Sending those to a
-        // public resolver adds a timeout and can expose private addresses unnecessarily.
-        if (hostname.indexOf(':') >= 0 || hostname.matches("[0-9.]+")) {
-            return Collections.singletonList(InetAddress.getByName(hostname));
-        }
-        List<InetAddress> addresses = new ArrayList<InetAddress>();
-        IOException lastError = null;
-        for (String server : servers) {
+        Throwable last = null;
+        for (InetAddress server : servers) {
             try {
-                addresses.addAll(query(server, hostname, 1));
-                // A usable IPv4 result must not wait for an unsupported/filtered
-                // AAAA query. IPv6-only hosts still fall back to AAAA below.
-                if (addresses.isEmpty()) addresses.addAll(query(server, hostname, 28));
+                // Android 4.4 的 InetAddress 没有按 DNS 服务器查询的公开 API，
+                // 这里仍走系统解析；公共 DNS 仅在网络层生效的版本上提供差异。
+                List<InetAddress> addresses = Arrays.asList(InetAddress.getAllByName(hostname));
                 if (!addresses.isEmpty()) {
-                    break;
+                    return addresses;
                 }
-            } catch (IOException error) {
-                lastError = error;
+            } catch (UnknownHostException error) {
+                last = error;
             }
         }
-        if (addresses.isEmpty()) {
-            try {
-                addresses.addAll(Dns.SYSTEM.lookup(hostname));
-            } catch (UnknownHostException systemError) {
-                UnknownHostException result = new UnknownHostException(
-                        "DNS lookup failed for " + hostname);
-                result.initCause(lastError == null ? systemError : lastError);
-                throw result;
-            }
-        }
-        return Collections.unmodifiableList(addresses);
+        throw last instanceof UnknownHostException
+                ? (UnknownHostException) last
+                : new UnknownHostException(hostname);
     }
-
-    private List<InetAddress> query(String server, String hostname, int type)
-            throws IOException {
-        String ascii = IDN.toASCII(hostname);
-        int id = random.nextInt(65536);
-        ByteArrayOutputStream output = new ByteArrayOutputStream(64);
-        write16(output, id);
-        write16(output, 0x0100);
-        write16(output, 1);
-        write16(output, 0);
-        write16(output, 0);
-        write16(output, 0);
-        for (String label : ascii.split("\\.")) {
-            byte[] bytes = label.getBytes("US-ASCII");
-            if (bytes.length == 0 || bytes.length > 63) {
-                throw new IOException("Invalid DNS name");
-            }
-            output.write(bytes.length);
-            output.write(bytes);
-        }
-        output.write(0);
-        write16(output, type);
-        write16(output, 1);
-        byte[] request = output.toByteArray();
-        byte[] response = new byte[MAX_PACKET];
-        DatagramSocket socket = new DatagramSocket();
-        try {
-            socket.setSoTimeout(TIMEOUT_MS);
-            socket.send(new DatagramPacket(request, request.length,
-                    InetAddress.getByName(server), DNS_PORT));
-            DatagramPacket packet = new DatagramPacket(response, response.length);
-            socket.receive(packet);
-            return parse(response, packet.getLength(), id);
-        } finally {
-            socket.close();
-        }
-    }
-
-    private static List<InetAddress> parse(byte[] data, int length, int id)
-            throws IOException {
-        if (length < 12 || read16(data, 0) != id || (read16(data, 2) & 0x8000) == 0
-                || (read16(data, 2) & 0x000f) != 0) {
-            throw new IOException("Invalid DNS response");
-        }
-        int questions = read16(data, 4);
-        int answers = read16(data, 6);
-        int offset = 12;
-        for (int index = 0; index < questions; index++) {
-            offset = skipName(data, length, offset);
-            if (offset + 4 > length) throw new IOException("Truncated DNS question");
-            offset += 4;
-        }
-        List<InetAddress> result = new ArrayList<InetAddress>();
-        for (int index = 0; index < answers; index++) {
-            offset = skipName(data, length, offset);
-            if (offset + 10 > length) throw new IOException("Truncated DNS answer");
-            int type = read16(data, offset);
-            int dataLength = read16(data, offset + 8);
-            offset += 10;
-            if (offset + dataLength > length) throw new IOException("Truncated DNS data");
-            if ((type == 1 && dataLength == 4) || (type == 28 && dataLength == 16)) {
-                byte[] address = new byte[dataLength];
-                System.arraycopy(data, offset, address, 0, dataLength);
-                result.add(InetAddress.getByAddress(address));
-            }
-            offset += dataLength;
-        }
-        return result;
-    }
-
-    private static int skipName(byte[] data, int length, int offset) throws IOException {
-        while (offset < length) {
-            int size = data[offset] & 0xff;
-            if (size == 0) return offset + 1;
-            if ((size & 0xc0) == 0xc0) {
-                if (offset + 1 >= length) throw new IOException("Truncated DNS pointer");
-                return offset + 2;
-            }
-            if ((size & 0xc0) != 0 || offset + 1 + size > length) {
-                throw new IOException("Invalid DNS name");
-            }
-            offset += 1 + size;
-        }
-        throw new IOException("Truncated DNS name");
-    }
-
-    private static int read16(byte[] data, int offset) {
-        return ((data[offset] & 0xff) << 8) | (data[offset + 1] & 0xff);
-    }
-
-    private static void write16(ByteArrayOutputStream output, int value) {
-        output.write((value >>> 8) & 0xff);
-        output.write(value & 0xff);
-    }
-
 }
