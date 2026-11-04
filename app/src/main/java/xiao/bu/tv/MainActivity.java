@@ -3410,7 +3410,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         }
     }
 
-    private JSONObject buildControlSettings(String view, boolean full) throws JSONException {
+        private JSONObject buildControlSettings(String view, boolean full) throws JSONException {
         JSONObject settings = new JSONObject();
         if (full || "advanced".equals(view) || "channels".equals(view)) {
             settings.put("githubProxyBaseUrl", GithubProxy.baseUrl());
@@ -3462,7 +3462,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                     .put("dateTimeFormat", dateTimeFormat)
                     .put("liveDelayMode", liveDelayMode);
         }
-                if (full || "browser".equals(view) || "script".equals(view)) {
+        if (full || "browser".equals(view) || "script".equals(view)) {
             settings.put("webSourceEngine", webSourceEngine)
                     .put("liteNetworkThreadMultiplier",liteNetworkThreadMultiplier)
                     .put("liteBrowserSupported", LiteWebPlayback.supported())
@@ -3488,10 +3488,9 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                     .put("webViewWebRtcEnabled", webViewWebRtcEnabled)
                     .put("webViewUserScriptEnabled", webViewUserScriptEnabled)
                     .put("webViewUserScripts", new JSONArray(webViewUserScripts))
-                                        .put("webViewCacheBytes", webSourceView == null
+                    .put("webViewCacheBytes", webSourceView == null
                             ? 0L : webSourceView.browserCacheSizeBytes());
         }
-    }
 
         if (full || "flymouse".equals(view)) {
             settings.put("flyMouseEnabled", flyMouseEnabled)
@@ -3529,7 +3528,6 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         }
         return settings;
     }
-
     private String handleWebControl(JSONObject request) throws JSONException {
         if(receiverRenderOnly)throw new JSONException("电视只渲染投屏，请在手机操作");
         final String action = request.optString("action", "");
