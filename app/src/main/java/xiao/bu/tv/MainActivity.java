@@ -4029,8 +4029,9 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                         .put("position", subtitlePosition)
                         .put("offsetPercent", subtitleOffsetPercent)
                         .put("shadow", subtitleShadow));
-        return result;
+                return result;
     }
+}
 
     private static JSONObject mediaTrackJson(ITrackInfo track, int index, int ordinal,
             String fallback, boolean selected) throws JSONException {
@@ -4623,53 +4624,6 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                     : JSONObject.NULL);
         }
                 return response.toString();
-    }
-
-    @SuppressLint("NewApi")
-    private void ensureLocalPlaylistPermission(JSONArray sources) throws IOException {
-        final BrowserImageDownload item;
-        synchronized (browserActionLock) {
-            item = browserImageDownloads.get(eventId);
-        }
-        if (item == null) throw new IOException("图片下载任务已失效，请重新点击下载");
-        HttpURLConnection connection = NetworkClient.open(new URL(item.url));
-        connection.setConnectTimeout(15000);
-        connection.setReadTimeout(30000);
-        connection.setInstanceFollowRedirects(true);
-        if (item.referer.length() > 0) connection.setRequestProperty("Referer", item.referer);
-        if (item.userAgent.length() > 0) connection.setRequestProperty("User-Agent", item.userAgent);
-        if (item.cookies.length() > 0) connection.setRequestProperty("Cookie", item.cookies);
-        try {
-            int status = connection.getResponseCode();
-            if (status < 200 || status >= 300) throw new IOException("图片服务器返回 HTTP " + status);
-            int declaredLength = connection.getContentLength();
-            if (declaredLength > MAX_BROWSER_IMAGE_DOWNLOAD_BYTES) {
-                throw new IOException("图片超过 24MB，已取消下载");
-            }
-            InputStream input = connection.getInputStream();
-            ByteArrayOutputStream output = new ByteArrayOutputStream(
-                    declaredLength > 0 ? Math.min(declaredLength, 1024 * 1024) : 32768);
-            try {
-                byte[] buffer = new byte[16384];
-                int count;
-                while ((count = input.read(buffer)) != -1) {
-                    if (output.size() + count > MAX_BROWSER_IMAGE_DOWNLOAD_BYTES) {
-                        throw new IOException("图片超过 24MB，已取消下载");
-                    }
-                    output.write(buffer, 0, count);
-                }
-            } finally {
-                input.close();
-            }
-            String contentType = connection.getContentType();
-            if (contentType == null || contentType.length() == 0
-                    || contentType.indexOf('\r') >= 0 || contentType.indexOf('\n') >= 0) {
-                contentType = "application/octet-stream";
-            }
-            return new LocalControlServer.Resource(contentType, output.toByteArray(), item.fileName);
-        } finally {
-            connection.disconnect();
-        }
     }
 
     /** Shared final dispatch for HTTP and local WebView controls; caller is on the main thread. */
