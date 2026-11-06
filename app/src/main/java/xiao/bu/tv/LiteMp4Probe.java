@@ -1,102 +1,44 @@
 package xiao.bu.tv;
 
 /**
- * Detects whether a byte prefix is an ISO base media file (MP4 / fMP4) that can
- * be handed to the native player without downloading the whole body.
+ * MP4 初始化段探测（占位实现）。
  *
- * <p>Two questions matter when sniffing a web page: "does this look like MP4 at
- * all" and "does the prefix we already have contain everything the player needs
- * to start (ftyp + moov), so we can stop reading".</p>
+ * 上游实现在私有工程里，用于判断某个 URL 返回的是不是"仅含 init 段"的 MP4，
+ * 以此决定嗅探阶段是否值得直接交给播放器。公开检出缺少该实现时，
+ * 保守策略是"不是 MP4 / 不是纯 init 段"，让调用方继续走原有的完整探测流程，
+ * 不会因此误判可播放。
  */
 final class LiteMp4Probe {
-    private static final int BOX_HEADER_BYTES = 8;
+    private LiteMp4Probe() { }
 
-    private LiteMp4Probe() {
+    /** ISO BMFF 的文件类型盒子：偏移 4 起为 "ftyp"。 */
+    static boolean isMp4(byte[] bytes, int length) {
+        if (bytes == null || length < 12) return false;
+        return bytes[4] == 'f' && bytes[5] == 't' && bytes[6] == 'y' && bytes[7] == 'p';
     }
 
-    /** True when {@code length} bytes start with a plausible ISO-BMFF header. */
-    static boolean isMp4(byte[] data, int length) {
-        if (data == null || length < BOX_HEADER_BYTES) return false;
+    /** 缓冲区内是否只包含初始化信息（没有 moof/mdat 等媒体数据）。 */
+    static boolean initializationOnly(byte[] bytes, int length, boolean complete) {
+        if (bytes == null || length <= 0 || !complete) return false;
+        // 逐盒扫描顶层 box：出现 moof / mdat 即说明已含媒体数据。
         int offset = 0;
-        // Skip anything before the first top-level box (some servers prepend junk).
-        while (offset + BOX_HEADER_BYTES <= length) {
-            long size = readUint32(data, offset);
-            String type = boxType(data, offset + 4);
-            if ("ftyp".equals(type) || "styp".equals(type) || "moov".equals(type)
-                    || "moof".equals(type) || "mdat".equals(type) || "free".equals(type)
-                    || "skip".equals(type) || "wide".equals(type)) {
+        while (offset + 8 <= length) {
+            long size = ((long) (bytes[offset] & 0xFF) << 24)
+                    | ((long) (bytes[offset + 1] & 0xFF) << 16)
+                    | ((long) (bytes[offset + 2] & 0xFF) << 8)
+                    | (bytes[offset + 3] & 0xFF);
+            String type = new String(bytes, offset + 4, 4, java.nio.charset.Charset.forName("US-ASCII"));
+            if ("moof".equals(type) || "mdat".equals(type)) return false;
+            if (size == 1) {
+                if (offset + 16 > length) return false;
+                size = 0;
+                for (int i = 0; i < 8; i++) size = (size << 8) | (bytes[offset + 8 + i] & 0xFF);
+            } else if (size == 0) {
                 return true;
             }
-            if (size <= 0L) return false;
-            if (size > Integer.MAX_VALUE) return false;
-            offset += (int) size;
-            if (offset <= 0) return false;
+            if (size < 8) return false;
+            offset += (int) Math.min(size, Integer.MAX_VALUE);
         }
-        return false;
-    }
-
-    /**
-     * True when the prefix already holds the boxes a player needs to initialize.
-     *
-     * <p>For plain MP4 that is {@code ftyp} plus {@code moov}. For fragmented MP4
-     * the init segment is {@code ftyp} plus {@code moov} as well, with
-     * {@code moof}/{@code mdat} following later; those may also appear inside the
-     * prefix when the file is small, which is equally acceptable.</p>
-     */
-    static boolean initializationOnly(byte[] data, int length, boolean complete) {
-        if (data == null || length < BOX_HEADER_BYTES) return false;
-        boolean hasFtyp = false;
-        boolean hasMoov = false;
-        boolean hasMediaData = false;
-        int offset = 0;
-        while (offset + BOX_HEADER_BYTES <= length) {
-            long size = readUint32(data, offset);
-            String type = boxType(data, offset + 4);
-            int header = BOX_HEADER_BYTES;
-            if (size == 1L) {
-                // 64-bit largesize follows the type field.
-                if (offset + 16 > length) break;
-                size = readUint64(data, offset + 8);
-                header = 16;
-            } else if (size == 0L) {
-                // A zero size means "until end of file".
-                size = length - offset;
-            }
-            if (size < header) break;
-            if ("ftyp".equals(type)) hasFtyp = true;
-            else if ("moov".equals(type)) {
-                // moov must be fully inside the prefix to be usable.
-                if (offset + size > length) return false;
-                hasMoov = true;
-            } else if ("mdat".equals(type) || "moof".equals(type)) {
-                hasMediaData = true;
-            }
-            if (size > length - offset) break;
-            offset += (int) size;
-        }
-        if (!hasFtyp) return false;
-        if (complete) return true;
-        return hasMoov || hasMediaData;
-    }
-
-    private static long readUint32(byte[] data, int offset) {
-        return ((long) (data[offset] & 0xff) << 24)
-                | ((long) (data[offset + 1] & 0xff) << 16)
-                | ((long) (data[offset + 2] & 0xff) << 8)
-                | (long) (data[offset + 3] & 0xff);
-    }
-
-    private static long readUint64(byte[] data, int offset) {
-        long high = readUint32(data, offset);
-        long low = readUint32(data, offset + 4);
-        return (high << 32) | (low & 0xffffffffL);
-    }
-
-    private static String boxType(byte[] data, int offset) {
-        StringBuilder type = new StringBuilder(4);
-        for (int index = 0; index < 4; index++) {
-            type.append((char) (data[offset + index] & 0xff));
-        }
-        return type.toString();
+        return true;
     }
 }

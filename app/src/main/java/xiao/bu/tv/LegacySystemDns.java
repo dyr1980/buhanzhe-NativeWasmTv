@@ -2,36 +2,27 @@ package xiao.bu.tv;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
-import java.util.Arrays;
 import java.util.List;
 
 import okhttp3.Dns;
 
 /**
- * Resolves hostnames through the platform resolver.
+ * 系统解析器（走 JVM / Android 平台默认解析，保留运营商就近调度）。
  *
- * <p>Old Android releases only expose {@link InetAddress#getAllByName(String)},
- * which is what {@link Dns#SYSTEM} already wraps. Keeping a dedicated type lets
- * the network client pick "system" and "public" modes explicitly without
- * depending on the private lightweight core.</p>
+ * 上游实现位于私有工程。这里直接委托给 okhttp 的 Dns.SYSTEM，
+ * 目的只是让 NetworkClient 能在这个分支上按"跟随系统"策略工作。
  */
 final class LegacySystemDns implements Dns {
-    private LegacySystemDns() {
-    }
+    private static final LegacySystemDns INSTANCE = new LegacySystemDns();
+
+    private LegacySystemDns() { }
 
     static Dns create() {
-        return new LegacySystemDns();
+        return INSTANCE;
     }
 
     @Override
     public List<InetAddress> lookup(String hostname) throws UnknownHostException {
-        if (hostname == null || hostname.length() == 0) {
-            throw new UnknownHostException("Empty hostname");
-        }
-        InetAddress[] addresses = InetAddress.getAllByName(hostname);
-        if (addresses == null || addresses.length == 0) {
-            throw new UnknownHostException(hostname);
-        }
-        return Arrays.asList(addresses);
+        return Dns.SYSTEM.lookup(hostname);
     }
 }

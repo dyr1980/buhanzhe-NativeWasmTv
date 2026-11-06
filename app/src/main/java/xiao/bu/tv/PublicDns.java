@@ -1,83 +1,64 @@
 package xiao.bu.tv;
 
+import java.net.Inet4Address;
+import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
 import okhttp3.Dns;
 
 /**
- * 公共 DNS 解析器（阿里 / 腾讯 / 114 / 百度）。
+ * 指定公共 DNS 的解析器（阿里 / 腾讯 / 114 / 百度）。
  *
- * <p>用于替换系统 DNS，避免部分运营商的 DNS 污染或劫持。
- * 首选服务器失败时按顺序回退到备用地址。
+ * 上游实现位于私有工程；这里按公开配置项重建，只使用系统 InetAddress 与固定服务器地址，
+ * 不引入额外依赖。DNS 查询走 doh 之外的系统解析路径无法指定服务器，因此这里采用
+ * 系统解析并做结果过滤，语义与"跟随系统"一致，但保留按运营商结果排序的能力。
  */
 final class PublicDns implements Dns {
+    static final String ALI = "ali";
+    static final String TENCENT = "tencent";
+    static final String DNS114 = "114";
+    static final String BAIDU = "baidu";
 
-    private static final List<InetAddress> ALI = resolveAll("223.5.5.5", "223.6.6.6");
-    private static final List<InetAddress> TENCENT = resolveAll("119.29.29.29", "182.254.116.116");
-    private static final List<InetAddress> DNS114 = resolveAll("114.114.114.114", "114.114.115.115");
-    private static final List<InetAddress> BAIDU = resolveAll("180.76.76.76");
+    private static final String[] ALI_SERVERS = {"223.5.5.5", "223.6.6.6"};
+    private static final String[] TENCENT_SERVERS = {"119.29.29.29", "182.254.116.116"};
+    private static final String[] DNS114_SERVERS = {"114.114.114.114", "114.114.115.115"};
+    private static final String[] BAIDU_SERVERS = {"180.76.76.76", "180.76.76.76"};
 
-    private final List<InetAddress> servers;
+    private final String mode;
 
     PublicDns(String mode) {
-        this.servers = serversFor(mode);
-    }
-
-    private static List<InetAddress> serversFor(String mode) {
-        if (NetworkClient.DNS_ALI.equals(mode)) {
-            return ALI;
-        }
-        if (NetworkClient.DNS_TENCENT.equals(mode)) {
-            return TENCENT;
-        }
-        if (NetworkClient.DNS_114.equals(mode)) {
-            return DNS114;
-        }
-        if (NetworkClient.DNS_BAIDU.equals(mode)) {
-            return BAIDU;
-        }
-        return Collections.emptyList();
-    }
-
-    private static List<InetAddress> resolveAll(String... literals) {
-        List<InetAddress> result = new ArrayList<InetAddress>(literals.length);
-        for (String literal : literals) {
-            try {
-                // 纯字面量地址不会触发网络查询。
-                result.add(InetAddress.getByName(literal));
-            } catch (UnknownHostException ignored) {
-                // 平台不支持时跳过该地址。
-            }
-        }
-        return Collections.unmodifiableList(result);
+        this.mode = mode == null ? ALI : mode;
     }
 
     @Override
     public List<InetAddress> lookup(String hostname) throws UnknownHostException {
-        if (servers.isEmpty()) {
-            // 没有可用公共 DNS 时退回系统解析，保证请求不会直接失败。
-            return Dns.SYSTEM.lookup(hostname);
+        List<InetAddress> resolved = Dns.SYSTEM.lookup(hostname);
+        if (resolved == null || resolved.isEmpty()) return resolved;
+        // IPv4 优先：老旧电视盒子与部分运营商 IPv6 路由不可用，
+        // 直接把 IPv6 排到后面可减少首包超时。
+        List<InetAddress> ordered = new ArrayList<InetAddress>(resolved.size());
+        List<InetAddress> fallback = new ArrayList<InetAddress>(resolved.size());
+        for (InetAddress address : resolved) {
+            if (address instanceof Inet4Address) ordered.add(address);
+            else if (address instanceof Inet6Address) fallback.add(address);
         }
-        Throwable last = null;
-        for (InetAddress server : servers) {
-            try {
-                // Android 4.4 的 InetAddress 没有按 DNS 服务器查询的公开 API，
-                // 这里仍走系统解析；公共 DNS 仅在网络层生效的版本上提供差异。
-                List<InetAddress> addresses = Arrays.asList(InetAddress.getAllByName(hostname));
-                if (!addresses.isEmpty()) {
-                    return addresses;
-                }
-            } catch (UnknownHostException error) {
-                last = error;
-            }
-        }
-        throw last instanceof UnknownHostException
-                ? (UnknownHostException) last
-                : new UnknownHostException(hostname);
+        ordered.addAll(fallback);
+        return ordered.isEmpty() ? resolved : ordered;
+    }
+
+    /** 当前模式对应的 DNS 服务器地址，仅用于系统信息页展示。 */
+    List<String> servers() {
+        String[] servers;
+        if (TENCENT.equals(mode)) servers = TENCENT_SERVERS;
+        else if (DNS114.equals(mode)) servers = DNS114_SERVERS;
+        else if (BAIDU.equals(mode)) servers = BAIDU_SERVERS;
+        else servers = ALI_SERVERS;
+        List<String> list = new ArrayList<String>(servers.length);
+        Collections.addAll(list, servers);
+        return list;
     }
 }

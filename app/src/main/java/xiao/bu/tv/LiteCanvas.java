@@ -1,77 +1,38 @@
 package xiao.bu.tv;
 
-import android.content.Context;
-import android.graphics.Canvas;
-import android.graphics.Color;
-import android.graphics.Paint;
-import android.view.KeyEvent;
-import android.view.View;
-
-import org.json.JSONObject;
-
 /**
- * Rendering surface for the private lightweight browser engine.
+ * 轻量内核页面渲染画布（占位实现）。
  *
- * <p>The engine streams painted frames here as JSON packets. Without the
- * authorized {@code browser-core} the engine never starts, so this view only
- * paints a neutral background and ignores input.</p>
+ * 上游实现随私有内核一起授权，公开检出没有 litehtml 的 Java 绑定。
+ * 这里保留同一套对外字段/方法，使 LiteWebPlayback 无需改动即可编译；
+ * 因为 {@link LiteEngine#isAvailable()} 恒为 false，本类不会被实例化。
  */
-final class LiteCanvas extends View {
+final class LiteCanvas extends android.view.View {
     LiteEngine engine;
     int fixedViewportWidth;
     int fixedViewportHeight;
 
-    private final Paint background = new Paint();
-    private final Runnable invalidator = new Runnable() {
-        @Override
-        public void run() {
-            invalidate();
-        }
-    };
-
-    LiteCanvas(Context context) {
+    LiteCanvas(android.content.Context context) {
         super(context);
-        background.setColor(Color.BLACK);
-        setFocusable(true);
-        setFocusableInTouchMode(true);
-    }
-
-    void frame(JSONObject packet) {
-        if (packet == null) return;
-        postInvalidateOnAnimationCompat();
-    }
-
-    void textInput(JSONObject state) {
     }
 
     boolean editingText() {
         return false;
     }
 
-    boolean textInputKey(KeyEvent event) {
+    void frame(org.json.JSONObject packet) { }
+
+    void textInput(org.json.JSONObject state) { }
+
+    boolean textInputKey(android.view.KeyEvent event) {
         return false;
     }
 
-    void endTextInput() {
-    }
+    void endTextInput() { }
 
-    @Override
-    public boolean dispatchKeyEvent(KeyEvent event) {
+    // 与业务代码调用签名保持一致（返回 boolean 表示是否消费按键）。
+    // View 已有同名方法，这里用独立名称避免签名冲突。
+    boolean dispatchKeyEventToPage(android.view.KeyEvent event) {
         return super.dispatchKeyEvent(event);
-    }
-
-    @Override
-    protected void onDraw(Canvas canvas) {
-        super.onDraw(canvas);
-        canvas.drawRect(0, 0, getWidth(), getHeight(), background);
-    }
-
-    private void postInvalidateOnAnimationCompat() {
-        if (android.os.Build.VERSION.SDK_INT >= 16) {
-            postInvalidateOnAnimation();
-        } else {
-            removeCallbacks(invalidator);
-            postDelayed(invalidator, 16L);
-        }
     }
 }

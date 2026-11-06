@@ -4,60 +4,71 @@ import java.io.IOException;
 import java.io.OutputStream;
 
 /**
- * HTTP/1.1 chunked transfer encoder.
+ * HTTP/1.1 chunked 传输编码的写入端。
  *
- * <p>Wraps the response body so callers can stream an unknown length without
- * buffering it first. {@link #finish()} must be called exactly once; it writes
- * the terminating zero-length chunk.</p>
+ * 上游实现位于私有工程。这里按 RFC 7230 §4.1 重新实现：每次写入包成一个数据块，
+ * {@link #finish()} 写出结束块 0\r\n\r\n。调用方负责 header 与 flush。
  */
 final class LiteChunkedOutputStream extends OutputStream {
-    private final OutputStream output;
+    private static final byte[] CRLF = {'\r', '\n'};
+    private static final byte[] LAST = {'0', '\r', '\n', '\r', '\n'};
+
+    private final OutputStream out;
+    private byte[] sizeBuffer;
     private boolean finished;
 
-    LiteChunkedOutputStream(OutputStream output) {
-        if (output == null) throw new IllegalArgumentException("output");
-        this.output = output;
+    LiteChunkedOutputStream(OutputStream out) {
+        if (out == null) throw new IllegalArgumentException("out == null");
+        this.out = out;
     }
 
     @Override
     public void write(int value) throws IOException {
-        byte[] single = {(byte) value};
-        write(single, 0, 1);
+        write(new byte[] {(byte) value}, 0, 1);
     }
 
     @Override
     public void write(byte[] buffer, int offset, int count) throws IOException {
-        if (finished) throw new IOException("Chunked stream already finished");
+        if (finished) throw new IOException("chunked stream already finished");
+        if (buffer == null) throw new NullPointerException("buffer == null");
+        if (offset < 0 || count < 0 || offset + count > buffer.length) {
+            throw new IndexOutOfBoundsException();
+        }
         if (count == 0) return;
-        output.write(Integer.toHexString(count).getBytes("ISO-8859-1"));
-        output.write(CRLF);
-        output.write(buffer, offset, count);
-        output.write(CRLF);
+        writeSizeLine(count);
+        out.write(buffer, offset, count);
+        out.write(CRLF);
+    }
+
+    private void writeSizeLine(int count) throws IOException {
+        if (sizeBuffer == null) sizeBuffer = new byte[12];
+        int position = sizeBuffer.length;
+        int value = count;
+        do {
+            int digit = value & 0xF;
+            sizeBuffer[--position] = (byte) (digit < 10 ? '0' + digit : 'a' + digit - 10);
+            value >>>= 4;
+        } while (value != 0);
+        out.write(sizeBuffer, position, sizeBuffer.length - position);
+        out.write(CRLF);
+    }
+
+    /** 写出结束块并标记为已完成；重复调用无副作用。 */
+    void finish() throws IOException {
+        if (finished) return;
+        finished = true;
+        out.write(LAST);
     }
 
     @Override
     public void flush() throws IOException {
-        output.flush();
+        out.flush();
     }
 
-    /** Terminates the chunked body. Safe to call more than once. */
-    void finish() throws IOException {
-        if (finished) return;
-        finished = true;
-        output.write(LAST_CHUNK);
-        output.flush();
-    }
-
-    /** Finishes the body so a caller that only closes the stream stays correct. */
     @Override
     public void close() throws IOException {
-        try {
-            finish();
-        } finally {
-            output.close();
-        }
+        // 不关闭底层 socket：连接由代理服务器统一管理。
+        if (!finished) finish();
+        out.flush();
     }
-
-    private static final byte[] CRLF = {'\r', '\n'};
-    private static final byte[] LAST_CHUNK = {'0', '\r', '\n', '\r', '\n'};
 }

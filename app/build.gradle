@@ -14,7 +14,7 @@ if (releaseKeystore.exists() != releaseSigningInfo.exists()) {
 def releaseSigningProperties = new Properties()
 def configuredTargetSdk = 25
 def configuredVersionCode = project.hasProperty('versionCodeOverride')
-        ? Integer.parseInt(project.property('versionCodeOverride').toString()) : 25
+        ? Integer.parseInt(project.property('versionCodeOverride').toString()) : 26
 if (releaseSigningAvailable) {
     releaseSigningInfo.withInputStream { releaseSigningProperties.load(it) }
     ['alias', 'storePassword', 'keyPassword'].each { propertyName ->
@@ -61,7 +61,7 @@ android {
         // REQUEST_INSTALL_PACKAGES, while remaining installable on Android 15.
         targetSdkVersion configuredTargetSdk
         versionCode configuredVersionCode
-        versionName '3.3.3'
+        versionName '3.3.4'
         // 私有 browser-core 未授权，相关能力全部关闭，走系统 WebView 内核。
         buildConfigField 'boolean', 'BUNDLED_LITE_BROWSER', 'false'
         buildConfigField 'boolean', 'LITE_BROWSER_DEFAULT', 'false'

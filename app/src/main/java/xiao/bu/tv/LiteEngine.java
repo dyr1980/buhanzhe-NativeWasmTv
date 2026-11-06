@@ -1,131 +1,107 @@
 package xiao.bu.tv;
 
-import android.content.Context;
-
-import org.json.JSONObject;
-
 import java.util.Map;
 
 import okhttp3.Dns;
 
 /**
- * 私有 lite 内核的 Java 层入口。
+ * 私有轻量内核在公开检出中的"不可用"实现。
  *
- * <p>这是一个“空实现”占位类：所有方法返回默认值、不做任何事。
- * 因为 app/build.gradle 里 BUNDLED_LITE_BROWSER 恒为 false，
- * LiteWebPlayback.supported() 永远返回 false，本类不会被真正调用，
- * 只为让工程通过编译。
+ * 上游把浏览器内核（litehtml / LiteCanvas / LitePageWarmup / 专用 QuickJS）放在单独
+ * 授权的私有工程里，公开仓库只有 `prebuilt/litebrowser/<ABI>/libntvLitebro.so` 的
+ * 二进制快照，不含 Java 接口与 JS 资源，所以公开检出无法真正编译或启用轻量内核。
  *
- * <p>方法签名与上游 LiteWebPlayback / MainActivity 的调用严格一致。
+ * 本文件按业务代码实际调用面提供同签名实现：{@link #isAvailable()} 恒为 false，
+ * {@link #withNetworkThreadMultiplier} 不会被调用，所有 lite 路径都会回退到系统 WebView。
+ *
+ * 已合法取得内核授权时：把授权工程放进 `browser-core/`，删除本文件及
+ * LiteCanvas / LitePageWarmup / LiteMp4Probe 三个占位类，构建脚本会自动恢复 ntvBro 变体。
  */
 final class LiteEngine {
+    private LiteEngine() { }
 
-    /** 网页渲染回调。 */
     interface Listener {
-        void frame(JSONObject packet);
-
-        void textInput(JSONObject state);
-
+        void frame(org.json.JSONObject packet);
+        void textInput(org.json.JSONObject state);
         void message(String value);
-
         void navigate(String next);
-
         void media(String source, Map<String, String> headers);
-
-        void mediaControl(String source, boolean virtualMse, boolean paused);
-
         void temporaryMedia(String source, Map<String, String> headers);
+        void mediaControl(String source, boolean virtualMse, boolean paused);
     }
 
-    /** 播放传输通道。 */
-    interface PlaybackTransport {
-        String url();
+    static final class PlaybackTransport {
+        private final String url;
 
-        void close();
+        PlaybackTransport(String url) {
+            this.url = url;
+        }
+
+        String url() {
+            return url;
+        }
+
+        void close() throws Exception { }
     }
 
-    private LiteEngine() {
-    }
-
-    static LiteEngine withNetworkThreadMultiplier(Context context, Listener listener,
-                                                 Dns resolver, int multiplier) {
-        return new LiteEngine();
-    }
-
-    static int networkThreadCount(int configured) {
-        return Math.max(1, configured);
+    static boolean isAvailable() {
+        return false;
     }
 
     static boolean keepsOriginalMediaPipeline(String url) {
         return false;
     }
 
-    static boolean sameHlsSessionSource(String first, String second) {
-        return first != null && first.equals(second);
+    static boolean sameHlsSessionSource(String left, String right) {
+        return left != null && left.equals(right);
     }
 
-    void setRendering(boolean value) {
+    static int networkThreadCount(int multiplier) {
+        return 0;
     }
 
-    void setHeadless(boolean value) {
+    static LiteEngine withNetworkThreadMultiplier(android.content.Context context, Listener listener,
+                                                 Dns dns, int multiplier) {
+        throw new IllegalStateException("轻量内核未授权，公开检出不含该组件");
     }
 
-    void traceRequests(boolean value) {
-    }
+    void traceRequests(boolean enabled) { }
 
-    long documentReadyAt() {
-        return 0L;
-    }
+    void setHeadless(boolean headless) { }
 
-    void viewport(int width, int height, int density) {
-    }
+    void viewport(int width, int height, int scale) { }
 
-    int viewportWidth() {
-        return 1280;
-    }
+    int viewportWidth() { return 0; }
 
-    int viewportHeight() {
-        return 720;
-    }
+    int viewportHeight() { return 0; }
 
-    void renderPage() {
-    }
+    void load(String url, String script) { }
 
-    JSONObject startupTimings() {
-        return new JSONObject();
-    }
+    void close() { }
 
-    long upstreamDownloadedBytes() {
-        return 0L;
-    }
+    void setRendering(boolean rendering) { }
 
-    String runtimeBusySnapshot() {
-        return "";
-    }
+    void renderPage() { }
 
-    void evaluate(String script) {
-    }
+    long documentReadyAt() { return 0L; }
 
-    boolean keepsMediaSession(String source) {
-        return false;
-    }
+    String evaluate(String script) { return null; }
+
+    org.json.JSONObject startupTimings() { return new org.json.JSONObject(); }
+
+    org.json.JSONObject runtimeBusySnapshot() { return new org.json.JSONObject(); }
+
+    long upstreamDownloadedBytes() { return -1L; }
+
+    boolean keepsMediaSession(String source) { return false; }
 
     PlaybackTransport playbackTransport(String source, Map<String, String> headers) {
-        return null;
+        return new PlaybackTransport(source);
     }
 
-    void load(String url, String script) {
-    }
+    void playbackTime(double position, int width, int height) { }
 
-    void temporaryPlayback(double position, double duration, boolean ready, boolean error) {
-    }
+    void directPlaybackTime(String source, double position, int width, int height) { }
 
-    void directPlaybackTime(String source, double position, int width, int height) {
-    }
-
-    void playbackTime(double position, int width, int height) {
-    }
-
-    void close() {
-    }
+    void temporaryPlayback(double position, double duration, boolean completed, boolean error) { }
 }
