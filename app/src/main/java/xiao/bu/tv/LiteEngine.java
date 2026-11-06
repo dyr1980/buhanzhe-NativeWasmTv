@@ -1,107 +1,154 @@
 package xiao.bu.tv;
 
+import android.content.Context;
+
+import org.json.JSONObject;
+
 import java.util.Map;
 
 import okhttp3.Dns;
 
 /**
- * 私有轻量内核在公开检出中的"不可用"实现。
+ * 私有 lite 内核的 Java 层入口（占位实现）。
  *
- * 上游把浏览器内核（litehtml / LiteCanvas / LitePageWarmup / 专用 QuickJS）放在单独
- * 授权的私有工程里，公开仓库只有 `prebuilt/litebrowser/<ABI>/libntvLitebro.so` 的
- * 二进制快照，不含 Java 接口与 JS 资源，所以公开检出无法真正编译或启用轻量内核。
- *
- * 本文件按业务代码实际调用面提供同签名实现：{@link #isAvailable()} 恒为 false，
- * {@link #withNetworkThreadMultiplier} 不会被调用，所有 lite 路径都会回退到系统 WebView。
- *
- * 已合法取得内核授权时：把授权工程放进 `browser-core/`，删除本文件及
- * LiteCanvas / LitePageWarmup / LiteMp4Probe 三个占位类，构建脚本会自动恢复 ntvBro 变体。
+ * <p>所有方法返回默认值、不做任何事。app/build.gradle 里 BUNDLED_LITE_BROWSER
+ * 恒为 false，LiteWebPlayback.supported() 永远返回 false，本类不会被真正调用，
+ * 只为让工程通过编译。方法签名与上游调用严格一致，作者更新后如新增调用，
+ * 只需在下面补上同签名空方法即可。
  */
 final class LiteEngine {
-    private LiteEngine() { }
 
+    /** 网页渲染回调（方法带默认空实现，调用方可以只覆写关心的几个）。 */
     interface Listener {
-        void frame(org.json.JSONObject packet);
-        void textInput(org.json.JSONObject state);
-        void message(String value);
-        void navigate(String next);
-        void media(String source, Map<String, String> headers);
-        void temporaryMedia(String source, Map<String, String> headers);
-        void mediaControl(String source, boolean virtualMse, boolean paused);
-    }
-
-    static final class PlaybackTransport {
-        private final String url;
-
-        PlaybackTransport(String url) {
-            this.url = url;
+        default void frame(JSONObject packet) {
         }
 
-        String url() {
-            return url;
+        default void textInput(JSONObject state) {
         }
 
-        void close() throws Exception { }
+        default void message(String value) {
+        }
+
+        default void navigate(String next) {
+        }
+
+        default void media(String source, Map<String, String> headers) {
+        }
+
+        default void mediaControl(String source, boolean virtualMse, boolean paused) {
+        }
+
+        default void temporaryMedia(String source, Map<String, String> headers) {
+        }
     }
 
-    static boolean isAvailable() {
-        return false;
+    /** 播放传输通道。 */
+    interface PlaybackTransport {
+        String url();
+
+        void close();
+    }
+
+    /**
+     * 与上游调用一致的构造器（ChannelHealth 直接 new）。
+     * 占位实现不启动任何东西。
+     */
+    LiteEngine(Context context, Listener listener, Dns resolver, int multiplier) {
+    }
+
+    static LiteEngine withNetworkThreadMultiplier(Context context, Listener listener,
+                                                 Dns resolver, int multiplier) {
+        return new LiteEngine(context, listener, resolver, multiplier);
+    }
+
+    static int networkThreadCount(int configured) {
+        return Math.max(1, configured);
     }
 
     static boolean keepsOriginalMediaPipeline(String url) {
         return false;
     }
 
-    static boolean sameHlsSessionSource(String left, String right) {
-        return left != null && left.equals(right);
+    static boolean sameHlsSessionSource(String first, String second) {
+        return first != null && first.equals(second);
     }
 
-    static int networkThreadCount(int multiplier) {
-        return 0;
+    /** 上游用于桌面模式 UA 计算的默认 UA；占位返回通用 Android Chrome UA。 */
+    static String defaultUserAgent(String url) {
+        return "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 "
+                + "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
     }
 
-    static LiteEngine withNetworkThreadMultiplier(android.content.Context context, Listener listener,
-                                                 Dns dns, int multiplier) {
-        throw new IllegalStateException("轻量内核未授权，公开检出不含该组件");
+    void setRendering(boolean value) {
     }
 
-    void traceRequests(boolean enabled) { }
+    void setHeadless(boolean value) {
+    }
 
-    void setHeadless(boolean headless) { }
+    void traceRequests(boolean value) {
+    }
 
-    void viewport(int width, int height, int scale) { }
+    /** 限制内核内存用量（占位，不生效）。 */
+    void setAuditMemoryMiB(int mib) {
+    }
 
-    int viewportWidth() { return 0; }
+    /** 覆盖请求 UA（占位，不生效）。 */
+    void userAgentOverride(String userAgent) {
+    }
 
-    int viewportHeight() { return 0; }
+    long documentReadyAt() {
+        return 0L;
+    }
 
-    void load(String url, String script) { }
+    void viewport(int width, int height, int density) {
+    }
 
-    void close() { }
+    int viewportWidth() {
+        return 1280;
+    }
 
-    void setRendering(boolean rendering) { }
+    int viewportHeight() {
+        return 720;
+    }
 
-    void renderPage() { }
+    void renderPage() {
+    }
 
-    long documentReadyAt() { return 0L; }
+    JSONObject startupTimings() {
+        return new JSONObject();
+    }
 
-    String evaluate(String script) { return null; }
+    long upstreamDownloadedBytes() {
+        return 0L;
+    }
 
-    org.json.JSONObject startupTimings() { return new org.json.JSONObject(); }
+    JSONObject runtimeBusySnapshot() {
+        return new JSONObject();
+    }
 
-    org.json.JSONObject runtimeBusySnapshot() { return new org.json.JSONObject(); }
+    void evaluate(String script) {
+    }
 
-    long upstreamDownloadedBytes() { return -1L; }
-
-    boolean keepsMediaSession(String source) { return false; }
+    boolean keepsMediaSession(String source) {
+        return false;
+    }
 
     PlaybackTransport playbackTransport(String source, Map<String, String> headers) {
-        return new PlaybackTransport(source);
+        return null;
     }
 
-    void playbackTime(double position, int width, int height) { }
+    void load(String url, String script) {
+    }
 
-    void directPlaybackTime(String source, double position, int width, int height) { }
+    void temporaryPlayback(double position, double duration, boolean ready, boolean error) {
+    }
 
-    void temporaryPlayback(double position, double duration, boolean completed, boolean error) { }
+    void directPlaybackTime(String source, double position, int width, int height) {
+    }
+
+    void playbackTime(double position, int width, int height) {
+    }
+
+    void close() {
+    }
 }
