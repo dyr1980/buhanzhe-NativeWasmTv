@@ -79,6 +79,58 @@ final class LiteEngine {
                 + "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
     }
 
+    /** 站点文档脚本钩子（上游传 LitePageScripts::forDocument）。 */
+    interface DocumentScriptHook {
+        java.util.List<String> forDocument(Context context, String page);
+    }
+
+    /** 占位：不安装文档脚本钩子。 */
+    static void installDocumentScripts(DocumentScriptHook hook) {
+    }
+
+    /** 占位：不安装站点兼容策略。 */
+    static void installHostPolicy(LiteHostPolicy policy) {
+    }
+
+    /** 健康探测专用实例（ChannelHealth 对 webview:// 源使用）。 */
+    static LiteEngine forHealthProbe(Context context, Listener listener, Dns resolver) {
+        return new LiteEngine(context, listener, resolver, 1);
+    }
+
+    /** 预解析专用实例（占位与普通实例一致）。 */
+    static LiteEngine forPreparse(Context context, Listener listener, Dns resolver, int multiplier) {
+        return new LiteEngine(context, listener, resolver, multiplier);
+    }
+
+    /** 共享 HTTP 缓存（上游"清理缓存"时会调用 evictAll）。 */
+    static okhttp3.Cache httpCache(Context context) {
+        java.io.File dir = new java.io.File(context.getApplicationContext().getCacheDir(),
+                "lite-http-cache");
+        return new okhttp3.Cache(dir, 16L * 1024 * 1024);
+    }
+
+    /** 启动状态快照（占位返回 null，上游所有读取方都做了 null 判断）。 */
+    LiteStartupState startupState() {
+        return null;
+    }
+
+    /** 内核当前使用的 UA（占位返回默认 UA）。 */
+    String userAgent() {
+        return defaultUserAgent(null);
+    }
+
+    /** 占位：预解析页晋升为前台页（不生效）。 */
+    void promotePreparse() {
+    }
+
+    /** 占位：暂存预解析页（不生效）。 */
+    void parkPreparse() {
+    }
+
+    /** 占位：网页图片加载开关（不生效）。 */
+    void loadImages(boolean value) {
+    }
+
     void setRendering(boolean value) {
     }
 

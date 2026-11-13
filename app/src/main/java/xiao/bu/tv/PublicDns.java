@@ -23,18 +23,9 @@ final class PublicDns implements Dns {
     private static final List<InetAddress> BAIDU = resolveAll("180.76.76.76");
 
     private final List<InetAddress> servers;
-    private final Dns fallback;
-    private final int timeoutMs;
-
-    /** 上游调用形态：new PublicDns(getDnsMode(), 1200, LegacySystemDns.create())。 */
-    PublicDns(String mode, int timeoutMs, Dns fallback) {
-        this.servers = serversFor(mode);
-        this.timeoutMs = timeoutMs;
-        this.fallback = fallback == null ? Dns.SYSTEM : fallback;
-    }
 
     PublicDns(String mode) {
-        this(mode, 1200, Dns.SYSTEM);
+        this.servers = serversFor(mode);
     }
 
     private static List<InetAddress> serversFor(String mode) {
@@ -69,10 +60,10 @@ final class PublicDns implements Dns {
     @Override
     public List<InetAddress> lookup(String hostname) throws UnknownHostException {
         if (servers.isEmpty()) {
-            // 没有可用公共 DNS 时退回备用解析器（系统 DNS），保证请求不会直接失败。
-            return fallback.lookup(hostname);
+            // 没有可用公共 DNS 时退回系统解析，保证请求不会直接失败。
+            return Dns.SYSTEM.lookup(hostname);
         }
-        UnknownHostException last = null;
+        Throwable last = null;
         for (InetAddress server : servers) {
             try {
                 // Android 4.4 的 InetAddress 没有按 DNS 服务器查询的公开 API，
@@ -85,10 +76,8 @@ final class PublicDns implements Dns {
                 last = error;
             }
         }
-        if (last != null && fallback != Dns.SYSTEM) {
-            // 公共 DNS 全部失败时走备用解析器兜底。
-            return fallback.lookup(hostname);
-        }
-        throw last != null ? last : new UnknownHostException(hostname);
+        throw last instanceof UnknownHostException
+                ? (UnknownHostException) last
+                : new UnknownHostException(hostname);
     }
 }
