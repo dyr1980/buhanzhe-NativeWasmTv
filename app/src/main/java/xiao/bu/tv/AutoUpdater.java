@@ -4,10 +4,8 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.ProgressDialog;
 import android.content.DialogInterface;
-import android.content.Intent;
-import android.net.Uri;
 import android.os.Build;
-import android.util.Log;
+import xiao.bu.tv.AppLog;
 import android.view.KeyEvent;
 import android.widget.Toast;
 
@@ -31,23 +29,25 @@ import java.util.zip.ZipFile;
 
 /** Checks release manifests, downloads a compatible APK, and opens the system installer. */
 final class AutoUpdater {
+    static final String POPUP_PREFERENCE = "update_popup_enabled";
+    interface ManifestReader { String read(String url) throws IOException; }
     private static final String TAG = "AutoUpdater";
     private static final String IMPORTANT_VERSION_URL = "https://github.com/dyr1980/buhanzhe-NativeWasmTv/"
             + "releases/latest/download/version.json";
     private static final String LITE_VERSION_URL = "https://github.com/dyr1980/buhanzhe-NativeWasmTv/"
             + "releases/latest/download/version-lite.json";
-    // 修改点：只要版本文件里给出的地址不是本仓库，一律拒收，防止被换成别人的包。
     private static final String RELEASE_OWNER = "dyr1980";
     private static final String RELEASE_REPO = "buhanzhe-NativeWasmTv";
+    private static final String REPO_PATH_PREFIX =
+            "/" + RELEASE_OWNER + "/" + RELEASE_REPO + "/";
     private static final int CONNECT_TIMEOUT_MS = 15000;
     private static final int READ_TIMEOUT_MS = 30000;
     private static final int MAX_MANIFEST_BYTES = 64 * 1024;
     private static final long MAX_APK_BYTES = 256L * 1024L * 1024L;
 
     private final Activity activity;
+    private final ManifestReader manifestReader;
     private volatile boolean destroyed;
-
-    // === 恢复原作者的回调接口，确保 MainActivity 不报错 ===
     private volatile Runnable liteListener;
     void setLiteListener(Runnable listener){liteListener=listener;}
     private void notifyLite(){notifyLite(null);}
@@ -56,8 +56,6 @@ final class AutoUpdater {
         Runnable value=liteListener;if(value!=null)value.run();
         if(message!=null)Toast.makeText(activity,message,Toast.LENGTH_LONG).show();
     });}
-    // ===============================================
-
     private volatile boolean importantChecking;
     private volatile boolean liteChecking;
     private volatile String liteState = "idle";
@@ -68,11 +66,27 @@ final class AutoUpdater {
     private volatile UpdateInfo liteUpdate;
     private volatile boolean downloadActive;
     private boolean promptShowing;
+    private boolean optionalPrompt;
+    private volatile UpdateInfo importantUpdate;
     private AlertDialog promptDialog;
     private ProgressDialog progressDialog;
 
     AutoUpdater(Activity activity) {
+        this(activity, null);
+    }
+
+    AutoUpdater(Activity activity, ManifestReader reader) {
         this.activity = activity;
+        this.manifestReader = reader;
+    }
+
+    static boolean popupEnabled(android.content.Context context) {
+        return context.getSharedPreferences(MainActivity.PREFERENCES, 0)
+                .getBoolean(POPUP_PREFERENCE, false);
+    }
+
+    void popupPreferenceChanged(boolean enabled) {
+        if (!enabled && optionalPrompt && promptDialog != null) promptDialog.dismiss();
     }
 
     void checkForUpdates() {
@@ -83,33 +97,46 @@ final class AutoUpdater {
         new Thread(new Runnable() {
             @Override
             public void run() {
+                boolean importantAvailable = importantUpdate != null;
                 try {
                     final UpdateInfo update = loadUpdateInfo(IMPORTANT_VERSION_URL, false);
-                    if (update.versionCode <= BuildConfig.VERSION_CODE || destroyed) {
+                    if (destroyed) return;
+                    if (update.versionCode <= BuildConfig.VERSION_CODE) {
+                        importantUpdate = null;
+                        importantAvailable = false;
                         return;
                     }
-                    Log.i(TAG, "Update available: " + update.versionName + ", asset="
+                    importantUpdate = update;
+                    importantAvailable = true;
+                    AppLog.i(TAG, "Update available: " + update.versionName + ", asset="
                             + update.apkAsset);
                     activity.runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
-                            showUpdatePrompt(update);
+                            if (importantUpdate == update) showUpdatePrompt(update, false);
                         }
                     });
                 } catch (Exception error) {
                     // Startup checks are intentionally silent when the device is offline.
-                    Log.w(TAG, "Update check failed", error);
+                    AppLog.w(TAG, "Update check failed", error);
                 } finally {
                     importantChecking = false;
+                    // The important-version threshold always runs, even with
+                    // optional notices disabled. Never stack a lite notice on it.
+                    if (!importantAvailable && !destroyed && popupEnabled(activity))
+                        checkLiteForUpdates(false, true);
                 }
             }
         }, "update-check").start();
     }
 
-    // === 恢复原作者的带参重载方法 ===
     synchronized String checkLiteForUpdates() {return checkLiteForUpdates(false);}
 
     synchronized String checkLiteForUpdates(final boolean showResult) {
+        return checkLiteForUpdates(showResult, false);
+    }
+
+    private synchronized String checkLiteForUpdates(final boolean showResult, final boolean popup) {
         if (destroyed) return stateResponse(false, "更新服务已关闭");
         if (downloadActive || "downloading".equals(liteState)) return stateResponse(true, "正在下载更新");
         if (liteChecking) return stateResponse(true, "正在检查更新");
@@ -139,19 +166,22 @@ final class AutoUpdater {
                     liteState = "available";
                     liteMessage = architectureUpgrade
                             ? "可升级到 64 位版本" : "发现新版本 " + update.versionName;
+                    if (popup) activity.runOnUiThread(() -> {
+                        if (popupEnabled(activity) && importantUpdate == null)
+                            showUpdatePrompt(update, true);
+                    });
                 } catch (Exception error) {
                     liteState = "error";
                     liteMessage = "检查失败：" + readableMessage(error);
-                    Log.w(TAG, "Lightweight update check failed", error);
+                    AppLog.w(TAG, "Lightweight update check failed", error);
                 } finally {
                     liteChecking = false;
-                    notifyLite(showResult ? liteMessage : null); // 恢复回调
+                    notifyLite(showResult ? liteMessage : null);
                 }
             }
         }, "update-lite-check").start();
         notifyLite();return stateResponse(true, "正在检查更新");
     }
-    // ===============================
 
     synchronized String installLiteUpdate() {
         if (destroyed) return stateResponse(false, "更新服务已关闭");
@@ -199,8 +229,7 @@ final class AutoUpdater {
     }
 
     void destroy() {
-        destroyed = true;
-        liteListener=null; // 恢复原作者的清理逻辑
+        destroyed = true;liteListener=null;
         if (promptDialog != null) {
             promptDialog.dismiss();
             promptDialog = null;
@@ -213,7 +242,7 @@ final class AutoUpdater {
 
     private UpdateInfo loadUpdateInfo(String manifestUrl, boolean allowArchitectureUpgrade)
             throws IOException, JSONException {
-        String json = readManifest(manifestUrl);
+        String json = manifestReader == null ? readManifest(manifestUrl) : manifestReader.read(manifestUrl);
 
         JSONObject object = new JSONObject(json);
         return parseUpdateInfo(object, allowArchitectureUpgrade);
@@ -289,7 +318,6 @@ final class AutoUpdater {
                         ? Build.SUPPORTED_64_BIT_ABIS : null);
         String urlField = architectureUpgrade ? "apk64Url" : BuildConfig.UPDATE_APK_URL_FIELD;
         String shaField = architectureUpgrade ? "sha25664" : BuildConfig.UPDATE_SHA256_FIELD;
-        // 修改点 1：将 nTv64.apk 改为 XCZ64.apk
         String apkAsset = architectureUpgrade ? "XCZ64.apk" : BuildConfig.UPDATE_APK_ASSET;
         String apkUrl = object.optString(urlField, "").trim();
         String sha256 = object.optString(shaField, "")
@@ -301,17 +329,37 @@ final class AutoUpdater {
         if (apkUrl.length() == 0) {
             throw new JSONException("Missing APK URL for " + apkAsset);
         }
-        apkUrl = validatedGithubUrl(apkUrl, apkAsset);
-        if (sha256.length() > 0 && !sha256.matches("[0-9a-f]{64}")) {
+        apkUrl = validatedGithubUrl(apkUrl);
+        String displayAsset = architectureUpgrade || "arm64".equals(BuildConfig.FLAVOR)
+                ? "网页电视64位.apk" : "x86".equals(BuildConfig.FLAVOR)
+                ? "网页电视x86.apk" : "网页电视32位.apk";
+        apkAsset = validatedApkFilename(apkUrl, apkAsset, displayAsset);
+        if (!sha256.matches("[0-9a-f]{64}")) {
             throw new JSONException("Invalid APK SHA-256");
         }
         return new UpdateInfo(versionCode, versionName, apkUrl, sha256, releaseNotes,
                 apkAsset, architectureUpgrade);
     }
 
-    // 修改点 3：下载地址必须落在本仓库路径下，且文件名正好是本次要装的包。
-    // 这样 https://github.com/恶意账号/任意仓库/releases/.../XCZ.apk 会被直接拒掉。
-    private static final String REPO_PATH_PREFIX = "/" + RELEASE_OWNER + "/" + RELEASE_REPO + "/";
+    static String validatedApkFilename(String apkUrl, String expected, String displayAsset)
+            throws JSONException {
+        try {
+            String path = new URL(apkUrl).getPath();
+            String file = java.net.URLDecoder.decode(path.substring(path.lastIndexOf('/') + 1), "UTF-8");
+            if (!file.equalsIgnoreCase(expected) && !file.equals(displayAsset)) {
+                throw new JSONException("Wrong APK URL for " + expected);
+            }
+            // Preserve the manifest's case: GitHub asset paths are case-sensitive.
+            return file;
+        } catch (IOException | IllegalArgumentException error) {
+            throw new JSONException("Invalid APK filename");
+        }
+    }
+
+    static boolean supportsArm64(String[] abis) {
+        if (abis != null) for (String abi : abis) if ("arm64-v8a".equals(abi)) return true;
+        return false;
+    }
 
     private static boolean isArm32Build() {
         return "arm32".equals(BuildConfig.FLAVOR);
@@ -321,22 +369,20 @@ final class AutoUpdater {
         return "arm64".equals(BuildConfig.FLAVOR);
     }
 
-    private static boolean supportsArm64(String[] abis) {
-        if (abis != null) for (String abi : abis) if ("arm64-v8a".equals(abi)) return true;
-        return false;
-    }
-
     private static boolean supports64Bit() {
         return Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP
                 && Build.SUPPORTED_64_BIT_ABIS != null
                 && Build.SUPPORTED_64_BIT_ABIS.length > 0;
     }
 
-    private void showUpdatePrompt(final UpdateInfo update) {
-        if (destroyed || promptShowing || downloadActive || activity.isFinishing()) {
+    private void showUpdatePrompt(final UpdateInfo update, boolean optional) {
+        if (optional && (!popupEnabled(activity) || importantUpdate != null)) return;
+        if (!optional && optionalPrompt && promptDialog != null) promptDialog.dismiss();
+        if (!canShowDialog() || promptShowing || downloadActive) {
             return;
         }
         promptShowing = true;
+        optionalPrompt = optional;
         String notes = update.releaseNotes.length() == 0 ? "包含功能改进和问题修复。"
                 : update.releaseNotes;
         String title = update.architectureUpgrade
@@ -396,7 +442,20 @@ final class AutoUpdater {
                 }
             }
         });
-        dialog.show();
+        if(!showDialog(dialog)){promptShowing=false;promptDialog=null;}
+    }
+
+    private boolean canShowDialog(){
+        return !destroyed&&!activity.isFinishing()
+                &&(Build.VERSION.SDK_INT<17||!activity.isDestroyed())
+                &&activity.getWindow()!=null&&activity.getWindow().getDecorView().getWindowToken()!=null;
+    }
+    private boolean showDialog(android.app.Dialog dialog){
+        if(!canShowDialog())return false;
+        try{dialog.show();return true;}
+        catch(android.view.WindowManager.BadTokenException|IllegalStateException stale){
+            AppLog.w("AutoUpdater","Activity window unavailable for update dialog",stale);return false;
+        }
     }
 
     private void downloadUpdate(final UpdateInfo update) {
@@ -404,7 +463,7 @@ final class AutoUpdater {
     }
 
     private void downloadUpdate(final UpdateInfo update, boolean showProgress) {
-        if (downloadActive) return;
+        if (destroyed || downloadActive) return;
         downloadActive = true;
         if (showProgress) {
         progressDialog = new ProgressDialog(activity);
@@ -413,7 +472,7 @@ final class AutoUpdater {
         progressDialog.setIndeterminate(true);
         progressDialog.setCancelable(false);
         progressDialog.setMax(100);
-        progressDialog.show();
+        if(!showDialog(progressDialog))progressDialog=null;
         }
 
         new Thread(new Runnable() {
@@ -428,7 +487,7 @@ final class AutoUpdater {
                     File apk = new File(directory, update.apkAsset
                             .replace(".apk", "-" + update.versionCode + ".apk"));
                     if (apk.isFile() && verifySha256(apk, update.sha256) && isApk(apk)) {
-                        validateUpdatePackage(apk); // 修改点 4：复用旧包前也必须校验
+                        validateUpdatePackage(apk);
                         finishDownload(apk);
                         return;
                     }
@@ -443,14 +502,14 @@ final class AutoUpdater {
                     if (!isApk(partial)) {
                         throw new IOException("下载内容不是有效的 APK");
                     }
-                    validateUpdatePackage(partial); // 修改点 4：安装前必须校验包名和版本
+                    validateUpdatePackage(partial);
                     if (apk.exists() && !apk.delete()) {
                         throw new IOException("无法替换旧的更新文件");
                     }
                     if (!partial.renameTo(apk)) {
                         copyFile(partial, apk);
                         if (!partial.delete()) {
-                            Log.w(TAG, "Unable to remove partial APK " + partial);
+                            AppLog.w(TAG, "Unable to remove partial APK " + partial);
                         }
                     }
                     finishDownload(apk);
@@ -461,9 +520,9 @@ final class AutoUpdater {
                         liteMessage = "下载失败：" + readableMessage(error);
                     }
                     notifyLite();
-                    Log.e(TAG, "Update download failed", error);
+                    AppLog.e(TAG, "Update download failed", error);
                     if (partial != null && partial.exists() && !partial.delete()) {
-                        Log.w(TAG, "Unable to remove failed partial APK " + partial);
+                        AppLog.w(TAG, "Unable to remove failed partial APK " + partial);
                     }
                     activity.runOnUiThread(new Runnable() {
                         @Override
@@ -543,7 +602,6 @@ final class AutoUpdater {
         }
     }
 
-    // 修改点 4：加回原作者的安装包校验，去掉它等于任何 APK 都能被装进来。
     private void validateUpdatePackage(File apk) throws IOException {
         android.content.pm.PackageInfo info = activity.getPackageManager()
                 .getPackageArchiveInfo(apk.getAbsolutePath(), 0);
@@ -578,29 +636,15 @@ final class AutoUpdater {
         launchInstaller(apk);
     }
 
-    // === 保留你的优秀设计：原生的 Intent 安装器 ===
     private void launchInstaller(File apk) {
         try {
-            Uri uri;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                uri = ApkFileProvider.uriForFile(activity, apk);
-            } else {
-                apk.setReadable(true, false);
-                uri = Uri.fromFile(apk);
-            }
-            Intent intent = new Intent(Intent.ACTION_VIEW);
-            intent.setDataAndType(uri, "application/vnd.android.package-archive");
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            }
-            activity.startActivity(intent);
+            ApkTransferInstaller.launchInstaller(activity, apk);
         } catch (Exception error) {
             if ("ready".equals(liteState)) {
                 liteMessage = "无法打开安装器：" + readableMessage(error) + "，可重试安装";
                 notifyLite();
             }
-            Log.e(TAG, "Unable to launch package installer", error);
+            AppLog.e(TAG, "Unable to launch package installer", error);
             Toast.makeText(activity, R.string.update_install_failed, Toast.LENGTH_LONG).show();
         }
     }
@@ -619,7 +663,6 @@ final class AutoUpdater {
         connection.setInstanceFollowRedirects(true);
         connection.setUseCaches(false);
         connection.setRequestProperty("Accept-Encoding", "identity");
-        // 修改点 2：将 nTv/ 改为 XCZ/
         connection.setRequestProperty("User-Agent", "XCZ/" + BuildConfig.VERSION_NAME
                 + " Android/" + Build.VERSION.RELEASE);
         return connection;
@@ -652,7 +695,7 @@ final class AutoUpdater {
         }
     }
 
-    private String validatedGithubUrl(String url, String apkAsset) throws JSONException {
+    private String validatedGithubUrl(String url) throws JSONException {
         try {
             URL parsed = new URL(url);
             String host = parsed.getHost().toLowerCase(Locale.US);
@@ -661,14 +704,11 @@ final class AutoUpdater {
                     || "raw.githubusercontent.com".equals(host))) {
                 throw new JSONException("APK URL must be an HTTPS GitHub URL");
             }
-            // 修改点 3：仓库和文件名都必须对上，否则宁可报错也不下载。
+            // 只允许从自己的仓库下载 APK，防止更新清单被指向别人的发布文件。
             String path = parsed.getPath() == null ? "" : parsed.getPath();
             if (!path.startsWith(REPO_PATH_PREFIX)) {
-                throw new JSONException("APK URL is not from " + RELEASE_OWNER + "/" + RELEASE_REPO);
-            }
-            String file = path.substring(path.lastIndexOf('/') + 1);
-            if (!file.equalsIgnoreCase(apkAsset)) {
-                throw new JSONException("Wrong APK URL for " + apkAsset);
+                throw new JSONException("APK URL is not from "
+                        + RELEASE_OWNER + "/" + RELEASE_REPO);
             }
             return url; // NetworkClient applies the current GitHub route at request time.
         } catch (IOException error) {
@@ -692,9 +732,8 @@ final class AutoUpdater {
 
     private static boolean verifySha256(File file, String expected)
             throws IOException, NoSuchAlgorithmException {
-        if (expected.length() == 0) {
-            Log.w(TAG, "Update manifest has no SHA-256; APK authenticity is not pinned");
-            return true;
+        if (expected == null || !expected.matches("[0-9a-f]{64}")) {
+            return false;
         }
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
         InputStream input = new BufferedInputStream(new FileInputStream(file));
