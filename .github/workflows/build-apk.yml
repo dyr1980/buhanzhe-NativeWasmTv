@@ -88,7 +88,7 @@ jobs:
             -PupdateApk64=dist/XCZ64.apk \
             -PupdateApkX86=dist/XCZX86.apk \
             -PimportantUpdate=true \
-            -PreleaseNotes="合并最新播放器与管理功能。"
+            -PreleaseNotes="优化旧版播放、网页缓存及频道管理的稳定性。"
 
       - name: 上传产物
         uses: actions/upload-artifact@v4
@@ -113,7 +113,7 @@ jobs:
             gh release create "$TAG" \
               --target "$GITHUB_SHA" \
               --title "XCZTV ${TAG}" \
-              --notes "合并最新播放器与管理功能。" \
+              --notes "优化旧版播放、网页缓存及频道管理的稳定性。" \
               dist/XCZ.apk dist/XCZ64.apk dist/XCZX86.apk \
               version.json version-iptv.json version-lite.json
           fi

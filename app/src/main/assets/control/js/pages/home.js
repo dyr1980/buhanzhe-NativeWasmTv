@@ -51,12 +51,6 @@ function renderCurrentChannel() {
   NtvChannelPicker.update(state);
 }
 function renderPageState() {
-  var repo = document.getElementById("repo");
-  repo.href = state.githubUrl;
-  
-  // 修改为你的 GitHub 仓库名
-  repo.textContent = "dyr1980/buhanzhe-NativeWasmTv";
-  
   renderCurrentChannel();
 }
 setupManagementUrl();

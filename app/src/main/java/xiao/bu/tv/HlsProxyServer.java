@@ -146,6 +146,7 @@ final class HlsProxyServer implements Closeable {
             new LinkedHashMap<String, Long>() {
                 @Override protected boolean removeEldestEntry(Map.Entry<String, Long> entry) { return size() > 128; }
             });
+    boolean isKnownAudioBalanceSegment(String url) { return segmentDurations.containsKey(url); }
     private void rememberSegmentDuration(String url, List<String> tags) {
         for (String tag : tags) if (tag.startsWith("#EXTINF:")) try {
             long duration = Math.round(Double.parseDouble(tag.substring(8).split(",", 2)[0]) * 1000);
@@ -250,6 +251,11 @@ final class HlsProxyServer implements Closeable {
         systemPlayerStartsAtFirst = Build.VERSION.SDK_INT <= 15;
         synchronized (sourceProbeLock) { deferStartupMetadata = true; playbackVideoReady = false; }
         return systemPlayerHlsUrl(url);
+    }
+    String legacyTsUrl(String url) {
+        playerHlsUrl(url); // Retain the existing startup/history and metadata policy.
+        return "http://"+loopbackHost+":"+serverSocket.getLocalPort()
+                +"/legacy-ts/"+playlistAliases.token(url)+".ts";
     }
     boolean canUseDirectHttpHlsUrl(String url) {
         if(catchupStart>=0)return false;
@@ -361,6 +367,10 @@ final class HlsProxyServer implements Closeable {
     private final boolean parallelCctvDecrypt;
     private volatile boolean systemPlayerStartsAtFirst;
     private volatile boolean readAheadPaused;
+    private volatile boolean continuousTsMode;
+    private volatile boolean continuousTsUnsupported;
+    boolean supportsContinuousTs() { return !continuousTsUnsupported; }
+    void setContinuousTsMode(boolean enabled) { continuousTsMode=enabled; }
     private final int cctvLiveEdgeHoldBackSegments;
     private final int cctvStartupDownloadSegments;
     private final int cctvStartupDecryptSegments;
@@ -1105,6 +1115,11 @@ final class HlsProxyServer implements Closeable {
 
             int pathEnd = requestLine.indexOf(' ', 4);
             String path = pathEnd < 0 ? "" : requestLine.substring(4, pathEnd);
+            if(path.startsWith("/legacy-ts/")&&path.endsWith(".ts")) {
+                String token=path.substring("/legacy-ts/".length(),path.length()-3);
+                writeLegacyTs(playlistAliases.resolve(token),output);
+                return;
+            }
             boolean directMedia = path.startsWith("/media/");
             String prefix = directMedia ? "/media/" : "/proxy/";
             if (!path.startsWith(prefix)) {
@@ -1165,7 +1180,7 @@ final class HlsProxyServer implements Closeable {
             // Cache the delivered, rewritten/decrypted representation, never ciphertext.
             // fetch() returns the complete transformed body with a 200 response,
             // including when IJK sent Range: bytes=0- for the manifest.
-            if (finiteMedia)
+            if (replayCacheable(response))
                 replayCache.offer(originUrl, response.contentType, null, response.body.length,
                         0L, response.body, 0, response.body.length);
             if (transportStream && httpAttempt == playbackHttpError.token()) {
@@ -1218,6 +1233,60 @@ final class HlsProxyServer implements Closeable {
             cause = cause.getCause();
         }
         return false;
+    }
+
+    private void writeLegacyTs(String origin, final OutputStream output) throws IOException {
+        final boolean[] started={false};
+        OutputStream body=new OutputStream() {
+            @Override public void write(int value) throws IOException { write(new byte[]{(byte)value},0,1); }
+            @Override public void write(byte[] bytes,int offset,int count) throws IOException {
+                if(!started[0]) {
+                    // A close-delimited MPEG-TS stream has no finite duration or seek range.
+                    writeStreamingHeaders(output,200,"video/mp2ts",-1,null);
+                    started[0]=true;
+                    AppLog.i(TAG,"Legacy TS transport started; bypassing framework HLS demuxer");
+                }
+                output.write(bytes,offset,count);
+                startupMilestone("first-player-byte",null);
+                lastMediaSegmentServedAt=SystemClock.elapsedRealtime();
+            }
+            @Override public void flush() throws IOException { output.flush(); }
+        };
+        try {
+            LegacyTsStream.pipe(new LegacyTsStream.Source() {
+                public String playlist(String address)throws IOException {
+                    return new String(fetch(probeOriginUrl(address)).body,UTF_8);
+                }
+                public byte[] segment(String address)throws IOException {
+                    String upstream=probeOriginUrl(address);
+                    startupMilestone("player-ts-request",upstream);
+                    byte[] clear=fetch(upstream).body; // Reuse decrypted cache; never transcode.
+                    inspectStartupVideoCodec(clear);
+                    if(sourceVideoProbeEnabled)sampleSourceVideo(clear);
+                    return clear;
+                }
+                public boolean streamFirstSegment(String address,OutputStream target)throws IOException {
+                    String upstream=probeOriginUrl(address);
+                    if(needsCmgDecrypt(upstream)){streamCmgSegment(upstream,target,true);return true;}
+                    if(needsH5eDecrypt(upstream)){streamH5eSegment(upstream,target,true);return true;}
+                    return false;
+                }
+                public boolean active(){return running&&!playbackSuspended&&!Thread.currentThread().isInterrupted();}
+                public long now(){return SystemClock.elapsedRealtime();}
+                public void waitForUpdate()throws IOException {
+                    try { Thread.sleep(1000); }
+                    catch(InterruptedException e){Thread.currentThread().interrupt();throw new java.io.InterruptedIOException("Legacy TS cancelled");}
+                }
+            },origin,body);
+        } catch(IOException error) {
+            if(error instanceof LegacyTsStream.UnsupportedMediaException)continuousTsUnsupported=true;
+            if(started[0])throw new StreamingResponseException(error);
+            throw error;
+        } catch(RuntimeException error) {
+            IOException failure=new IOException("Legacy TS transport failed",error);
+            if(started[0])throw new StreamingResponseException(failure);
+            throw failure;
+        }
     }
 
     private static final class PlayerOutputFailure extends IOException {
@@ -1445,9 +1514,8 @@ final class HlsProxyServer implements Closeable {
             }
             if (!remoteConsumer && !readingStartupManifest
                     && canUseDirectHttpHlsUrl(policyUrl) && canUseDirectHttpHlsUrl(responseUrl)) {
-                String nativePlaylist = HlsStartupManifest.directMediaPlaylist(responseUrl, body,
-                        this::canUseDirectHttpHlsUrl);
-                if (nativePlaylist != null){nativeMediaDownloads=true;return nativePlaylist;}
+                String nativePlaylist = directLiveMediaPlaylist(responseUrl, body);
+                if (nativePlaylist != null)return nativePlaylist;
             }
             return rewriteGenericMediaPlaylist(policyUrl, base, lines, body.length(),
                     catchupStart<0&&!isFiniteMediaPlaylist(body));
@@ -1473,6 +1541,25 @@ final class HlsProxyServer implements Closeable {
 
     void setRemoteConsumer(boolean enabled) {
         remoteConsumer = enabled;
+    }
+
+    private String directLiveMediaPlaylist(String url,String body) {
+        String playlist=HlsStartupManifest.directMediaPlaylist(url,body,this::canUseDirectHttpHlsUrl);
+        if(playlist!=null){
+            // A web/native handoff may reuse a proxy after finite media. This
+            // path bypasses rewriteGenericMediaPlaylist, so it must replace
+            // that old state too; otherwise the live manifest is cached forever.
+            finiteMedia=false;
+            nativeMediaDownloads=true;
+        }
+        return playlist;
+    }
+
+    private boolean replayCacheable(ProxyResponse response) {
+        // Cache media bytes for finite playback, never a live HLS snapshot.
+        // Separate rendition requests can update the proxy's aggregate state.
+        return finiteMedia&&(!isPlaylistBody(response.body)
+                ||isFiniteMediaPlaylist(new String(response.body,UTF_8)));
     }
 
     /**
@@ -2639,6 +2726,9 @@ final class HlsProxyServer implements Closeable {
     }
 
     private void streamCmgSegment(String originUrl, OutputStream output) throws IOException {
+        streamCmgSegment(originUrl,output,false);
+    }
+    private void streamCmgSegment(String originUrl, OutputStream output,boolean rawBody) throws IOException {
         startupMilestone("player-ts-request", originUrl);
         byte[] cached;
         ProgressiveMediaBuffer media;
@@ -2652,7 +2742,7 @@ final class HlsProxyServer implements Closeable {
             }
             media = cmgProgressive.get(originUrl);
         }
-        writeProgressiveTs(output, cached, media);
+        if(rawBody)writeRawProgressiveTs(output,cached,media);else writeProgressiveTs(output, cached, media);
         lastMediaSegmentServedAt = SystemClock.elapsedRealtime();
         synchronized (cmgSegmentCache) {
             byte[] delivered = cmgSegmentCache.get(originUrl);
@@ -2668,6 +2758,9 @@ final class HlsProxyServer implements Closeable {
     }
 
     private void streamH5eSegment(String originUrl, OutputStream output) throws IOException {
+        streamH5eSegment(originUrl,output,false);
+    }
+    private void streamH5eSegment(String originUrl, OutputStream output,boolean rawBody) throws IOException {
         startupMilestone("player-ts-request", originUrl);
         ownsH5eWork = true;
         byte[] cached;
@@ -2682,7 +2775,7 @@ final class HlsProxyServer implements Closeable {
             }
             media = h5eProgressive.get(originUrl);
         }
-        writeProgressiveTs(output, cached, media);
+        if(rawBody)writeRawProgressiveTs(output,cached,media);else writeProgressiveTs(output, cached, media);
         lastMediaSegmentServedAt = SystemClock.elapsedRealtime();
         String next;
         synchronized (cctvSegmentTasks) {
@@ -2694,6 +2787,18 @@ final class HlsProxyServer implements Closeable {
             if (delivered != null && delivered.length <= 16 * 1024 * 1024) screenshotSegment = delivered;
         }
         if (next != null) prefetchCctvSegment(next);
+    }
+
+    private void writeRawProgressiveTs(OutputStream output,byte[] cached,ProgressiveMediaBuffer media)throws IOException {
+        if(cached!=null){output.write(cached);output.flush();return;}
+        if(media==null)throw new IOException("Progressive TS unavailable");
+        try(InputStream input=media.open()){
+            byte[] block=streamCopyBuffer.get();int count;
+            while((count=input.read(block))>=0){
+                if(!running||playbackSuspended||Thread.currentThread().isInterrupted())throw new java.io.InterruptedIOException("TS stream cancelled");
+                output.write(block,0,count);output.flush();
+            }
+        }
     }
 
     private void writeProgressiveTs(OutputStream output, byte[] cached,
@@ -2903,7 +3008,7 @@ final class HlsProxyServer implements Closeable {
     private List<String> buildCmgPrefetchWindowFromUrlsLocked(List<String> segments) {
         int window = remoteConsumer
                 ? CMG_REMOTE_PREFETCH_WINDOW : CMG_LOCAL_PREFETCH_WINDOW;
-        window = Math.max(window, 1 + adaptiveBufferLevel);
+        window = continuousTsMode && !remoteConsumer ? 1 : Math.max(window, 1 + adaptiveBufferLevel);
         List<String> result = new ArrayList<String>(window);
         // Match the selected startup window; low/auto exposes the latest pair.
         int initialIndex = remoteConsumer || systemPlayerStartsAtFirst ? 0 : Math.max(0, segments.size()
@@ -2930,7 +3035,7 @@ final class HlsProxyServer implements Closeable {
     private List<String> buildCctvPrefetchWindowFromUrlsLocked(List<String> segments,
             boolean protectLiveEdge) {
         int count = parallelCctvDecrypt ? CCTV_PARALLEL_PREFETCH_WINDOW : 1;
-        count = Math.max(count, 1 + adaptiveBufferLevel);
+        count = continuousTsMode && !remoteConsumer ? 1 : Math.max(count, 1 + adaptiveBufferLevel);
         List<String> result = new ArrayList<String>(count);
         int holdBackSegments = protectLiveEdge
                 ? cctvLiveEdgeHoldBackForSegmentCount(segments.size()) : 0;
@@ -3996,24 +4101,16 @@ final class HlsProxyServer implements Closeable {
     private static void decryptPesNals(byte[] ts, PesBuffer pes, boolean spsCompatibility) throws IOException {
         byte[] data = pes.data();
         int dataLength = pes.payloadSize();
-        ByteArrayOutputStream rebuilt = null;
+        boolean compacting = false;
+        int outputOffset = 0;
         int writeOffset = 0;
-        for (int offset = 0; offset < dataLength - 4; offset++) {
-            int prefix = startCodeLength(data, offset);
-            if (prefix == 0) {
-                continue;
-            }
+        for (int offset = H264AnnexB.find(data, 0, dataLength); offset < dataLength; ) {
+            int prefix = data[offset + 2] == 1 ? 3 : 4;
             int nalStart = offset + prefix;
             if (nalStart >= dataLength) {
                 continue;
             }
-            int nalEnd = dataLength;
-            for (int next = nalStart + 1; next < dataLength - 4; next++) {
-                if (startCodeLength(data, next) > 0) {
-                    nalEnd = next;
-                    break;
-                }
-            }
+            int nalEnd = H264AnnexB.find(data, nalStart + 1, dataLength);
             int nalType = data[nalStart] & 0x1f;
             int replacementLength = -1;
             boolean replaceNal = needsCmgNalDecode(nalType);
@@ -4060,28 +4157,25 @@ final class HlsProxyServer implements Closeable {
             if (nalType == 1 || nalType == 5) {
                 cmgVclSinceRuntimeRestart++;
             }
-            if (replacementLength >= 0 && replacementLength < nalEnd - nalStart
-                    && rebuilt == null) {
-                rebuilt = new ByteArrayOutputStream(dataLength);
-            }
-            if (rebuilt != null) {
-                rebuilt.write(data, writeOffset, nalStart - writeOffset);
-                if (replacementLength < 0) {
-                    rebuilt.write(data, nalStart, nalEnd - nalStart);
-                } else {
-                    rebuilt.write(data, nalStart, replacementLength);
-                }
+            if (replacementLength >= 0 && replacementLength < nalEnd - nalStart) compacting = true;
+            if (compacting) {
+                // Destination never overtakes the source. Future NALs and their
+                // state transitions remain untouched until their original turn.
+                int gap = nalStart - writeOffset;
+                System.arraycopy(data, writeOffset, data, outputOffset, gap);
+                outputOffset += gap;
+                int count = replacementLength < 0 ? nalEnd - nalStart : replacementLength;
+                System.arraycopy(data, nalStart, data, outputOffset, count);
+                outputOffset += count;
                 writeOffset = nalEnd;
             }
-            offset = nalEnd - 1;
+            offset = nalEnd;
         }
-        if (rebuilt == null) {
-            pes.copyPayloadToTransportStream(ts, data, dataLength);
-        } else {
-            rebuilt.write(data, writeOffset, dataLength - writeOffset);
-            byte[] repacked = rebuilt.toByteArray();
-            pes.copyPayloadToTransportStream(ts, repacked, repacked.length);
+        if (compacting) {
+            System.arraycopy(data, writeOffset, data, outputOffset, dataLength - writeOffset);
+            dataLength = outputOffset + dataLength - writeOffset;
         }
+        pes.copyPayloadToTransportStream(ts, data, dataLength);
     }
 
     private static boolean bytesDiffer(byte[] left, byte[] right) {
