@@ -88,7 +88,8 @@ jobs:
             -PupdateApk64=dist/XCZ64.apk \
             -PupdateApkX86=dist/XCZX86.apk \
             -PimportantUpdate=true \
-            -PreleaseNotes="为 BL 点播增加限额磁盘缓冲。"
+            -PreleaseNotes="
+支持 BL 杜比直通、共享调试和换源首帧隔离。"
 
       - name: 上传产物
         uses: actions/upload-artifact@v4
@@ -113,7 +114,8 @@ jobs:
             gh release create "$TAG" \
               --target "$GITHUB_SHA" \
               --title "XCZTV ${TAG}" \
-              --notes "为 BL 点播增加限额磁盘缓冲。" \
+              --notes "
+支持 BL 杜比直通、共享调试和换源首帧隔离。" \
               dist/XCZ.apk dist/XCZ64.apk dist/XCZX86.apk \
               version.json version-iptv.json version-lite.json
           fi
