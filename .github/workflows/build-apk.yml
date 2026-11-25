@@ -88,7 +88,7 @@ jobs:
             -PupdateApk64=dist/XCZ64.apk \
             -PupdateApkX86=dist/XCZX86.apk \
             -PimportantUpdate=true \
-            -PreleaseNotes="共享调试和换源首帧隔离。"
+            -PreleaseNotes="日常功能更新。"
 
       - name: 上传产物
         uses: actions/upload-artifact@v4
@@ -113,7 +113,7 @@ jobs:
             gh release create "$TAG" \
               --target "$GITHUB_SHA" \
               --title "XCZTV ${TAG}" \
-              --notes "共享调试和换源首帧隔离。" \
+              --notes "日常功能更新。" \
               dist/XCZ.apk dist/XCZ64.apk dist/XCZX86.apk \
               version.json version-iptv.json version-lite.json
           fi

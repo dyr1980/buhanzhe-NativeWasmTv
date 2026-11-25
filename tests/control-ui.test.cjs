@@ -18,6 +18,7 @@ function node(tag) {
     querySelectorAll(selector) { const result=[]; function visit(parent) { for(const child of parent.children||[]) { if(child.tagName==='BUTTON' && (!selector.includes(':disabled') || !child.disabled)) result.push(child); visit(child); } } visit(this); return result; }
   };
   Object.defineProperty(el, 'innerHTML', {set() { el.children = []; }});
+  Object.defineProperty(el, 'firstChild', {get() { return el.children[0]; }});
   Object.defineProperty(el, 'offsetHeight', {get() { return Math.min(parseInt(el.style.maxHeight)||1000, el.children.length*44+14); }});
   return el;
 }

@@ -699,7 +699,7 @@ final class LocalControlServer implements Closeable {
         File temporary=listener.createBackgroundUploadFile();
         try {
             try(OutputStream output=new BufferedOutputStream(new FileOutputStream(temporary))){
-                if(chunked)copyChunkedUpload(input,output);else copyFixedUpload(input,output,length);
+                if(chunked)copyChunkedUpload(input,output,Long.MAX_VALUE);else copyFixedUpload(input,output,length);
             }
             send(socket,200,"application/json; charset=utf-8",listener.uploadBackgroundFile(temporary).getBytes("UTF-8"));
         } finally {temporary.delete();}
@@ -709,12 +709,12 @@ final class LocalControlServer implements Closeable {
         byte[] buffer=transferBuffer.get();
         while(remaining>0){
             int count=input.read(buffer,0,(int)Math.min((long)buffer.length,remaining));
-            if(count<0)throw new IOException("图片上传不完整");
+            if(count<0)throw new IOException("文件上传不完整");
             if(count==0)continue;
             output.write(buffer,0,count);remaining-=count;
         }
     }
-    private static void copyChunkedUpload(InputStream input,OutputStream output) throws IOException {
+    private static void copyChunkedUpload(InputStream input,OutputStream output,long limit) throws IOException {
         while(true){
             String line=readLine(input);
             if(line==null)throw new IOException("分块请求不完整");
@@ -722,11 +722,13 @@ final class LocalControlServer implements Closeable {
             try{size=Long.parseLong((extension<0?line:line.substring(0,extension)).trim(),16);}
             catch(NumberFormatException error){throw new IOException("分块请求格式错误",error);}
             if(size<0)throw new IOException("分块请求格式错误");
+            if(size>limit)throw new ControlRequestException(413,"上传文件过大");
             if(size==0){
                 while((line=readLine(input))!=null){if(line.length()==0)return;}
                 throw new IOException("分块请求不完整");
             }
             copyFixedUpload(input,output,size);
+            limit-=size;
             line=readLine(input);
             if(line==null||line.length()!=0)throw new IOException("分块请求结尾格式错误");
         }

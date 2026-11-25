@@ -2094,7 +2094,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         if (parent instanceof ViewGroup) ((ViewGroup) parent).removeView(retired);
     }
 
-    private boolean isTelevisionDevice() {
+    boolean isTelevisionDevice() {
         if (hasTelevisionUi()) {
             return true;
         }
@@ -8228,8 +8228,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                 || message.contains("err_name_not_resolved") || message.contains("err_internet_disconnected")) {
             abortChannelSwitchAnimation();
             hideLoading();
-            showChannelBar(currentChannel().name, "网络连接异常，请检查网络后重试");
-            Toast.makeText(this, "网络连接异常，请检查网络连接", Toast.LENGTH_LONG).show();
+            showPlaybackNotice("网络连接异常，请检查网络后重试");
             return;
         }
         switchCustomSource(1, true, label, true);
@@ -8268,8 +8267,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         releasePlayer(showStoppedRadioArtwork(channel));
         abortChannelSwitchAnimation();
         hideLoading();
-        showChannelBar(channel.name, PlaybackHttpError.FORBIDDEN_MESSAGE);
-        Toast.makeText(this, "请更新授权地址，或从原网页重新嗅探资源", Toast.LENGTH_LONG).show();
+        showPlaybackNotice(PlaybackHttpError.FORBIDDEN_MESSAGE);
     }
 
     private boolean switchCustomSource(int offset, boolean automatic, String reason) {
@@ -8285,24 +8283,22 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             if (automatic) {
                 abortChannelSwitchAnimation();
                 hideLoading();
-                showChannelBar(channel.name, reason + "，当前频道没有备用线路");
+                showPlaybackNotice(reason + "，当前频道没有备用线路");
             } else {
-                showChannelBar(channel.name, "当前频道只有一条线路");
+                showPlaybackNotice("当前频道只有一条线路");
             }
             return true;
         }
         if (automatic && !autoSwitchSource && !confirmedUnavailable && !neighborProbeEnabled) {
             abortChannelSwitchAnimation();
             hideLoading();
-            showChannelBar(channel.name, reason + "，请按左右方向键切换线路");
-            Toast.makeText(this, "当前线路不可用，请按左右方向键切换线路",
-                    Toast.LENGTH_LONG).show();
+            showPlaybackNotice(reason + "，请按左右方向键切换线路");
             return true;
         }
         if (automatic && triedCustomSources >= count) {
                 abortChannelSwitchAnimation();
             hideLoading();
-            showChannelBar(channel.name, "全部 " + count + " 条线路均不可用");
+            showPlaybackNotice("全部 " + count + " 条线路均不可用");
             return true;
         }
         if (!automatic) {
@@ -8938,6 +8934,12 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             updateLoadingStatus("正在加载 JAR 频道");
             jarChannelRuntime.open(configuredUrl, new JarChannelRuntime.Callback() {
                 public boolean current() { return requestId == playRequestId; }
+                public void ready() {
+                    hideLoading(); abortChannelSwitchAnimation();
+                    webChannelInfo.cancel();
+                    channelBar.removeCallbacks(hideChannelBar);
+                    channelBar.setVisibility(View.GONE);
+                }
                 public void configureBrowser(android.webkit.WebView web) { }
                 public void play(String url) {
                     android.net.Uri media = android.net.Uri.parse(url == null ? "" : url);
@@ -8947,8 +8949,37 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                     }
                     startResolvedPlayer(channel, url, true);
                 }
+                public void playVod(String url, JSONObject headers) {
+                    if (okhttp3.HttpUrl.parse(url) == null) {
+                        jarChannelRuntime.resumeFromVod();
+                        status("插件返回的播放地址无效");
+                        return;
+                    }
+                    missingCodecSoftwareRetryRequestId = -1;
+                    missingHardwareCodecRequestId = -1;
+                    missingHardwareCodecMime = "";
+                    autoSoftwareDecode = false;
+                    loadErrorRequestId = -1;
+                    loadError = "";
+                    // A plugin channel can alternate music and video within the same URL.
+                    audioChannelTypes.remove(channel.sourceUrl(currentSourceIndex));
+                    java.util.Map<String, String> mediaHeaders = new java.util.HashMap<>();
+                    if (headers != null) for (java.util.Iterator<String> keys = headers.keys(); keys.hasNext();) {
+                        String key = keys.next(), value = headers.optString(key);
+                        if (key.matches("[A-Za-z0-9!#$%&'*+.^_|~-]+")
+                                && value.indexOf('\r') < 0 && value.indexOf('\n') < 0)
+                            mediaHeaders.put(key, value);
+                    }
+                    StringBuilder playerHeaders = new StringBuilder();
+                    for (java.util.Map.Entry<String, String> header : mediaHeaders.entrySet())
+                        appendWebHeader(playerHeaders, header.getKey(), header.getValue());
+                    webStreamHeaders = playerHeaders.length() == 0 ? null : playerHeaders.toString();
+                    if (proxy != null) proxy.setWebRequestHeaders(null, null, null, true, false,
+                            java.util.Collections.emptyMap(), mediaHeaders);
+                    startResolvedPlayer(channel, url, !HttpStreamResolver.isExplicitHlsUrl(url));
+                }
                 public void status(String message) {
-                    hideLoading(); abortChannelSwitchAnimation(); showChannelBar(channel.name, message);
+                    hideLoading(); abortChannelSwitchAnimation(); showPlaybackNotice(message);
                 }
             });
             hideLoading(); abortChannelSwitchAnimation();
@@ -9580,7 +9611,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             AppLog.w(TAG, "System codec fallback failed", error);
             recordLoadError("系统播放器无法播放此媒体，请切换线路或手动选择解码方式");
             hideLoading();
-            showChannelBar(channel.name, "系统播放器也无法播放，请切换线路或调整解码方式");
+            showPlaybackNotice("系统播放器也无法播放，请切换线路或调整解码方式");
         }
         return true;
     }
@@ -9710,7 +9741,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             mediaTrackManifest = proxy == null ? null : proxy.mediaTracks(streamUrl);
             scheduleVideoInfoRefresh();
             if (audioOnlyPlayback) {
-                audioArtwork.show(channelCardTitle(channel.name), mediaPlayer.getDuration() <= 0,
+                audioArtwork.show(playbackArtworkTitle(channel), mediaPlayer.getDuration() <= 0,
                         initialArtwork[0]);
                 audioArtwork.setPlaying(true);
                 playbackReadyRequestId = sourceRequestId;
@@ -9915,8 +9946,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         abortChannelSwitchAnimation();
         releasePlayer(true);
         hideLoading();
-        showChannelBar(currentChannel().name,message);
-        Toast.makeText(this,message,Toast.LENGTH_LONG).show();
+        showPlaybackNotice(message);
         if((autoSwitchSourceSeconds>0||neighborProbeEnabled)&&currentChannel().sourceCount()>1)
             switchCustomSource(1,true,message,true);
     }
@@ -10109,7 +10139,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                 && mediaPath.toLowerCase(Locale.US).endsWith(".mp4"))
             nextPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "enable-accurate-seek", 1);
         final boolean sniffedPresentation = playingDiscoveredWebStream && playingSniffedResource != null;
-        final String artworkTitle = channelCardTitle(channel.name);
+        final String artworkTitle = playbackArtworkTitle(channel);
         final String artworkLogo = sniffedPresentation ? "" : channel.logoUrl;
         final boolean receivingCast=channel==multimediaReceiverChannel && isRtspSource(streamUrl);
         final boolean radioChannel = !receivingCast && !sniffedPresentation
@@ -10123,6 +10153,8 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         }
         player = nextPlayer;
         updateVolumeBalance();
+        missingHardwareCodecRequestId = -1;
+        missingHardwareCodecMime = "";
         activePlayerStatsRequestId = playRequestId;
         playbackDebugPending = false;
         bindSeekCompletion(nextPlayer);
@@ -10194,6 +10226,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                         @Override
                         public String onMediaCodecSelect(IMediaPlayer mediaPlayer,
                                 String mimeType, int profile, int level) {
+                            if (player != nextPlayer || sourceRequestId != playRequestId) return null;
                             if ("video/dolby-vision".equalsIgnoreCase(mimeType)) {
                                 return DolbyVisionSupport.selectDecoder(profile, level);
                             }
@@ -10530,9 +10563,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                         && nextPlayer.getVideoDecoder() == IjkMediaPlayer.FFP_PROPV_DECODER_AVCODEC) {
                     releasePlayer(true);
                     hideLoading();
-                    showChannelBar(channel.name, "硬件解码不可用，可在高级设置中切换系统播放器");
-                    Toast.makeText(MainActivity.this, "硬件解码不可用，可在高级设置中切换系统播放器",
-                            Toast.LENGTH_LONG).show();
+                    showPlaybackNotice("硬件解码不可用，可在高级设置中切换系统播放器");
                     return;
                 }
                 if (audioOnlyPlayback && proxy != null) proxy.disableSourceVideoProbe();
@@ -10799,7 +10830,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                         abortChannelSwitchAnimation();
                         releasePlayer(true);
                         hideLoading();
-                        showChannelBar(channel.name, "设备不支持此 Dolby Vision 格式，请切换普通视频轨道或线路");
+                        showPlaybackNotice("设备不支持此 Dolby Vision 格式，请切换普通视频轨道或线路");
                         return true;
                     }
                     if (what == -20002 || extra == -20002) {
@@ -10808,7 +10839,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                         abortChannelSwitchAnimation();
                         releasePlayer(true);
                         hideLoading();
-                        showChannelBar(channel.name, "设备内存不足以软解此分辨率，请切换较低分辨率线路");
+                        showPlaybackNotice("设备内存不足以软解此分辨率，请切换较低分辨率线路");
                         return true;
                     }
                     if (refreshContinuousHttpPlayback(sourceRequestId,
@@ -10899,7 +10930,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                     abortChannelSwitchAnimation();
                     hideLoading();
                     recordLoadError("播放错误: " + what + "/" + extra);
-                    showChannelBar(channel.name, "播放错误: " + what + "/" + extra);
+                    showPlaybackNotice("播放错误: " + what + "/" + extra);
                 }
                 return true;
             }
@@ -10986,7 +11017,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                     AppLog.w(TAG,"Unable to prepare system player after release",error);
                     lastSystemPlaybackError="系统播放器准备失败，请重试或切换解码模式";
                     releasePlayer(true);hideLoading();
-                    showChannelBar(currentChannel().name,lastSystemPlaybackError);
+                    showPlaybackNotice(lastSystemPlaybackError);
                 }
             }
         }.run();
@@ -12239,7 +12270,8 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
     }
 
     private boolean debugInfoEnabled() {
-        return showDebugInfo || colorDebugInfoEnabled() || showLoadTiming;
+        return (showDebugInfo || colorDebugInfoEnabled() || showLoadTiming)
+                && !(jarChannelRuntime!=null&&jarChannelRuntime.showsNativePage());
     }
 
     boolean isPlaybackDebugEnabled() { return showDebugInfo; }
@@ -13368,6 +13400,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
     }
 
     private void openChannelList() {
+        if (jarChannelRuntime != null && jarChannelRuntime.blocksHostChannelClick()) return;
         openChannelList(false);
     }
 
@@ -14359,6 +14392,11 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                 || !visible && activePlayerChannel != null && displayedChannel.equals(activePlayerChannel.name);
     }
 
+    private String playbackArtworkTitle(Channel channel) {
+        String title = jarChannelRuntime == null ? "" : jarChannelRuntime.vodTitle();
+        return title.isEmpty() ? channelCardTitle(channel.name) : title;
+    }
+
     private String channelCardTitle(String requestedTitle) {
         // Playback callbacks retain the catalog entry for navigation/persistence.
         // Present the captured page instead, even after its WebView is drained.
@@ -14402,6 +14440,17 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             channelBar.postDelayed(hideChannelBar, CHANNEL_BAR_TIMEOUT_MS);
     }
 
+    private void showPlaybackNotice(final String message) {
+        runOnUiThread(() -> {
+            if (isFinishing()) return;
+            webChannelInfo.cancel();
+            channelCardDeferredForArtwork = false;
+            channelBar.removeCallbacks(hideChannelBar);
+            channelBar.setVisibility(View.GONE);
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+        });
+    }
+
     private void showChannelBar(final String channel, final String status) {
         runOnUiThread(new Runnable() {
             @Override
@@ -14431,6 +14480,13 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
     }
 
     private void showChannelCard() {
+        if (jarChannelRuntime != null && (jarChannelRuntime.playingVod()
+                || jarChannelRuntime.blocksHostChannelClick())) {
+            channelCardDeferredForArtwork = false;
+            channelBar.removeCallbacks(hideChannelBar);
+            channelBar.setVisibility(View.GONE);
+            return;
+        }
         applyTvUiCardTheme();
         refreshTvUiCard();
         if (receivingRtspCast()) {
@@ -14992,7 +15048,12 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                 public String status(){long position=player==null?0:player.getCurrentPosition();seekFeedback.observe(position,buffering,prepared&&player!=null&&player.isPlaying(),SystemClock.elapsedRealtime());return seekFeedback.status(SystemClock.elapsedRealtime(),buffering);}
                 public boolean loading(){return seekFeedback.loading(SystemClock.elapsedRealtime(),buffering);}
                 public boolean playing() { return prepared && player != null && player.isPlaying(); }
-                public String title() { return catchupProgram==null?currentChannel().name:"回看 · "+currentChannel().name+" · "+catchupProgram.title; }
+                public String title() { if(jarChannelRuntime!=null&&!jarChannelRuntime.vodTitle().isEmpty())return jarChannelRuntime.vodTitle();return catchupProgram==null?currentChannel().name:"回看 · "+currentChannel().name+" · "+catchupProgram.title; }
+                public boolean hasEpisodes(){return jarChannelRuntime!=null&&jarChannelRuntime.playingVod();}
+                public void episodes(){if(jarChannelRuntime!=null&&jarChannelRuntime.resumeFromVod()){videoControlsOverlay.hide();cancelChannelManifest();releasePlayer();hideLoading();}}
+                public String quality(){return prepared&&player!=null&&player.getVideoHeight()>0?player.getVideoWidth()+"×"+player.getVideoHeight():"";}
+                public JSONArray trackOptions(){return playbackTrackOptions();}
+                public void selectTrack(String id){selectPlaybackTrack(id);}
                 public boolean catchup(){return catchupProgram!=null;}
                 public void live(){returnToLive();}
                 public boolean speedSupported() { return prepared && playbackSpeedAvailable(player); }
@@ -15015,6 +15076,32 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
         }
         videoControlsOverlay.show();
         completionControlsPending = false;
+    }
+
+    private JSONArray playbackTrackOptions() {
+        JSONArray options=new JSONArray();
+        if(!prepared||!(player instanceof IjkMediaPlayer))return options;
+        IjkMediaPlayer ijk=(IjkMediaPlayer)player;
+        try {
+            ITrackInfo[] info=ijk.getTrackInfo();
+            if(info!=null)for(int i=0;i<info.length;i++) {
+                if(info[i]==null)continue;
+                int type=info[i].getTrackType();
+                boolean audio=type==ITrackInfo.MEDIA_TRACK_TYPE_AUDIO;
+                if(!audio&&type!=ITrackInfo.MEDIA_TRACK_TYPE_SUBTITLE&&type!=ITrackInfo.MEDIA_TRACK_TYPE_TIMEDTEXT)continue;
+                options.put(new JSONObject().put("id",(audio?"a:":"s:")+i)
+                        .put("label",(audio?"音轨 · ":"字幕 · ")+info[i].getInfoInline())
+                        .put("selected",ijk.getSelectedTrack(type)==i));
+            }
+            options.put(new JSONObject().put("id","s:-1").put("label","关闭内嵌字幕")
+                    .put("selected",ijk.getSelectedTrack(ITrackInfo.MEDIA_TRACK_TYPE_SUBTITLE)<0&&ijk.getSelectedTrack(ITrackInfo.MEDIA_TRACK_TYPE_TIMEDTEXT)<0));
+        } catch(Exception error){AppLog.w(TAG,"Unable to read playback track options",error);}
+        return options;
+    }
+    private void selectPlaybackTrack(String id) {
+        if(!prepared||!(player instanceof IjkMediaPlayer)||!id.matches("[as]:-?[0-9]+"))return;
+        try {selectMediaTrack((IjkMediaPlayer)player,Integer.parseInt(id.substring(2)),id.charAt(0)=='a');}
+        catch(Exception error){android.widget.Toast.makeText(this,"切换失败 · "+error.getClass().getSimpleName(),android.widget.Toast.LENGTH_SHORT).show();}
     }
 
     private boolean playbackSpeedAvailable(IMediaPlayer target) {
@@ -15068,6 +15155,8 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
 
     @SuppressLint("SetTextI18n")
     private void refreshVideoInfo() {
+        if(debugInfoOverlay!=null){int visibility=debugInfoEnabled()?View.VISIBLE:View.GONE;
+            if(debugInfoOverlay.getVisibility()!=visibility)debugInfoOverlay.setVisibility(visibility);}
         if (jarChannelRuntime != null) jarChannelRuntime.update(
                 prepared && player != null ? player.getCurrentPosition() : 0L,
                 prepared && player != null && player.isPlaying() && !buffering);
@@ -16971,7 +17060,7 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                 || !(audioOnlyPlayback || isAudioArtworkChannel(channel, currentSourceIndex))) return false;
         audioArtwork.setPlaying(false);
         audioArtwork.setCover(null);
-        audioArtwork.show(channelCardTitle(channel.name), true, null);
+        audioArtwork.show(playbackArtworkTitle(channel), true, null);
         return true;
     }
 
@@ -17400,6 +17489,19 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             return super.dispatchKeyEvent(event);
         }
         if(tvUiMenu.dispatchKeyEvent(event))return true;
+        int rawKeyCode = event.getKeyCode();
+        int keyCode = normalizeRemoteKeyCode(rawKeyCode);
+        if (jarPageOwnsInput() && (keyCode == KeyEvent.KEYCODE_DPAD_UP
+                || keyCode == KeyEvent.KEYCODE_DPAD_DOWN || keyCode == KeyEvent.KEYCODE_DPAD_LEFT
+                || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT || keyCode == KeyEvent.KEYCODE_DPAD_CENTER
+                || keyCode == KeyEvent.KEYCODE_ENTER)) {
+            if(event.getAction()==KeyEvent.ACTION_DOWN)setRemoteInputMode(true);
+            KeyEvent nativeEvent = rawKeyCode == keyCode ? event : new KeyEvent(event.getDownTime(),
+                    event.getEventTime(),event.getAction(),keyCode,event.getRepeatCount(),event.getMetaState(),
+                    event.getDeviceId(),event.getScanCode(),event.getFlags(),event.getSource());
+            jarChannelRuntime.dispatchKey(nativeEvent);
+            return true;
+        }
         if(jarChannelRuntime!=null&&jarChannelRuntime.dispatchMedia(event))return true;
         if (event.getKeyCode() == KeyEvent.KEYCODE_MEDIA_PREVIOUS
                 || event.getKeyCode() == KeyEvent.KEYCODE_MEDIA_NEXT) {
@@ -17409,30 +17511,29 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
             return true;
         }
 
-        int rawKeyCode = event.getKeyCode();
-        int keyCode = normalizeRemoteKeyCode(rawKeyCode);
-        if (jarChannelRuntime != null && jarChannelRuntime.visible()
-                && backPrompt.getVisibility() != View.VISIBLE
-                && managementPanel.getVisibility() != View.VISIBLE
-                && channelListPanel.getVisibility() != View.VISIBLE
-                && (keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_DPAD_DOWN
-                    || keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
-                    || keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER)) {
-            jarChannelRuntime.dispatchKey(event);
-            return true;
-        }
         if(liteWebPlayback!=null&&liteWebPlayback.isRendering()
                 && backPrompt.getVisibility()!=View.VISIBLE && managementPanel.getVisibility()!=View.VISIBLE
                 && channelListPanel.getVisibility()!=View.VISIBLE && liteWebPlayback.handleKey(event))return true;
+        boolean pluginVodNavigation=jarChannelRuntime!=null&&jarChannelRuntime.playingVod()
+                &&!audioOnlyPlayback&&seekableDuration()>0L&&managementPanel.getVisibility()!=View.VISIBLE
+                &&backPrompt.getVisibility()!=View.VISIBLE&&channelListPanel.getVisibility()!=View.VISIBLE;
+        boolean confirmOrVertical=keyCode==KeyEvent.KEYCODE_DPAD_CENTER||keyCode==KeyEvent.KEYCODE_ENTER
+                ||keyCode==KeyEvent.KEYCODE_DPAD_UP||keyCode==KeyEvent.KEYCODE_DPAD_DOWN;
+        if(pluginVodNavigation&&confirmOrVertical){
+            if(videoControlsOverlay==null||!videoControlsOverlay.visible()){
+                if(event.getAction()==KeyEvent.ACTION_DOWN&&event.getRepeatCount()==0){showVideoControls();if(videoControlsOverlay!=null)videoControlsOverlay.showForRemote(keyCode);}
+            }else videoControlsOverlay.remoteKey(event,keyCode);
+            return true;
+        }
         boolean seekKey = keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
                 || keyCode == KeyEvent.KEYCODE_MEDIA_REWIND || keyCode == KeyEvent.KEYCODE_MEDIA_FAST_FORWARD;
         if (seekKey && managementPanel.getVisibility() != View.VISIBLE
+                && backPrompt.getVisibility() != View.VISIBLE
                 && channelListPanel.getVisibility() != View.VISIBLE && seekableDuration() > 0L) {
-            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+            if (videoControlsOverlay == null && event.getAction() == KeyEvent.ACTION_DOWN) {
                 showPlaybackProgress(player.getCurrentPosition());
-                if (videoControlsOverlay != null) videoControlsOverlay.step(keyCode == KeyEvent.KEYCODE_DPAD_LEFT
-                        || keyCode == KeyEvent.KEYCODE_MEDIA_REWIND ? -10000L : 10000L);
             }
+            if (videoControlsOverlay != null) videoControlsOverlay.remoteKey(event, keyCode);
             return true;
         }
 
@@ -17716,6 +17817,12 @@ public final class MainActivity extends Activity implements TvUiPlugin.Listener,
                 lastBackPressedAt = now;
                 showBackPrompt(false);
             }
+            return;
+        }
+        if (jarChannelRuntime != null && jarChannelRuntime.resumeFromVod()) {
+            cancelChannelManifest();
+            releasePlayer();
+            hideLoading();
             return;
         }
         if (jarChannelRuntime != null && jarChannelRuntime.visible()) {
